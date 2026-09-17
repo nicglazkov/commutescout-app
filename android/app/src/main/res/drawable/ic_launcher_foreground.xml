@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- A road with a navigation arrow. -->
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.25"
+        android:pathData="M40,86 L48,22 L60,22 L68,86 Z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M54,30 L69,66 L54,58 L39,66 Z" />
+</vector>
