@@ -1,7 +1,11 @@
 package com.commutescout.drive
 
 import android.app.Application
+import android.location.Geocoder
 import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewModelScope
 import com.stadiamaps.ferrostar.composeui.notification.DefaultForegroundNotificationBuilder
 import com.stadiamaps.ferrostar.core.AlternativeRouteProcessor
@@ -9,6 +13,7 @@ import com.stadiamaps.ferrostar.core.AndroidTtsObserver
 import com.stadiamaps.ferrostar.core.CorrectiveAction
 import com.stadiamaps.ferrostar.core.DefaultNavigationViewModel
 import com.stadiamaps.ferrostar.core.FerrostarCore
+import com.stadiamaps.ferrostar.core.NavigationUiState
 import com.stadiamaps.ferrostar.core.RouteDeviationHandler
 import com.stadiamaps.ferrostar.core.annotation.valhalla.valhallaExtendedOSRMAnnotationPublisher
 import com.stadiamaps.ferrostar.core.http.OkHttpClientProvider.Companion.toOkHttpClientProvider
@@ -26,10 +31,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import com.stadiamaps.ferrostar.core.NavigationUiState
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import java.util.Locale
 import uniffi.ferrostar.CourseFiltering
 import uniffi.ferrostar.GeographicCoordinate
 import uniffi.ferrostar.NavigationControllerConfig
@@ -58,6 +63,9 @@ object Engine {
     lateinit var app: Application
     lateinit var alerts: AlertsEngine
     lateinit var places: PlaceStore
+    lateinit var prefs: Prefs
+    lateinit var account: Account
+    val markers = MarkerStore()
 
     val location: NavigationLocationProvider by lazy {
         NavigationLocationProvider(
@@ -73,11 +81,27 @@ object Engine {
 
     val tts: AndroidTtsObserver by lazy { AndroidTtsObserver(app) }
 
-    val core: FerrostarCore by lazy {
+    private var builtFor = ""
+    private var _core: FerrostarCore? = null
+
+    /** The core for the current route settings; rebuilt when they change and nothing is running. */
+    val core: FerrostarCore
+        get() {
+            val key = prefs.routingKey
+            val existing = _core
+            if (existing != null && (builtFor == key || existing.state.value.tripState !is uniffi.ferrostar.TripState.Idle)) return existing
+            val c = makeCore()
+            _core = c; builtFor = key
+            return c
+        }
+
+    private fun makeCore(): FerrostarCore {
         // Routing goes through commutescout.com: the key stays on the
         // server and every route carries the closure exclusions.
-        val provider = WellKnownRouteProvider.Valhalla(Backend.NAV_ROUTE_URL, "auto")
-            .withJsonOptions(mapOf("units" to if (Units.useMiles) "miles" else "kilometers"))
+        val options = mutableMapOf<String, Any>("units" to if (prefs.useMiles) "miles" else "kilometers")
+        val costing = prefs.costingOptions
+        if (costing.isNotEmpty()) options["costing_options"] = costing
+        val provider = WellKnownRouteProvider.Valhalla(Backend.NAV_ROUTE_URL, "auto").withJsonOptions(options)
         val core = FerrostarCore(
             wellKnownRouteProvider = provider,
             httpClient = Backend.http.toOkHttpClientProvider(),
@@ -97,14 +121,17 @@ object Engine {
             if (routes.isNotEmpty()) c.replaceRoute(routes.first())
         }
         core.spokenInstructionObserver = tts
-        core
+        return core
     }
 
     fun init(application: Application) {
         app = application
-        Units.init(application)
+        prefs = Prefs(application)
         places = PlaceStore(application)
         alerts = AlertsEngine(application)
+        account = Account(application)
+        alerts.spoken = prefs.spokenAlerts
+        alerts.announceAheadMeters = prefs.alertAheadMeters
         Log.i(TAG, "engine ready")
     }
 }
@@ -119,8 +146,32 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     private val _hasPermission = MutableStateFlow(false)
     val hasPermission = _hasPermission.asStateFlow()
     val simulating = MutableStateFlow(false)
+    private val _selectedMarker = MutableStateFlow<RoadMarker?>(null)
+    val selectedMarker = _selectedMarker.asStateFlow()
+    var isDark by mutableStateOf(false)
     val places get() = Engine.places
     val alerts get() = Engine.alerts
+    val prefs get() = Engine.prefs
+    val markers get() = Engine.markers
+    val account get() = Engine.account
+    private val _toast = MutableStateFlow<String?>(null)
+    val toast = _toast.asStateFlow()
+
+    fun toast(text: String) {
+        _toast.value = text
+        viewModelScope.launch { kotlinx.coroutines.delay(2500); if (_toast.value == text) _toast.value = null }
+    }
+
+    /** Where the driver is pointed, when known. */
+    val courseDegrees: Double?
+        get() = navigationUiState.value.location?.courseOverGround?.degrees?.toDouble()
+
+    /** Where a report goes: the pin while browsing one, else the driver. */
+    val reportLatLon: LatLon?
+        get() = (_state.value as? DriveState.Found)?.place?.let { LatLon(it.lat, it.lon) } ?: _here.value
+
+    /** The base map for the current choice and appearance. */
+    val styleUrl: String get() = Backend.styleUrl(prefs.mapStyle.serverStyle(isDark))
 
     // While browsing the puck follows the phone's own fix; Ferrostar only
     // reports a location during a trip.
@@ -151,11 +202,50 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
 
     fun clearError() { _error.value = null }
 
+    fun applyPrefs() {
+        Engine.alerts.spoken = prefs.spokenAlerts
+        Engine.alerts.announceAheadMeters = prefs.alertAheadMeters
+    }
+
+    fun toggle3D() { prefs.is3D = !prefs.is3D }
+
     // browsing
 
-    fun show(place: Place) { _state.value = DriveState.Found(place) }
+    fun show(place: Place) {
+        _selectedMarker.value = null
+        _state.value = DriveState.Found(place)
+    }
 
     fun clearFound() { if (_state.value is DriveState.Found) _state.value = DriveState.Browsing }
+
+    fun showMarker(key: String) {
+        val m = Engine.markers.marker(key) ?: return
+        _selectedMarker.value = m
+        if (_state.value is DriveState.Found) _state.value = DriveState.Browsing
+    }
+
+    fun clearMarker() { _selectedMarker.value = null }
+
+    /** A long press on the map: a pin named by the platform geocoder. */
+    fun dropPin(lat: Double, lon: Double) {
+        val pending = Place(name = "%.5f, %.5f".format(lat, lon), lat = lat, lon = lon, kind = PlaceKind.recent)
+        show(pending)
+        viewModelScope.launch {
+            val name = withContext(Dispatchers.IO) {
+                runCatching {
+                    @Suppress("DEPRECATION")
+                    Geocoder(Engine.app, Locale.getDefault()).getFromLocation(lat, lon, 1)?.firstOrNull()?.let { a ->
+                        listOfNotNull(a.thoroughfare?.let { t -> a.subThoroughfare?.let { "$it $t" } ?: t } ?: a.featureName, a.locality, a.adminArea)
+                            .filter { it.isNotBlank() }.distinct().joinToString(", ")
+                    }
+                }.getOrNull()
+            }
+            val cur = _state.value
+            if (!name.isNullOrBlank() && cur is DriveState.Found && cur.place.id == pending.id) {
+                _state.value = DriveState.Found(pending.copy(name = name))
+            }
+        }
+    }
 
     // routes
 
@@ -163,6 +253,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         val from = if (simulating.value) LatLon(37.3382, -121.8863) else _here.value
         if (from == null) { _error.value = "Waiting for your location."; return }
         _state.value = DriveState.Routing
+        _selectedMarker.value = null
         viewModelScope.launch {
             try {
                 val found = withContext(Dispatchers.IO) {
@@ -174,7 +265,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
                 if (found.isEmpty()) throw BackendError("No route found. Try a different destination.")
                 _state.value = DriveState.Choosing(found, place)
             } catch (e: Exception) {
-                _error.value = e.message ?: "Could not get a route."
+                _error.value = e.message?.takeIf { it.isNotBlank() } ?: "Could not get a route. Check your connection and try again."
                 _state.value = DriveState.Found(place)
             }
         }
@@ -188,6 +279,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             setDestination(place.shortName)
             Engine.places.noteRecent(place.name, place.lat, place.lon)
             Engine.alerts.start(route.geometry.map { LatLon(it.lat, it.lng) })
+            _selectedMarker.value = null
             _state.value = DriveState.Navigating(place)
         } catch (e: Exception) {
             Log.e("DriveViewModel", "start failed", e)
@@ -204,6 +296,5 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
 
     override fun toggleMute() {
         super.toggleMute()
-        Engine.alerts.spoken = Engine.core.spokenInstructionObserver?.isMuted != true
     }
 }

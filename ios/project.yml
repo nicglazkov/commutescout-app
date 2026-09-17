@@ -21,6 +21,12 @@ packages:
   MapLibreSwiftUI:
     url: https://github.com/maplibre/swiftui-dsl
     from: 0.25.0
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: 12.19.0
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 9.0.0
 targets:
   CommuteScoutDrive:
     type: application
@@ -38,6 +44,14 @@ targets:
         product: MapLibreSwiftUI
       - package: MapLibreSwiftUI
         product: MapLibreSwiftDSL
+      - package: Firebase
+        product: FirebaseAuth
+      - package: GoogleSignIn
+        product: GoogleSignIn
+    entitlements:
+      path: CommuteScoutDrive/CommuteScoutDrive.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
     info:
       path: CommuteScoutDrive/Info.plist
       properties:
@@ -56,6 +70,11 @@ targets:
         NSLocationWhenInUseUsageDescription: CommuteScout Drive uses your location to navigate and to warn you about what is ahead on the road.
         NSLocationAlwaysAndWhenInUseUsageDescription: Keep navigation running when the screen is off or another app is in front.
         ITSAppUsesNonExemptEncryption: false
+        GIDClientID: 15002631928-mkrc3g1n231pec0k9fvlabuaf2ja7mkh.apps.googleusercontent.com
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLSchemes:
+              - com.googleusercontent.apps.15002631928-mkrc3g1n231pec0k9fvlabuaf2ja7mkh
         UIApplicationSupportsIndirectInputEvents: true
         LSRequiresIPhoneOS: true
     settings:
@@ -74,3 +93,30 @@ targets:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: Apple Distribution
           PROVISIONING_PROFILE_SPECIFIER: CommuteScout Drive AppStore
+  CommuteScoutDriveUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: CommuteScoutDrive
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.commutescout.drive.uitests
+        TEST_TARGET_NAME: CommuteScoutDrive
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+schemes:
+  CommuteScoutDrive:
+    build:
+      targets:
+        CommuteScoutDrive: all
+        CommuteScoutDriveUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - CommuteScoutDriveUITests
+    archive:
+      config: Release

@@ -65,17 +65,9 @@ class PlaceStore(context: Context) {
 
 /** Distances in the driver's units: the locale's by default, then whatever Settings says. */
 object Units {
-    private lateinit var prefs: SharedPreferences
-
-    fun init(context: Context) {
-        prefs = context.getSharedPreferences("cs.units", Context.MODE_PRIVATE)
-    }
-
     var useMiles: Boolean
-        get() = if (prefs.contains("miles")) prefs.getBoolean("miles", true) else localeMiles()
-        set(v) = prefs.edit().putBoolean("miles", v).apply()
-
-    private fun localeMiles(): Boolean = Locale.getDefault().country in setOf("US", "GB", "LR", "MM")
+        get() = Engine.prefs.useMiles
+        set(v) { Engine.prefs.useMiles = v }
 
     fun distance(meters: Double): String {
         if (useMiles) {

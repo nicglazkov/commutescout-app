@@ -14,6 +14,14 @@ object Backend {
     const val BASE = "https://commutescout.com"
     const val NAV_ROUTE_URL = "$BASE/api/nav/route"
     const val STYLE_URL = "$BASE/api/tiles/style.json"
+    const val TRAFFIC_TILES = "$BASE/api/traffictile/{z}/{x}/{y}.png"
+
+    /** The base map: light, dark or outdoors, all through the proxy. */
+    fun styleUrl(style: String) = "$STYLE_URL?style=$style"
+
+    /** The website page focused on a spot, the same link the site shares. */
+    fun mapUrl(lat: Double, lon: Double, kind: String? = null): String =
+        "$BASE/map?focus=%.5f,%.5f".format(lat, lon) + (kind?.let { "&k=$it" } ?: "")
 
     val http: OkHttpClient = OkHttpClient.Builder()
         .callTimeout(20, TimeUnit.SECONDS)
@@ -71,8 +79,61 @@ data class RoadMarker(
     val flare_kind: String? = null,
     val source: String? = null,
     val description: String? = null,
+    val area: String? = null,
+    val dir: String? = null,
+    val reported: String? = null,
+    val county: String? = null,
+    val delay_min: Double? = null,
+    val lanes: String? = null,
+    val since: Long? = null,      // epoch seconds
+    val until: Long? = null,
+    val work: String? = null,
+    val facility: String? = null,
 ) {
     val key: String get() = "$kind:${id ?: "%.4f,%.4f".format(lat, lon)}"
+
+    /** The lines under the title in the marker card. */
+    val detailLines: List<String>
+        get() {
+            val out = mutableListOf<String>()
+            when (kind) {
+                "incident" -> {
+                    location?.takeIf { it.isNotBlank() }?.let { out.add(it) }
+                    listOfNotNull(dir, area).filter { it.isNotBlank() }.joinToString(", ").takeIf { it.isNotEmpty() }?.let { out.add(it) }
+                    reported?.let { out.add("Reported " + whenText(it)) }
+                }
+                "lane_closure" -> {
+                    lanes?.takeIf { it.isNotBlank() }?.let { out.add(it) }
+                    work?.takeIf { it.isNotBlank() }?.let { out.add(it) }
+                    listOfNotNull(since?.let { "from " + whenEpoch(it) }, until?.let { "until " + whenEpoch(it) })
+                        .joinToString(" ").takeIf { it.isNotEmpty() }?.let { out.add(it) }
+                    delay_min?.takeIf { it > 0 }?.let { out.add("Expect about ${it.toInt()} min of delay") }
+                    county?.takeIf { it.isNotBlank() }?.let { out.add("$it County") }
+                }
+                "chain_control" -> location?.takeIf { it.isNotBlank() }?.let { out.add(it) }
+                "wildfire" -> {
+                    county?.takeIf { it.isNotBlank() }?.let { out.add("$it County") }
+                    reported?.let { out.add("Updated " + whenText(it)) }
+                }
+                "plugin" -> {
+                    source?.takeIf { it.isNotBlank() }?.let { out.add("Reported through $it") }
+                    reported?.let { out.add(whenText(it)) }
+                }
+            }
+            return out
+        }
+
+    /** A shareable link to this spot on the website. */
+    val webUrl: String get() = Backend.mapUrl(lat, lon, kind)
+
+    private fun whenEpoch(epoch: Long): String = android.text.format.DateUtils.getRelativeTimeSpanString(
+        epoch * 1000, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS).toString()
+
+    private fun whenText(iso: String): String = runCatching {
+        val t = java.time.OffsetDateTime.parse(iso).toInstant().toEpochMilli()
+        android.text.format.DateUtils.getRelativeTimeSpanString(t, System.currentTimeMillis(),
+            android.text.format.DateUtils.MINUTE_IN_MILLIS).toString()
+    }.getOrDefault(iso)
 
     /** Short text for the strip and for speech. Kinds match the web map's markers. */
     val displayTitle: String
@@ -102,9 +163,9 @@ private data class MapData(val markers: List<RoadMarker> = emptyList())
 object LiveData {
     const val KINDS = "incident,closure,chain,fire,plugin"
 
-    suspend fun markers(south: Double, west: Double, north: Double, east: Double): List<RoadMarker> =
+    suspend fun markers(south: Double, west: Double, north: Double, east: Double, kinds: String = KINDS): List<RoadMarker> =
         Backend.get<MapData>(
             "/api/mapdata",
-            mapOf("bbox" to "%.4f,%.4f,%.4f,%.4f".format(south, west, north, east), "kinds" to KINDS),
+            mapOf("bbox" to "%.4f,%.4f,%.4f,%.4f".format(south, west, north, east), "kinds" to kinds),
         ).markers
 }

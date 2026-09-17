@@ -12,6 +12,9 @@ import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import com.stadiamaps.ferrostar.core.AndroidTtsStatusListener
@@ -29,7 +32,15 @@ class MainActivity : ComponentActivity(), AndroidTtsStatusListener {
             model.setLocationPermission(true)
         }
         setContent {
-            MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF1F5FCF))) {
+            val dark = when (model.prefs.theme) {
+                Prefs.Theme.SYSTEM -> isSystemInDarkTheme()
+                Prefs.Theme.LIGHT -> false
+                Prefs.Theme.DARK -> true
+            }
+            val scheme = if (dark) darkColorScheme(primary = Color(0xFF8AB4F8), surface = Color(0xFF16181C), background = Color(0xFF16181C))
+                         else lightColorScheme(primary = Color(0xFF1F5FCF))
+            SideEffect { model.isDark = dark }
+            MaterialTheme(colorScheme = scheme) {
                 Surface { DriveScreen(model) }
             }
         }

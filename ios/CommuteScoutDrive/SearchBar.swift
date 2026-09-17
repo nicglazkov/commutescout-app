@@ -4,11 +4,16 @@ import SwiftUI
 /// Find anything: an address, a place, or coordinates typed as
 /// "37.35, -121.94". Always on screen while browsing; a result becomes
 /// a pin with Navigate and Save, the same as the website.
+///
+/// Saved and recent places match instantly as you type. The server is
+/// asked after a short pause; earlier answers stay on screen until a
+/// newer one lands, and out-of-order replies are dropped.
 struct SearchBar: View {
     @EnvironmentObject var model: AppModel
     @State private var text = ""
     @State private var results: [Suggestion] = []
     @State private var searching = false
+    @State private var seq = 0
     @State private var task: Task<Void, Never>?
     @FocusState private var focused: Bool
 
@@ -16,17 +21,20 @@ struct SearchBar: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Search a place, address or coordinates", text: $text)
+                TextField("Search a place or address", text: $text)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .focused($focused)
                     .submitLabel(.search)
                     .onSubmit { Task { await submit() } }
                     .onChange(of: text) { new in schedule(new) }
+                    .accessibilityIdentifier("search")
+                if searching { ProgressView().controlSize(.small) }
                 if !text.isEmpty {
                     Button { text = ""; results = [] } label: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                     }
+                    .accessibilityIdentifier("search-clear")
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
@@ -35,10 +43,19 @@ struct SearchBar: View {
 
             if focused, text.isEmpty {
                 shortcuts
-            } else if !results.isEmpty, focused {
+            } else if focused, !text.isEmpty {
                 resultList
             }
         }
+    }
+
+    /// Saved and recent places whose name starts with what was typed.
+    private var localMatches: [Place] {
+        let q = text.trimmingCharacters(in: .whitespaces).lowercased()
+        guard q.count >= 1 else { return [] }
+        return model.places.places.filter { $0.name.lowercased().hasPrefix(q) || $0.shortName.lowercased().hasPrefix(q)
+            || ($0.kind == .home && "home".hasPrefix(q)) || ($0.kind == .work && "work".hasPrefix(q)) }
+            .prefix(3).map { $0 }
     }
 
     private var shortcuts: some View {
@@ -58,9 +75,16 @@ struct SearchBar: View {
 
     private var resultList: some View {
         VStack(alignment: .leading, spacing: 0) {
+            ForEach(localMatches) { p in
+                row(systemImage: p.kind == .home ? "house" : p.kind == .work ? "briefcase" : p.kind == .saved ? "star" : "clock",
+                    title: p.kind == .home ? "Home" : p.kind == .work ? "Work" : p.shortName, sub: p.name) { pick(p) }
+            }
             ForEach(results) { s in
                 row(systemImage: "mappin", title: s.name.split(separator: ",").first.map(String.init) ?? s.name,
                     sub: s.name) { pick(Place(name: s.name, coordinate: s.coordinate, kind: .recent)) }
+            }
+            if results.isEmpty, localMatches.isEmpty, !searching, text.count >= 2 {
+                Text("Nothing yet. Keep typing, or add a city.").font(.footnote).foregroundStyle(.secondary).padding(12)
             }
         }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
@@ -78,7 +102,9 @@ struct SearchBar: View {
                 Spacer()
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     private func pick(_ place: Place) {
@@ -90,36 +116,42 @@ struct SearchBar: View {
 
     private func schedule(_ q: String) {
         task?.cancel()
-        results = []
-        if let coord = Self.parseCoordinates(q) {
+        let trimmed = q.trimmingCharacters(in: .whitespaces)
+        if let coord = Self.parseCoordinates(trimmed) {
             results = [Suggestion(name: coord.pretty, lat: coord.latitude, lon: coord.longitude)]
             return
         }
-        guard q.count >= 2 else { return }
+        guard trimmed.count >= 2 else { results = []; return }
+        seq += 1
+        let mine = seq
         task = Task {
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { return }
-            if let found = try? await Search.suggest(q, near: model.here), !Task.isCancelled {
+            searching = true
+            defer { if mine == seq { searching = false } }
+            if let found = try? await Search.suggest(trimmed, near: model.here), mine == seq {
                 results = found
             }
         }
     }
 
     private func submit() async {
-        if let coord = Self.parseCoordinates(text) {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if let coord = Self.parseCoordinates(trimmed) {
             pick(Place(name: coord.pretty, coordinate: coord, kind: .recent))
             return
         }
+        if let first = localMatches.first { pick(first); return }
         if let first = results.first {
             pick(Place(name: first.name, coordinate: first.coordinate, kind: .recent))
             return
         }
         searching = true
         defer { searching = false }
-        if let found = try? await Search.geocode(text), let first = found.first {
+        if let found = try? await Search.geocode(trimmed), let first = found.first {
             pick(Place(name: first.name, coordinate: first.coordinate, kind: .recent))
         } else {
-            model.errorMessage = "Nothing found for \"\(text)\"."
+            model.errorMessage = "Nothing found for \"\(trimmed)\". Try adding a city."
         }
     }
 

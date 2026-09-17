@@ -25,6 +25,8 @@ enum DriveState: Equatable {
         default: false
         }
     }
+
+    var isNavigating: Bool { if case .navigating = self { return true }; return false }
 }
 
 /// The location source: the phone, or a simulator that drives the
@@ -65,6 +67,10 @@ final class LocationSource: LocationProviding {
         simulate || device.authorizationStatus == .authorizedAlways
             || device.authorizationStatus == .authorizedWhenInUse
     }
+
+    var denied: Bool {
+        !simulate && (device.authorizationStatus == .denied || device.authorizationStatus == .restricted)
+    }
 }
 
 @MainActor
@@ -72,19 +78,55 @@ final class AppModel: ObservableObject {
     @Published var state: DriveState = .browsing
     @Published var camera: MapViewCamera = .default()
     @Published var coreState: NavigationState?
-    @Published var preview: Route?          // the alternative under consideration
     @Published var errorMessage: String?
     @Published var muted = false
+    @Published var preview: Route?          // the alternative under consideration
+    @Published var selectedMarker: RoadMarker?
+    @Published var heading: CLLocationDirection = 0
+    var viewCenter: CLLocationCoordinate2D?      // what the map shows, from the hook
+    var viewZoom: Double = 14
+    @Published var isDark = false           // the current appearance, for the map style
     @Published var simulating = false { didSet { location.simulate = simulating } }
+    @Published private(set) var core: FerrostarCore
 
-    let core: FerrostarCore
     let location = LocationSource()
     let places = PlaceStore()
     let alerts = AlertsEngine()
+    let markers = MarkerStore()
+    let prefs = Prefs()
+    let account = Account()
+    let reporter = Reporter()
+    @Published var toast: String?
     private let delegate = NavDelegate()
     private var cancellables = Set<AnyCancellable>()
+    private var coreSink: AnyCancellable?
+    private var builtFor = ""
+    private var previewCache: (key: String, feature: MLNPolylineFeature)?
 
     init() {
+        core = Self.makeCore(location: location, prefs: prefs)
+        builtFor = prefs.routingKey
+        wireCore()
+        core.delegate = delegate
+        alerts.spoken = prefs.spokenAlerts
+        alerts.announceAheadMeters = prefs.alertAheadMeters
+        location.startUpdating()
+        camera = .center(CLLocationCoordinate2D(latitude: 37.5, longitude: -121.9), zoom: 8)
+        prefs.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.prefsChanged() }
+        }.store(in: &cancellables)
+        // Views watch the model; changes in the stores it owns must show.
+        for child in [places.objectWillChange.eraseToAnyPublisher(), markers.objectWillChange.eraseToAnyPublisher(),
+                      alerts.objectWillChange.eraseToAnyPublisher(), account.objectWillChange.eraseToAnyPublisher(),
+                      reporter.objectWillChange.eraseToAnyPublisher()] {
+            child.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
+        }
+        Task { await followOnceAllowed() }
+    }
+
+    // MARK: core
+
+    private static func makeCore(location: LocationSource, prefs: Prefs) -> FerrostarCore {
         let config = SwiftNavigationControllerConfig(
             waypointAdvance: .waypointWithinRange(100.0),
             stepAdvanceCondition: stepAdvanceDistanceEntryAndExit(
@@ -96,26 +138,43 @@ final class AppModel: ObservableObject {
         )
         // Routing goes through commutescout.com: the key stays on the
         // server and every route carries the closure exclusions.
+        var options: [String: Any] = ["units": Units.useMiles ? "miles" : "kilometers"]
+        let costing = prefs.costingOptions
+        if !costing.isEmpty { options["costing_options"] = costing }
         let provider = try! WellKnownRouteProvider.valhalla(
             endpointUrl: Backend.navRouteURL.absoluteString, profile: "auto")
-            .withJsonOptions(options: ["units": Units.useMiles ? "miles" : "kilometers"])
+            .withJsonOptions(options: options)
         // A bad provider is a programming error, not a runtime condition.
-        core = try! FerrostarCore(
+        return try! FerrostarCore(
             wellKnownRouteProvider: provider,
             locationProvider: location,
             navigationControllerConfig: config,
             annotation: AnnotationPublisher<ValhallaExtendedOSRMAnnotation>.valhallaExtendedOSRM()
         )
-        core.delegate = delegate
-        core.$state.receive(on: DispatchQueue.main).sink { [weak self] s in
-            self?.coreState = s
-            if let loc = s?.preferredUserLocation?.clLocation.coordinate {
-                self?.alerts.update(position: loc)
+    }
+
+    private func wireCore() {
+        coreSink = core.$state.receive(on: DispatchQueue.main).sink { [weak self] s in
+            guard let self else { return }
+            self.coreState = s
+            if let loc = s?.preferredUserLocation?.clLocation.coordinate, self.state.isNavigating {
+                self.alerts.update(position: loc)
             }
-        }.store(in: &cancellables)
-        location.startUpdating()
-        camera = .center(CLLocationCoordinate2D(latitude: 37.5, longitude: -121.9), zoom: 8)
-        Task { await followOnceAllowed() }
+        }
+    }
+
+    /// Settings changed: apply what applies now, and rebuild the core
+    /// when nothing is running so the next request carries new options.
+    private func prefsChanged() {
+        alerts.spoken = prefs.spokenAlerts
+        alerts.announceAheadMeters = prefs.alertAheadMeters
+        if prefs.routingKey != builtFor, !state.isNavigating, coreState?.isNavigating != true {
+            core = Self.makeCore(location: location, prefs: prefs)
+            core.delegate = delegate
+            wireCore()
+            builtFor = prefs.routingKey
+        }
+        objectWillChange.send()
     }
 
     /// Follow the driver as soon as location is allowed (the first launch
@@ -126,34 +185,103 @@ final class AppModel: ObservableObject {
                 if case .browsing = state { follow() }
                 return
             }
+            if location.denied {
+                errorMessage = "Location is off for CommuteScout Drive. Turn it on in Settings to navigate."
+                return
+            }
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
     }
 
-    /// Keep the map on the driver, north up, like a maps app at rest.
-    func follow() {
-        camera = .trackUserLocation(zoom: 14)
-    }
+    // MARK: camera
 
     var here: CLLocationCoordinate2D? { location.lastLocation?.clLocation.coordinate }
+
+    /// Where the driver is pointed, when known.
+    var courseDegrees: Double? {
+        let c = coreState?.preferredUserLocation?.clLocation.course ?? location.lastLocation?.clLocation.course
+        return (c ?? -1) >= 0 ? c : nil
+    }
+
+    /// Where a report goes: the pin while browsing one, else the driver.
+    var reportCoordinate: CLLocationCoordinate2D? {
+        if case let .found(p) = state { return p.coordinate }
+        return here
+    }
+
+    /// The base map for the current choice and appearance.
+    var styleURL: URL { Backend.styleURL(prefs.mapStyle.serverStyle(dark: isDark)) }
+
+    /// Keep the map on the driver, like a maps app at rest: north up in
+    /// 2D, tilted in 3D.
+    func follow() {
+        camera = .trackUserLocation(zoom: 14, pitch: prefs.is3D ? 45 : 0)
+    }
+
+    /// The camera used while navigating, in 2D or 3D.
+    var navigationCamera: MapViewCamera { .automotiveNavigation(pitch: prefs.is3D ? 45 : 0) }
+
+    func toggle3D() {
+        prefs.is3D.toggle()
+        switch state {
+        case .navigating: camera = navigationCamera
+        case .browsing: follow()
+        default: break
+        }
+    }
+
+    /// North up, keeping the place and zoom.
+    func faceNorth() {
+        guard let c = viewCenter ?? here else { return }
+        camera = .center(c, zoom: viewZoom, pitch: prefs.is3D ? 45 : 0, direction: 0)
+    }
 
     // MARK: browsing
 
     func show(_ place: Place) {
         preview = nil
+        selectedMarker = nil
         state = .found(place)
-        camera = .center(place.coordinate, zoom: 14)
+        camera = .center(place.coordinate, zoom: max(viewZoom, 14), pitch: prefs.is3D ? 45 : 0, direction: 0)
     }
 
     func clearFound() {
+        if case .found = state { state = .browsing; follow() }
+    }
+
+    func showMarker(key: String) {
+        guard let m = markers.marker(for: key) else { return }
+        selectedMarker = m
         if case .found = state { state = .browsing }
+    }
+
+    func clearMarker() { selectedMarker = nil }
+
+    /// A long press on the map: a pin named by Apple's reverse geocoder.
+    func dropPin(at coordinate: CLLocationCoordinate2D) {
+        let pending = Place(name: coordinate.pretty, coordinate: coordinate, kind: .recent)
+        show(pending)
+        Task {
+            let geocoder = CLGeocoder()
+            if let mark = try? await geocoder.reverseGeocodeLocation(
+                CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)).first {
+                let parts = [mark.name, mark.locality, mark.administrativeArea].compactMap { $0 }
+                if case let .found(p) = state, p.id == pending.id, !parts.isEmpty {
+                    var named = pending
+                    named.name = parts.joined(separator: ", ")
+                    state = .found(named)
+                }
+            }
+        }
     }
 
     // MARK: routes
 
     func routes(to place: Place) async {
         guard let from = here else {
-            errorMessage = "Waiting for your location."
+            errorMessage = location.denied
+                ? "Location is off for CommuteScout Drive. Turn it on in Settings to navigate."
+                : "Waiting for your location."
             return
         }
         state = .routing
@@ -164,14 +292,14 @@ final class AppModel: ObservableObject {
             guard !found.isEmpty else { throw DriveError.noRoute }
             preview = found.first
             state = .choosing(found, place)
-            camera = .default()
             if let bbox = found.first?.bbox {
                 camera = .boundingBox(MLNCoordinateBounds(
                     sw: bbox.sw.clLocationCoordinate2D, ne: bbox.ne.clLocationCoordinate2D),
-                    edgePadding: .init(top: 120, left: 40, bottom: 320, right: 40))
+                    edgePadding: .init(top: 140, left: 40, bottom: 340, right: 40))
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = (error as? DriveError)?.errorDescription
+                ?? "Could not get a route. Check your connection and try again."
             state = .found(place)
         }
     }
@@ -181,11 +309,12 @@ final class AppModel: ObservableObject {
             if simulating { try location.simulate(route: route) }
             try core.startNavigation(route: route)
             preview = nil
+            selectedMarker = nil
             places.noteRecent(name: place.name, coordinate: place.coordinate)
             alerts.start(route: route.geometry.map(\.clLocationCoordinate2D))
-            camera = .automotiveNavigation()
+            camera = navigationCamera
             state = .navigating(place)
-            UIApplication.shared.isIdleTimerDisabled = true
+            UIApplication.shared.isIdleTimerDisabled = prefs.keepAwake
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -202,7 +331,18 @@ final class AppModel: ObservableObject {
     func toggleMute() {
         core.spokenInstructionObserver.toggleMute()
         muted = core.spokenInstructionObserver.isMuted
-        alerts.spoken = !muted
+    }
+
+    /// The preview route as one polyline feature, built once per route.
+    func previewFeature() -> MLNPolylineFeature? {
+        guard case .choosing = state, let route = preview else { return nil }
+        let last = route.geometry.last
+        let key = "\(route.geometry.count)|\(route.distance)|\(last?.lat ?? 0)|\(last?.lng ?? 0)"
+        if let c = previewCache, c.key == key { return c.feature }
+        let coords = route.geometry.map(\.clLocationCoordinate2D)
+        let f = MLNPolylineFeature(coordinates: coords, count: UInt(coords.count))
+        previewCache = (key, f)
+        return f
     }
 }
 

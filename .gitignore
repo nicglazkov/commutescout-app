@@ -9,3 +9,5 @@ android/keystore.properties
 *.ipa
 *.apk
 .DS_Store
+ios/CommuteScoutDrive/GoogleService-Info.plist
+android/app/google-services.json

@@ -58,6 +58,11 @@ final class PlaceStore: ObservableObject {
         persist()
     }
 
+    func removeAll() {
+        places = []
+        persist()
+    }
+
     func touch(_ place: Place) {
         if let i = places.firstIndex(where: { $0.id == place.id }) {
             places[i].lastUsed = Date()

@@ -12,8 +12,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
-import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
@@ -29,19 +29,25 @@ data class Upcoming(val marker: RoadMarker, val alongMeters: Double) {
  * Live alerts while driving. Every 60 seconds the engine reads the markers
  * inside the route's box, projects each onto the route, keeps those within a
  * corridor, orders them by distance along the route, and announces each one
- * once when it is about a minute ahead. The same list feeds the strip above
- * the trip bar.
+ * once when it is about a minute ahead. The same list feeds the strip.
+ *
+ * Projection runs once per location update, searching a window around the
+ * last segment first, so a 500-mile route costs the same as a short one.
  */
 class AlertsEngine(context: Context) {
     private val _ahead = MutableStateFlow<List<Upcoming>>(emptyList())
     val ahead = _ahead.asStateFlow()
+    private val _hereAlong = MutableStateFlow(0.0)
+    val hereAlong = _hereAlong.asStateFlow()
     var spoken = true
+    var announceAheadMeters = 1500.0
 
     private var route: List<LatLon> = emptyList()
     private var cumulative: DoubleArray = DoubleArray(0)
     private var all: List<Upcoming> = emptyList()
     private val announced = HashSet<String>()
     private var box: DoubleArray? = null
+    private var lastSegment = 0
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var refreshJob: Job? = null
     private var ttsReady = false
@@ -56,7 +62,6 @@ class AlertsEngine(context: Context) {
 
     companion object {
         private const val TAG = "Alerts"
-        const val ANNOUNCE_AHEAD_METERS = 1500.0
         const val REFRESH_MS = 60_000L
 
         fun cumulativeDistances(pts: List<LatLon>): DoubleArray {
@@ -72,29 +77,39 @@ class AlertsEngine(context: Context) {
             return sqrt(dx * dx + dy * dy)
         }
 
-        /** Nearest point on the polyline: distance along it and offset from it. */
-        fun along(pts: List<LatLon>, cum: DoubleArray, p: LatLon): Pair<Double, Double> {
-            if (pts.size < 2) return 0.0 to Double.MAX_VALUE
-            var bestAlong = 0.0
-            var bestOff = Double.MAX_VALUE
+        data class Hit(val along: Double, val offset: Double, val segment: Int)
+
+        /**
+         * Nearest point on the polyline. With [near], a window around that
+         * segment is tried first; the coarse full pass is the fallback.
+         */
+        fun along(pts: List<LatLon>, cum: DoubleArray, p: LatLon, near: Int? = null): Hit {
+            if (pts.size < 2) return Hit(0.0, Double.MAX_VALUE, 0)
             val k = cos(Math.toRadians(p.lat))
-            for (i in 0 until pts.size - 1) {
-                val a = pts[i]; val b = pts[i + 1]
-                if (abs(a.lat - p.lat) > 0.05 && abs(b.lat - p.lat) > 0.05) continue
-                if (abs(a.lon - p.lon) > 0.06 && abs(b.lon - p.lon) > 0.06) continue
-                val ax = 0.0; val ay = 0.0
+            var best = Hit(0.0, Double.MAX_VALUE, 0)
+            fun test(j: Int) {
+                val a = pts[j]; val b = pts[j + 1]
                 val bx = (b.lon - a.lon) * 111_320.0 * k; val by = (b.lat - a.lat) * 110_540.0
                 val px = (p.lon - a.lon) * 111_320.0 * k; val py = (p.lat - a.lat) * 110_540.0
                 val len2 = bx * bx + by * by
-                val t = if (len2 == 0.0) 0.0 else min(1.0, max(0.0, ((px - ax) * bx + (py - ay) * by) / len2))
+                val t = if (len2 == 0.0) 0.0 else min(1.0, max(0.0, (px * bx + py * by) / len2))
                 val dx = px - t * bx; val dy = py - t * by
                 val off = sqrt(dx * dx + dy * dy)
-                if (off < bestOff) {
-                    bestOff = off
-                    bestAlong = cum[i] + t * sqrt(len2)
-                }
+                if (off < best.offset) best = Hit(cum[j] + t * sqrt(len2), off, j)
             }
-            return bestAlong to bestOff
+            if (near != null) {
+                for (j in max(0, near - 20) until min(pts.size - 1, near + 60)) test(j)
+                if (best.offset < 120.0) return best
+            }
+            best = Hit(0.0, Double.MAX_VALUE, 0)
+            var i = 0
+            while (i < pts.size) {
+                if (meters(pts[i], p) < 3000.0) {
+                    for (j in max(0, i - 8) until min(pts.size - 1, i + 8)) test(j)
+                }
+                i += 8
+            }
+            return best
         }
     }
 
@@ -103,6 +118,7 @@ class AlertsEngine(context: Context) {
         stop()
         route = coordinates
         cumulative = cumulativeDistances(coordinates)
+        lastSegment = 0
         val lats = coordinates.map { it.lat }; val lons = coordinates.map { it.lon }
         if (lats.isEmpty()) return
         box = doubleArrayOf(lats.min() - 0.05, lons.min() - 0.05, lats.max() + 0.05, lons.max() + 0.05)
@@ -119,17 +135,20 @@ class AlertsEngine(context: Context) {
         refreshJob?.cancel(); refreshJob = null
         route = emptyList(); cumulative = DoubleArray(0); all = emptyList(); box = null
         _ahead.value = emptyList()
+        _hereAlong.value = 0.0
     }
 
     fun update(position: LatLon) {
         if (route.isEmpty()) return
-        val here = along(route, cumulative, position).first
-        val upcoming = all.filter { it.alongMeters > here - 100 }
-        _ahead.value = upcoming
+        val hit = along(route, cumulative, position, lastSegment)
+        lastSegment = hit.segment
+        _hereAlong.value = hit.along
+        val upcoming = all.filter { it.alongMeters > hit.along - 100 }
+        if (upcoming != _ahead.value) _ahead.value = upcoming
         for (item in upcoming) {
             if (item.id in announced) continue
-            val gap = item.alongMeters - here
-            if (gap <= ANNOUNCE_AHEAD_METERS && gap > -100) {
+            val gap = item.alongMeters - hit.along
+            if (gap <= announceAheadMeters && gap > -100) {
                 announced.add(item.id)
                 if (spoken) say(item.marker)
             }
@@ -143,14 +162,15 @@ class AlertsEngine(context: Context) {
 
     private suspend fun refresh() {
         val b = box ?: return
-        Log.i(TAG, "alerts refresh in box ${b.toList()}")
         val markers = runCatching { LiveData.markers(b[0], b[1], b[2], b[3]) }
             .onFailure { Log.w(TAG, "alerts fetch failed: $it") }.getOrNull() ?: return
         val pts = route; val cum = cumulative
-        all = markers.mapNotNull { m ->
-            val (along, off) = along(pts, cum, LatLon(m.lat, m.lon))
-            if (off <= m.corridorMeters) Upcoming(m, along) else null
-        }.sortedBy { it.alongMeters }
+        all = withContext(Dispatchers.Default) {
+            markers.mapNotNull { m ->
+                val hit = along(pts, cum, LatLon(m.lat, m.lon))
+                if (hit.offset <= m.corridorMeters) Upcoming(m, hit.along) else null
+            }.sortedBy { it.alongMeters }
+        }
         Log.i(TAG, "alerts: ${markers.size} markers in box, ${all.size} on the route")
     }
 

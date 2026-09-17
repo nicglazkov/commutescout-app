@@ -5,6 +5,13 @@ plugins {
     alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
+    alias(libs.plugins.googleServices) apply false
+}
+
+// google-services.json is machine-local (never committed); builds without
+// it still work, with sign-in disabled.
+if (file("google-services.json").exists()) {
+    apply(plugin = libs.plugins.googleServices.get().pluginId)
 }
 
 // Release signing comes from keystore.properties (never committed):
@@ -83,4 +90,9 @@ dependencies {
     implementation(libs.ferrostar.google.play.services)
     implementation(libs.maplibre.compose)
     implementation(libs.play.services.location)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.credentials)
+    implementation(libs.credentials.play)
+    implementation(libs.googleid)
 }

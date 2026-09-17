@@ -7,7 +7,11 @@ import Foundation
 /// those within a corridor (300 m for incidents and closures, 1 km for
 /// chain controls, 12 km for fires), orders them by distance along the
 /// route, and announces each one once when it is about a minute ahead.
-/// The same list feeds the banner under the maneuver card.
+/// The same list feeds the strip under the maneuver card.
+///
+/// Projection is done once per location update and cached in
+/// `hereAlong`; nothing here runs per frame, so a 500-mile route with
+/// tens of thousands of vertices costs the same as a short one on screen.
 @MainActor
 final class AlertsEngine: ObservableObject {
     struct Upcoming: Identifiable, Hashable {
@@ -17,8 +21,10 @@ final class AlertsEngine: ObservableObject {
     }
 
     @Published private(set) var ahead: [Upcoming] = []
+    @Published private(set) var hereAlong: Double = 0
     @Published private(set) var lastAnnounced: String?
     @Published var spoken = true
+    var announceAheadMeters = 1500.0
 
     private var route: [CLLocationCoordinate2D] = []
     private var cumulative: [Double] = []
@@ -26,15 +32,16 @@ final class AlertsEngine: ObservableObject {
     private var announced: Set<String> = []
     private var timer: Timer?
     private var box: (south: Double, west: Double, north: Double, east: Double)?
+    private var lastSegment = 0
     private let synth = AVSpeechSynthesizer()
 
-    static let announceAheadMeters = 1500.0
     static let refreshSeconds = 60.0
 
     func start(route coordinates: [CLLocationCoordinate2D]) {
         stop()
         route = coordinates
         cumulative = Self.cumulativeDistances(coordinates)
+        lastSegment = 0
         let lats = coordinates.map(\.latitude), lons = coordinates.map(\.longitude)
         guard let s = lats.min(), let n = lats.max(), let w = lons.min(), let e = lons.max() else { return }
         box = (s - 0.05, w - 0.05, n + 0.05, e + 0.05)
@@ -52,18 +59,21 @@ final class AlertsEngine: ObservableObject {
         cumulative = []
         all = []
         ahead = []
+        hereAlong = 0
         box = nil
     }
 
     /// Called with each snapped location while navigating.
     func update(position: CLLocationCoordinate2D) {
         guard !route.isEmpty else { return }
-        let here = Self.along(route, cumulative, position).along
-        let upcoming = all.filter { $0.alongMeters > here - 100 }
-        ahead = upcoming
+        let hit = Self.along(route, cumulative, position, near: lastSegment)
+        lastSegment = hit.segment
+        hereAlong = hit.along
+        let upcoming = all.filter { $0.alongMeters > hit.along - 100 }
+        if upcoming != ahead { ahead = upcoming }
         for item in upcoming where !announced.contains(item.id) {
-            let gap = item.alongMeters - here
-            if gap <= Self.announceAheadMeters, gap > -100 {
+            let gap = item.alongMeters - hit.along
+            if gap <= announceAheadMeters, gap > -100 {
                 announced.insert(item.id)
                 announce(item.marker)
             }
@@ -86,67 +96,67 @@ final class AlertsEngine: ObservableObject {
         synth.speak(utterance)
     }
 
-    func refresh() async {
-        guard let box, !route.isEmpty else { return }
-        guard let markers = try? await LiveData.markers(in: box) else { return }
-        var found: [Upcoming] = []
-        for m in markers {
-            let p = Self.along(route, cumulative, m.coordinate)
-            if p.offset <= m.corridorMeters {
-                found.append(Upcoming(marker: m, alongMeters: p.along))
-            }
-        }
-        all = found.sorted { $0.alongMeters < $1.alongMeters }
+    private func refresh() async {
+        guard let box else { return }
+        guard let markers = try? await LiveData.markers(in: box, kinds: LiveData.kinds) else { return }
+        let pts = route, cum = cumulative
+        let found: [Upcoming] = await Task.detached(priority: .utility) {
+            markers.compactMap { m in
+                let hit = Self.along(pts, cum, m.coordinate, near: nil)
+                return hit.offset <= m.corridorMeters ? Upcoming(marker: m, alongMeters: hit.along) : nil
+            }.sorted { $0.alongMeters < $1.alongMeters }
+        }.value
+        all = found
     }
 
-    // MARK: geometry
+    // MARK: geometry (plain functions, safe off the main actor)
 
-    static func cumulativeDistances(_ pts: [CLLocationCoordinate2D]) -> [Double] {
-        var out = [0.0]
-        out.reserveCapacity(pts.count)
-        for i in 1 ..< max(pts.count, 1) {
-            out.append(out[i - 1] + meters(pts[i - 1], pts[i]))
+    nonisolated static func cumulativeDistances(_ pts: [CLLocationCoordinate2D]) -> [Double] {
+        var out = [Double](repeating: 0, count: pts.count)
+        if pts.count > 1 {
+            for i in 1 ..< pts.count { out[i] = out[i - 1] + meters(pts[i - 1], pts[i]) }
         }
         return out
     }
 
-    static func meters(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
-        let kx = 111_320.0 * cos((a.latitude + b.latitude) / 2 * .pi / 180)
-        let dy = (b.latitude - a.latitude) * 111_320.0
-        let dx = (b.longitude - a.longitude) * kx
+    nonisolated static func meters(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
+        let k = cos((a.latitude + b.latitude) / 2 * .pi / 180)
+        let dx = (b.longitude - a.longitude) * 111_320 * k
+        let dy = (b.latitude - a.latitude) * 110_540
         return (dx * dx + dy * dy).squareRoot()
     }
 
-    /// Nearest point on the polyline: distance along it and offset from it.
-    static func along(_ pts: [CLLocationCoordinate2D], _ cum: [Double],
-                      _ p: CLLocationCoordinate2D) -> (along: Double, offset: Double) {
-        guard pts.count >= 2 else { return (0, .infinity) }
-        var best = (along: 0.0, offset: Double.infinity)
-        let kx = 111_320.0 * cos(p.latitude * .pi / 180)
-        let ky = 111_320.0
-        // Coarse pass every 8th vertex, exact segment test around hits.
-        var candidates: [Int] = []
+    /// Nearest point on the polyline: distance along it, offset from it,
+    /// and the segment index. With `near`, a window around the last
+    /// segment is searched first (the driver moves forward); the full
+    /// coarse pass is the fallback.
+    nonisolated static func along(_ pts: [CLLocationCoordinate2D], _ cum: [Double], _ p: CLLocationCoordinate2D,
+                                  near: Int?) -> (along: Double, offset: Double, segment: Int) {
+        guard pts.count >= 2 else { return (0, .infinity, 0) }
+        let kx = 111_320.0 * cos(p.latitude * .pi / 180), ky = 111_320.0
+        var best = (along: 0.0, offset: Double.infinity, segment: 0)
+        func test(_ j: Int) {
+            let a = pts[j], b = pts[j + 1]
+            let ax = (a.longitude - p.longitude) * kx, ay = (a.latitude - p.latitude) * ky
+            let bx = (b.longitude - p.longitude) * kx, by = (b.latitude - p.latitude) * ky
+            let dx = bx - ax, dy = by - ay
+            let len2 = dx * dx + dy * dy
+            let t = len2 == 0 ? 0 : max(0, min(1, -(ax * dx + ay * dy) / len2))
+            let ox = ax + t * dx, oy = ay + t * dy
+            let offset = (ox * ox + oy * oy).squareRoot()
+            if offset < best.offset { best = (cum[j] + t * (cum[j + 1] - cum[j]), offset, j) }
+        }
+        if let near {
+            for j in max(0, near - 20) ..< min(pts.count - 1, near + 60) { test(j) }
+            if best.offset < 120 { return best }
+        }
+        best = (0, .infinity, 0)
         var i = 0
         while i < pts.count {
-            if meters(pts[i], p) < 3000 { candidates.append(i) }
-            i += 8
-        }
-        var checked = Set<Int>()
-        for c in candidates {
-            for j in max(0, c - 8) ..< min(pts.count - 1, c + 8) where !checked.contains(j) {
-                checked.insert(j)
-                let a = pts[j], b = pts[j + 1]
-                let ax = (a.longitude - p.longitude) * kx, ay = (a.latitude - p.latitude) * ky
-                let bx = (b.longitude - p.longitude) * kx, by = (b.latitude - p.latitude) * ky
-                let dx = bx - ax, dy = by - ay
-                let len2 = dx * dx + dy * dy
-                let t = len2 == 0 ? 0 : max(0, min(1, -(ax * dx + ay * dy) / len2))
-                let ox = ax + t * dx, oy = ay + t * dy
-                let offset = (ox * ox + oy * oy).squareRoot()
-                if offset < best.offset {
-                    best = (cum[j] + t * (cum[j + 1] - cum[j]), offset)
-                }
+            if meters(pts[i], p) < 3000 {
+                for j in max(0, i - 8) ..< min(pts.count - 1, i + 8) { test(j) }
             }
+            i += 8
         }
         return best
     }

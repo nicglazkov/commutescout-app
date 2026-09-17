@@ -8,6 +8,23 @@ enum Backend {
     static let base = URL(string: "https://commutescout.com")!
     static let navRouteURL = base.appendingPathComponent("api/nav/route")
     static let styleURL = base.appendingPathComponent("api/tiles/style.json")
+    static let trafficTiles = base.absoluteString + "/api/traffictile/{z}/{x}/{y}.png"
+
+    /// The base map: light, dark or outdoors, all through the proxy.
+    static func styleURL(_ style: String) -> URL {
+        var c = URLComponents(url: styleURL, resolvingAgainstBaseURL: false)!
+        c.queryItems = [URLQueryItem(name: "style", value: style)]
+        return c.url!
+    }
+
+    /// The website page focused on a spot, the same link the site shares.
+    static func mapURL(lat: Double, lon: Double, kind: String? = nil) -> URL {
+        var c = URLComponents(string: "https://commutescout.com/map")!
+        var items = [URLQueryItem(name: "focus", value: String(format: "%.5f,%.5f", lat, lon))]
+        if let kind { items.append(URLQueryItem(name: "k", value: kind)) }
+        c.queryItems = items
+        return c.url!
+    }
 
     static let session: URLSession = {
         let config = URLSessionConfiguration.default
@@ -94,10 +111,67 @@ struct RoadMarker: Decodable, Identifiable, Hashable {
     let flareKind: String?
     let source: String?
     let description: String?
+    let area: String?
+    let dir: String?
+    let reported: String?
+    let county: String?
+    let delayMin: Double?
+    let lanes: String?
+    let since: Double?      // epoch seconds
+    let until: Double?
+    let work: String?
+    let facility: String?
 
     enum CodingKeys: String, CodingKey {
         case kind, lat, lon, id, type, cls, label, location, route, status, name, source, description
+        case area, dir, reported, county, lanes, since, until, work, facility
         case flareKind = "flare_kind"
+        case delayMin = "delay_min"
+    }
+
+    /// The lines under the title in the marker card.
+    var detailLines: [String] {
+        var out: [String] = []
+        if kind == "incident" {
+            if let location, !location.isEmpty { out.append(location) }
+            let where_ = [dir, area].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+            if !where_.isEmpty { out.append(where_) }
+            if let reported { out.append("Reported " + Self.when(reported)) }
+        } else if kind == "lane_closure" {
+            if let lanes, !lanes.isEmpty { out.append(lanes) }
+            if let work, !work.isEmpty { out.append(work) }
+            let span = [since.map { "from " + Self.when(epoch: $0) }, until.map { "until " + Self.when(epoch: $0) }].compactMap { $0 }
+            if !span.isEmpty { out.append(span.joined(separator: " ")) }
+            if let delayMin, delayMin > 0 { out.append("Expect about \(Int(delayMin)) min of delay") }
+            if let county, !county.isEmpty { out.append(county + " County") }
+        } else if kind == "chain_control" {
+            if let location, !location.isEmpty { out.append(location) }
+        } else if kind == "wildfire" {
+            if let county, !county.isEmpty { out.append(county + " County") }
+            if let reported { out.append("Updated " + Self.when(reported)) }
+        } else if kind == "plugin" {
+            if let source, !source.isEmpty { out.append("Reported through " + source) }
+            if let reported { out.append(Self.when(reported)) }
+        }
+        return out
+    }
+
+    /// A shareable link to this spot on the website.
+    var webURL: URL { Backend.mapURL(lat: lat, lon: lon, kind: kind) }
+
+    static func when(epoch: Double) -> String {
+        let rel = RelativeDateTimeFormatter()
+        rel.unitsStyle = .short
+        return rel.localizedString(for: Date(timeIntervalSince1970: epoch), relativeTo: Date())
+    }
+
+    static func when(_ iso: String) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        guard let d = f.date(from: iso) ?? { f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f.date(from: iso) }() else { return iso }
+        let rel = RelativeDateTimeFormatter()
+        rel.unitsStyle = .short
+        return rel.localizedString(for: d, relativeTo: Date())
     }
 
     var coordinate: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
@@ -159,7 +233,8 @@ private struct MapDataResponse: Decodable { let markers: [RoadMarker] }
 enum LiveData {
     static let kinds = "incident,closure,chain,fire,plugin"
 
-    static func markers(in box: (south: Double, west: Double, north: Double, east: Double)) async throws -> [RoadMarker] {
+    static func markers(in box: (south: Double, west: Double, north: Double, east: Double),
+                        kinds: String = kinds) async throws -> [RoadMarker] {
         let bbox = String(format: "%.3f,%.3f,%.3f,%.3f", box.south, box.west, box.north, box.east)
         return try await Backend.get("api/mapdata", query: ["bbox": bbox, "kinds": kinds],
                                      as: MapDataResponse.self).markers
