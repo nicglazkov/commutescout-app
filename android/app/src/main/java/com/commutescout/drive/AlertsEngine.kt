@@ -2,6 +2,7 @@ package com.commutescout.drive
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -54,6 +55,7 @@ class AlertsEngine(context: Context) {
     }
 
     companion object {
+        private const val TAG = "Alerts"
         const val ANNOUNCE_AHEAD_METERS = 1500.0
         const val REFRESH_MS = 60_000L
 
@@ -97,6 +99,7 @@ class AlertsEngine(context: Context) {
     }
 
     fun start(coordinates: List<LatLon>) {
+        Log.i(TAG, "alerts start: ${coordinates.size} route points")
         stop()
         route = coordinates
         cumulative = cumulativeDistances(coordinates)
@@ -140,12 +143,15 @@ class AlertsEngine(context: Context) {
 
     private suspend fun refresh() {
         val b = box ?: return
-        val markers = runCatching { LiveData.markers(b[0], b[1], b[2], b[3]) }.getOrNull() ?: return
+        Log.i(TAG, "alerts refresh in box ${b.toList()}")
+        val markers = runCatching { LiveData.markers(b[0], b[1], b[2], b[3]) }
+            .onFailure { Log.w(TAG, "alerts fetch failed: $it") }.getOrNull() ?: return
         val pts = route; val cum = cumulative
         all = markers.mapNotNull { m ->
             val (along, off) = along(pts, cum, LatLon(m.lat, m.lon))
             if (off <= m.corridorMeters) Upcoming(m, along) else null
         }.sortedBy { it.alongMeters }
+        Log.i(TAG, "alerts: ${markers.size} markers in box, ${all.size} on the route")
     }
 
     fun shutdown() {

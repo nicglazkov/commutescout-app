@@ -295,7 +295,7 @@ private fun SearchBar(model: DriveViewModel) {
         TextField(
             value = text, onValueChange = { text = it; schedule(it) },
             modifier = Modifier.fillMaxWidth().shadow(4.dp, RoundedCornerShape(12.dp)).onFocusChanged { focused = it.isFocused },
-            placeholder = { Text("Search a place, address or coordinates") },
+            placeholder = { Text("Search a place or address", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             leadingIcon = { Icon(Icons.Default.Search, null) },
             trailingIcon = { if (text.isNotEmpty()) IconButton({ text = ""; results = emptyList() }) { Icon(Icons.Default.Close, "Clear") } },
             singleLine = true, shape = RoundedCornerShape(12.dp),
@@ -415,7 +415,7 @@ private fun RoutesCard(routes: List<Route>, place: Place, model: DriveViewModel)
 /** The next road event on the route, above the trip bar. Tap to hear it again. */
 @Composable
 private fun AlertStrip(item: Upcoming, along: Double, more: Int, onTap: () -> Unit) {
-    val tint = when (item.marker.kind) { "closure" -> Color(0xFFD32F2F); "chain" -> Color(0xFF1976D2); "fire" -> Color(0xFFF57C00); else -> Color(0xFFF9A825) }
+    val tint = when (item.marker.kind) { "lane_closure" -> Color(0xFFD32F2F); "chain_control" -> Color(0xFF1976D2); "wildfire" -> Color(0xFFF57C00); else -> Color(0xFFF9A825) }
     Card(Modifier.padding(horizontal = 12.dp).fillMaxWidth().clickable(onClick = onTap), elevation = CardDefaults.cardElevation(6.dp)) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Warning, null, tint = tint)
@@ -477,6 +477,7 @@ private fun PlaceRow(label: String, p: Place, model: DriveViewModel) {
 /** Scripted drive for automated testing: `-e csAutoDrive true` on launch (debug only). */
 object AutoDrive {
     fun run(model: DriveViewModel) {
+        android.util.Log.i("AutoDrive", "scripted drive requested")
         model.simulating.value = true
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
             delay(3000)
@@ -486,6 +487,7 @@ object AutoDrive {
             model.routes(place)
             var tries = 0
             while (model.state.value !is DriveState.Choosing && tries++ < 40) delay(500)
+            android.util.Log.i("AutoDrive", "state after routing: ${model.state.value::class.simpleName}")
             (model.state.value as? DriveState.Choosing)?.let { c -> model.start(c.routes.first(), c.place) }
         }
     }

@@ -74,14 +74,15 @@ data class RoadMarker(
 ) {
     val key: String get() = "$kind:${id ?: "%.4f,%.4f".format(lat, lon)}"
 
-    /** Short text for the strip and for speech. */
+    /** Short text for the strip and for speech. Kinds match the web map's markers. */
     val displayTitle: String
         get() = when (kind) {
-            "closure" -> listOfNotNull(route ?: name, "closed", status?.takeIf { it.isNotBlank() }?.let { "($it)" }, location?.let { "@ $it" }).joinToString(" ")
-            "chain" -> listOfNotNull(route ?: name, "chain controls", status?.let { "($it)" }).joinToString(" ")
-            "fire" -> listOfNotNull(name ?: "Fire", status?.let { "($it)" }).joinToString(" ")
-            "plugin" -> listOfNotNull(label ?: flare_kind?.replace('_', ' ') ?: "Report", source?.let { "via $it" }).joinToString(" ")
-            else -> listOfNotNull(label ?: type ?: "Incident", location?.let { "@ $it" }).joinToString(" ")
+            "incident" -> label ?: type ?: "Incident"
+            "lane_closure" -> label ?: "Lane closure"
+            "chain_control" -> "Chain control ${status ?: ""} on ${route ?: ""}".trim()
+            "wildfire" -> "${name ?: "Wildfire"} Fire"
+            "plugin" -> description ?: (flare_kind ?: "Report").replace('_', ' ').replaceFirstChar { it.uppercase() }
+            else -> label ?: kind
         }
 
     val spokenTitle: String get() = displayTitle.replace("@", "at").replace("(", "").replace(")", "")
@@ -89,8 +90,8 @@ data class RoadMarker(
     /** How far from the route a marker still counts as being on it. */
     val corridorMeters: Double
         get() = when (kind) {
-            "chain" -> 1000.0
-            "fire" -> 12000.0
+            "chain_control" -> 1000.0
+            "wildfire" -> 12000.0
             else -> 300.0
         }
 }
@@ -104,6 +105,6 @@ object LiveData {
     suspend fun markers(south: Double, west: Double, north: Double, east: Double): List<RoadMarker> =
         Backend.get<MapData>(
             "/api/mapdata",
-            mapOf("bbox" to "%.4f,%.4f,%.4f,%.4f".format(west, south, east, north), "kinds" to KINDS),
+            mapOf("bbox" to "%.4f,%.4f,%.4f,%.4f".format(south, west, north, east), "kinds" to KINDS),
         ).markers
 }

@@ -21,7 +21,12 @@ import com.stadiamaps.ferrostar.core.withJsonOptions
 import com.stadiamaps.ferrostar.googleplayservices.FusedNavigationLocationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import com.stadiamaps.ferrostar.core.NavigationUiState
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -117,6 +122,14 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     val places get() = Engine.places
     val alerts get() = Engine.alerts
 
+    // While browsing the puck follows the phone's own fix; Ferrostar only
+    // reports a location during a trip.
+    private val browsingLocation = MutableStateFlow<UserLocation?>(null)
+    override val navigationUiState: StateFlow<NavigationUiState> =
+        combine(super.navigationUiState, browsingLocation) { ui, loc ->
+            if (ui.isNavigating() || loc == null) ui else ui.copy(location = loc)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), NavigationUiState.empty())
+
     init {
         viewModelScope.launch {
             navigationUiState.collect { s ->
@@ -132,9 +145,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     fun setLocationPermission(granted: Boolean) {
         _hasPermission.value = granted
         if (granted) viewModelScope.launch {
-            Engine.location.locationUpdates(5000L).collect { l ->
-                if (!navigationUiState.value.isNavigating()) _here.value = LatLon(l.latitude, l.longitude)
-            }
+            Engine.location.locationUpdates(3000L).collect { l -> browsingLocation.value = l.toUserLocation() }
         }
     }
 
@@ -170,6 +181,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     }
 
     fun start(route: Route, place: Place) {
+        Log.i("DriveViewModel", "start navigation to ${place.shortName}")
         try {
             if (simulating.value) Engine.location.enableSimulationOn(route)
             Engine.core.startNavigation(route)
@@ -178,6 +190,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             Engine.alerts.start(route.geometry.map { LatLon(it.lat, it.lng) })
             _state.value = DriveState.Navigating(place)
         } catch (e: Exception) {
+            Log.e("DriveViewModel", "start failed", e)
             _error.value = e.message ?: "Could not start navigation."
         }
     }
