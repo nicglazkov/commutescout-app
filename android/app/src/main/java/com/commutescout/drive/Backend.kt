@@ -90,8 +90,13 @@ data class RoadMarker(
     val work: String? = null,
     val facility: String? = null,
     val tier: String? = null,          // approved, unreviewed or private, for plugin markers
+    val acres: Double? = null,         // wildfires
+    val contained: Double? = null,     // wildfires, percent
 ) {
     val key: String get() = "$kind:${id ?: "%.4f,%.4f".format(lat, lon)}"
+
+    /** Fires too small or too contained to announce on a drive. */
+    val tooMinorToAnnounce: Boolean get() = kind == "wildfire" && ((contained ?: 0.0) >= 90 || (acres != null && acres < 10))
 
     /** The lines under the title in the marker card. */
     val detailLines: List<String>
@@ -156,7 +161,8 @@ data class RoadMarker(
     val corridorMeters: Double
         get() = when (kind) {
             "chain_control" -> 1000.0
-            "wildfire" -> 12000.0
+            // A fire matters at a distance only when it is big.
+            "wildfire" -> if ((acres ?: 0.0) >= 1000) 5000.0 else if ((acres ?: 0.0) >= 100) 3000.0 else 1500.0
             else -> 300.0
         }
 }

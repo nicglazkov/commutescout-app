@@ -122,10 +122,12 @@ struct RoadMarker: Decodable, Identifiable, Hashable {
     let work: String?
     let facility: String?
     let tier: String?          // approved, unreviewed or private, for plugin markers
+    var acres: Double? = nil         // wildfires
+    var contained: Double? = nil     // wildfires, percent
 
     enum CodingKeys: String, CodingKey {
         case kind, lat, lon, id, type, cls, label, location, route, status, name, source, description
-        case area, dir, reported, county, lanes, since, until, work, facility, tier
+        case area, dir, reported, county, lanes, since, until, work, facility, tier, acres, contained
         case flareKind = "flare_kind"
         case delayMin = "delay_min"
     }
@@ -223,12 +225,23 @@ struct RoadMarker: Decodable, Identifiable, Hashable {
     }
 
     /// Meters either side of the route that count as "on it".
+    /// How far from the route a marker still counts as being on it. A fire
+    /// matters at a distance only when it is big; a spot fire out of sight
+    /// of the road is not worth a word.
     var corridorMeters: Double {
         switch kind {
-        case "wildfire": return 12_000
+        case "wildfire": return (acres ?? 0) >= 1_000 ? 5_000 : (acres ?? 0) >= 100 ? 3_000 : 1_500
         case "chain_control": return 1_000
         default: return 300
         }
+    }
+
+    /// Fires too small or too contained to announce on a drive.
+    var tooMinorToAnnounce: Bool {
+        guard kind == "wildfire" else { return false }
+        if let c = contained, c >= 90 { return true }
+        if let a = acres, a < 10 { return true }
+        return false
     }
 }
 

@@ -208,6 +208,7 @@ class AlertsEngine(context: Context) {
         val pts = route; val cum = cumulative
         all = withContext(Dispatchers.Default) {
             markers.mapNotNull { m ->
+                if (m.tooMinorToAnnounce) return@mapNotNull null
                 val hit = along(pts, cum, LatLon(m.lat, m.lon))
                 if (hit.offset > m.corridorMeters) return@mapNotNull null
                 // A closure for the other direction of a divided road is not ahead of this driver.

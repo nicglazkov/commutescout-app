@@ -324,6 +324,7 @@ final class AppModel: ObservableObject {
 
     func routes(to place: Place) async {
         guard let from = origin?.coordinate ?? here else {
+            DriveLog.note("routes: no position yet (denied=\(location.denied))")
             errorMessage = location.denied
                 ? "Location is off for CommuteScout Drive. Turn it on in Settings to navigate."
                 : "Waiting for your location."
@@ -344,6 +345,7 @@ final class AppModel: ObservableObject {
                     edgePadding: .init(top: 140, left: 40, bottom: 340, right: 40))
             }
         } catch {
+            DriveLog.note("routes failed to '\(place.name)': \(error)")
             errorMessage = (error as? DriveError)?.errorDescription
                 ?? "Could not get a route. Check your connection and try again."
             state = .found(place)
