@@ -23,6 +23,9 @@ final class AlertsEngine: ObservableObject {
     @Published private(set) var ahead: [Upcoming] = []
     @Published private(set) var hereAlong: Double = 0
     @Published private(set) var lastAnnounced: String?
+    /// Identical text is not repeated within this window: several markers can
+    /// share one label (the same ramp closure recorded per lane).
+    private var spokenAt: [String: Date] = [:]
     @Published var spoken = true
     var announceAheadMeters = 1500.0
     /// Per-kind rules from Settings; nil means the one distance above.
@@ -99,6 +102,8 @@ final class AlertsEngine: ObservableObject {
 
     private func announce(_ marker: RoadMarker, in gap: Double) {
         let text = marker.spokenTitle + (gap > 200 ? ", in " + Units.spoken(gap) : "")
+        if let t = spokenAt[marker.spokenTitle], Date().timeIntervalSince(t) < 90 { return }
+        spokenAt[marker.spokenTitle] = Date()
         lastAnnounced = text
         DriveLog.note("alert spoken: \(marker.kind) '\(marker.displayTitle)' in \(DriveLog.meters(gap))")
         let utterance = AVSpeechUtterance(string: text)
@@ -113,13 +118,43 @@ final class AlertsEngine: ObservableObject {
         let found: [Upcoming] = await Task.detached(priority: .utility) {
             markers.compactMap { m in
                 let hit = Self.along(pts, cum, m.coordinate, near: nil)
-                return hit.offset <= m.corridorMeters ? Upcoming(marker: m, alongMeters: hit.along) : nil
+                guard hit.offset <= m.corridorMeters else { return nil }
+                // A closure for the other direction of a divided road is not ahead of this driver.
+                if let h = Self.heading(of: m), hit.segment + 1 < pts.count {
+                    let rb = Self.bearing(pts[hit.segment], pts[hit.segment + 1])
+                    if Self.angleBetween(h, rb) > 110 { return nil }
+                }
+                return Upcoming(marker: m, alongMeters: hit.along)
             }.sorted { $0.alongMeters < $1.alongMeters }
         }.value
         all = found
     }
 
     // MARK: geometry (plain functions, safe off the main actor)
+
+    /// The direction a marker applies to, as a compass bearing, from its
+    /// `dir` field or a "(northbound)" / "NB" in its label. Nil when it
+    /// applies to both directions or says nothing.
+    nonisolated static func heading(of m: RoadMarker) -> Double? {
+        let text = ((m.dir ?? "") + " " + m.displayTitle).lowercased()
+        let table: [(String, Double)] = [("northbound", 0), ("eastbound", 90), ("southbound", 180), ("westbound", 270),
+                                          (" nb", 0), (" eb", 90), (" sb", 180), (" wb", 270)]
+        var found: [Double] = []
+        for (k, b) in table where text.contains(k) || text.hasPrefix(k.trimmingCharacters(in: .whitespaces)) { found.append(b) }
+        return found.count == 1 ? found[0] : nil   // "north and southbound" says nothing
+    }
+
+    nonisolated static func bearing(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
+        let k = cos((a.latitude + b.latitude) / 2 * .pi / 180)
+        let dx = (b.longitude - a.longitude) * k, dy = b.latitude - a.latitude
+        let deg = atan2(dx, dy) * 180 / .pi
+        return deg < 0 ? deg + 360 : deg
+    }
+
+    nonisolated static func angleBetween(_ a: Double, _ b: Double) -> Double {
+        let d = abs(a - b).truncatingRemainder(dividingBy: 360)
+        return d > 180 ? 360 - d : d
+    }
 
     nonisolated static func cumulativeDistances(_ pts: [CLLocationCoordinate2D]) -> [Double] {
         var out = [Double](repeating: 0, count: pts.count)

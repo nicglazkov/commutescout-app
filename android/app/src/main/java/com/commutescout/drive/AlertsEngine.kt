@@ -82,6 +82,26 @@ class AlertsEngine(context: Context) {
 
         data class Hit(val along: Double, val offset: Double, val segment: Int)
 
+        /** The direction a marker applies to as a bearing, from `dir` or "(northbound)" / "NB" in the label; null when both or unknown. */
+        fun headingOf(m: RoadMarker): Double? {
+            val text = ((m.dir ?: "") + " " + (m.label ?: "")).lowercase()
+            val table = listOf("northbound" to 0.0, "eastbound" to 90.0, "southbound" to 180.0, "westbound" to 270.0,
+                               " nb" to 0.0, " eb" to 90.0, " sb" to 180.0, " wb" to 270.0)
+            val found = table.filter { (k, _) -> text.contains(k) || text.startsWith(k.trim()) }.map { it.second }
+            return if (found.size == 1) found[0] else null
+        }
+
+        fun bearing(a: LatLon, b: LatLon): Double {
+            val k = Math.cos(Math.toRadians((a.lat + b.lat) / 2))
+            val deg = Math.toDegrees(Math.atan2((b.lon - a.lon) * k, b.lat - a.lat))
+            return if (deg < 0) deg + 360 else deg
+        }
+
+        fun angleBetween(a: Double, b: Double): Double {
+            val d = Math.abs(a - b) % 360
+            return if (d > 180) 360 - d else d
+        }
+
         /**
          * Nearest point on the polyline. With [near], a window around that
          * segment is tried first; the coarse full pass is the fallback.
@@ -161,8 +181,15 @@ class AlertsEngine(context: Context) {
         }
     }
 
+    // Identical text is not repeated within 90 s: several markers can share
+    // one label (the same ramp closure recorded per lane).
+    private val spokenAt = HashMap<String, Long>()
+
     fun say(marker: RoadMarker, gap: Double = 0.0) {
         if (!ttsReady) return
+        val now = System.currentTimeMillis()
+        if (gap > 0 && (spokenAt[marker.spokenTitle] ?: 0L) > now - 90_000) return
+        spokenAt[marker.spokenTitle] = now
         val text = marker.spokenTitle + if (gap > 200) ", in " + Units.spoken(gap) else ""
         tts?.speak(text, TextToSpeech.QUEUE_ADD, null, marker.key)
     }
@@ -175,7 +202,12 @@ class AlertsEngine(context: Context) {
         all = withContext(Dispatchers.Default) {
             markers.mapNotNull { m ->
                 val hit = along(pts, cum, LatLon(m.lat, m.lon))
-                if (hit.offset <= m.corridorMeters) Upcoming(m, hit.along) else null
+                if (hit.offset > m.corridorMeters) return@mapNotNull null
+                // A closure for the other direction of a divided road is not ahead of this driver.
+                val h = headingOf(m)
+                if (h != null && hit.segment + 1 < pts.size &&
+                    angleBetween(h, bearing(pts[hit.segment], pts[hit.segment + 1])) > 110) return@mapNotNull null
+                Upcoming(m, hit.along)
             }.sortedBy { it.alongMeters }
         }
         Log.i(TAG, "alerts: ${markers.size} markers in box, ${all.size} on the route")
