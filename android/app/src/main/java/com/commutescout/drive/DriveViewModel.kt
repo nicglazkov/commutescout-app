@@ -11,6 +11,14 @@ import com.stadiamaps.ferrostar.composeui.notification.DefaultForegroundNotifica
 import com.stadiamaps.ferrostar.core.AlternativeRouteProcessor
 import com.stadiamaps.ferrostar.core.AndroidTtsObserver
 import com.stadiamaps.ferrostar.core.CorrectiveAction
+import com.stadiamaps.ferrostar.core.CustomRouteProvider
+import com.stadiamaps.ferrostar.core.FerrostarSessionBuilder
+import com.stadiamaps.ferrostar.core.RouteProvider
+import uniffi.ferrostar.RouteAdapter
+import uniffi.ferrostar.RouteRequest
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import com.stadiamaps.ferrostar.core.DefaultNavigationViewModel
 import com.stadiamaps.ferrostar.core.FerrostarCore
 import com.stadiamaps.ferrostar.core.NavigationUiState
@@ -82,39 +90,57 @@ object Engine {
 
     val tts: AndroidTtsObserver by lazy { AndroidTtsObserver(app) }
 
-    private var builtFor = ""
-    private var _core: FerrostarCore? = null
+    // One core for the life of the process. The view model subscribes to
+    // it once, so it must never be swapped; route options are read at
+    // request time by the provider below instead.
+    val core: FerrostarCore by lazy { makeCore() }
 
-    /** The core for the current route settings; rebuilt when they change and nothing is running. */
-    val core: FerrostarCore
-        get() {
-            val key = prefs.routingKey
-            val existing = _core
-            if (existing != null && (builtFor == key || existing.state.value.tripState !is uniffi.ferrostar.TripState.Idle)) return existing
-            val c = makeCore()
-            _core = c; builtFor = key
-            return c
+    /**
+     * Routing goes through commutescout.com: the key stays on the server and
+     * every route carries the closure exclusions. Units and the avoid
+     * options come from Prefs on every request, so a change in Settings
+     * applies to the next route without rebuilding the core.
+     */
+    private class LiveOptionsRouteProvider : CustomRouteProvider {
+        override suspend fun getRoutes(userLocation: UserLocation, waypoints: List<Waypoint>): List<Route> {
+            val options = mutableMapOf<String, Any>("units" to if (prefs.useMiles) "miles" else "kilometers")
+            val costing = prefs.costingOptions
+            if (costing.isNotEmpty()) options["costing_options"] = costing
+            val adapter = RouteAdapter.fromWellKnownRouteProvider(
+                WellKnownRouteProvider.Valhalla(Backend.NAV_ROUTE_URL, "auto").withJsonOptions(options))
+            val body = withContext(Dispatchers.IO) {
+                val b = Request.Builder()
+                when (val req = adapter.generateRequest(userLocation, waypoints)) {
+                    is RouteRequest.HttpPost -> {
+                        b.url(req.url).post(req.body.toRequestBody("application/json".toMediaType()))
+                        req.headers.forEach { (k, v) -> b.header(k, v) }
+                    }
+                    is RouteRequest.HttpGet -> { b.url(req.url); req.headers.forEach { (k, v) -> b.header(k, v) } }
+                }
+                Backend.http.newCall(b.build()).execute().use { r ->
+                    if (!r.isSuccessful) throw BackendError("Routing answered HTTP ${r.code}.")
+                    r.body.bytes()
+                }
+            }
+            return adapter.parseResponse(body)
         }
+    }
 
     private fun makeCore(): FerrostarCore {
-        // Routing goes through commutescout.com: the key stays on the
-        // server and every route carries the closure exclusions.
-        val options = mutableMapOf<String, Any>("units" to if (prefs.useMiles) "miles" else "kilometers")
-        val costing = prefs.costingOptions
-        if (costing.isNotEmpty()) options["costing_options"] = costing
-        val provider = WellKnownRouteProvider.Valhalla(Backend.NAV_ROUTE_URL, "auto").withJsonOptions(options)
+        val config = NavigationControllerConfig(
+            WaypointAdvanceMode.WaypointWithinRange(100.0),
+            stepAdvanceDistanceEntryAndExit(30u, 5u, 32u),
+            stepAdvanceDistanceToEndOfStep(10u, 32u),
+            RouteDeviationTracking.StaticThreshold(15u, 50.0),
+            CourseFiltering.SNAP_TO_ROUTE,
+        )
         val core = FerrostarCore(
-            wellKnownRouteProvider = provider,
+            routeProvider = RouteProvider.CustomProvider(LiveOptionsRouteProvider()),
             httpClient = Backend.http.toOkHttpClientProvider(),
             locationProvider = location,
             foregroundServiceManager = FerrostarForegroundServiceManager(app, DefaultForegroundNotificationBuilder(app)),
-            navigationControllerConfig = NavigationControllerConfig(
-                WaypointAdvanceMode.WaypointWithinRange(100.0),
-                stepAdvanceDistanceEntryAndExit(30u, 5u, 32u),
-                stepAdvanceDistanceToEndOfStep(10u, 32u),
-                RouteDeviationTracking.StaticThreshold(15u, 50.0),
-                CourseFiltering.SNAP_TO_ROUTE,
-            ),
+            navigationControllerConfig = config,
+            sessionBuilder = FerrostarSessionBuilder(config),
         )
         // Rerouting: when the driver leaves the route, ask for a new one and take it.
         core.deviationHandler = RouteDeviationHandler { _, _, remaining -> CorrectiveAction.GetNewRoutes(remaining) }

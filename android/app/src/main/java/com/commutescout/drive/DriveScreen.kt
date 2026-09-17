@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -495,12 +498,14 @@ private fun SearchBar(model: DriveViewModel) {
             colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
         )
         if (focused && text.isEmpty()) {
+            // Quick picks in the order the web map uses: Home, Work, up to 5
+            // favorites, then the last 10 destinations. Any of them can be removed.
             Card(Modifier.padding(top = 6.dp).fillMaxWidth()) {
-                Column {
-                    model.places.recents.take(5).forEach { p -> RowItem(Icons.Default.History, p.shortName, p.name) { pick(p.name, p.lat, p.lon) } }
-                    model.places.home?.let { p -> RowItem(Icons.Default.Home, "Home", p.shortName) { pick(p.name, p.lat, p.lon) } }
-                    model.places.work?.let { p -> RowItem(Icons.Default.Work, "Work", p.shortName) { pick(p.name, p.lat, p.lon) } }
-                    model.places.saved.take(6).forEach { p -> RowItem(Icons.Default.Star, p.shortName, p.name) { pick(p.name, p.lat, p.lon) } }
+                Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+                    model.places.home?.let { p -> RowItem(Icons.Default.Home, "Home", p.shortName, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
+                    model.places.work?.let { p -> RowItem(Icons.Default.Work, "Work", p.shortName, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
+                    model.places.saved.take(5).forEach { p -> RowItem(Icons.Default.Star, p.shortName, p.name, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
+                    model.places.recents.take(10).forEach { p -> RowItem(Icons.Default.History, p.shortName, p.name, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
                     if (places.isEmpty()) Text("Type a place, an address, or coordinates like 37.35, -121.94.",
                         Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -522,13 +527,16 @@ private fun SearchBar(model: DriveViewModel) {
 }
 
 @Composable
-private fun RowItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, sub: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun RowItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, sub: String, onRemove: (() -> Unit)? = null, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.width(10.dp))
-        Column {
+        Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
             Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (sub != title) Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (onRemove != null) IconButton(onRemove, Modifier.size(36.dp).testTag("remove-place")) {
+            Icon(Icons.Default.Close, "Remove $title", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

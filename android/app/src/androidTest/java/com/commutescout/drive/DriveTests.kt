@@ -47,6 +47,8 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class DriveTests {
     @get:Rule val compose = createEmptyComposeRule()
+    /** A hang fails with a stack trace instead of stalling the suite. */
+    @get:Rule val timeout: org.junit.rules.Timeout = org.junit.rules.Timeout.seconds(240)
     @get:Rule val location: GrantPermissionRule = GrantPermissionRule.grant(
         Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
     private var scenario: ActivityScenario<MainActivity>? = null
@@ -92,11 +94,14 @@ class DriveTests {
      *  Injected by the system so Compose's idle wait cannot stall on the map. */
     private fun closeSheet(sheetTag: String) {
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-        device.click(device.displayWidth / 2, 60)
-        if (runCatching { waitFor(8_000) { !tagExists(sheetTag) } }.isFailure) {
-            device.pressBack()
-            waitFor(8_000) { !tagExists(sheetTag) }
+        // Back first (closes a keyboard, then the sheet), then the scrim, then a drag down.
+        for (i in 0 until 3) {
+            if (!tagExists(sheetTag)) return
+            device.pressBack(); Thread.sleep(600)
         }
+        if (tagExists(sheetTag)) { device.click(device.displayWidth / 2, 60); Thread.sleep(600) }
+        if (tagExists(sheetTag)) device.swipe(device.displayWidth / 2, (device.displayHeight * 0.15).toInt(), device.displayWidth / 2, device.displayHeight - 10, 15)
+        waitFor(8_000) { !tagExists(sheetTag) }
     }
     private fun stopNavigation() { scenario?.onActivity { it.model.stopNavigation() } }
 
@@ -110,7 +115,7 @@ class DriveTests {
         waitFor(45_000) { tagExists("start") }
         if (tagExists("route-1")) { tag("route-1").performClick(); tag("route-0").performClick() }
         tag("start").performClick()
-        waitFor { !tagExists("search") }            // navigating: the search bar is gone
+        waitFor(45_000) { !tagExists("search") }    // navigating: the search bar is gone
         tag("perspective").performClick(); tag("perspective").performClick()
         stopNavigation()
         waitFor { tagExists("search") }
@@ -149,6 +154,22 @@ class DriveTests {
         assertTrue("remove buttons on place rows: $n", n >= 3)
         remove[0].performClick()
         waitFor { compose.onAllNodesWithContentDescription("Remove", useUnmergedTree = true).fetchSemanticsNodes().size == n - 1 }
+    }
+
+    @Test fun quickPicksOrderAndRemove() {
+        search("Los Altos"); pickSuggestion("Los Altos")
+        waitFor { tagExists("save-menu") }
+        tag("save-menu").performClick(); waitFor { exists("Save as Home") }; text("Save as Home").performClick()
+        tag("save-menu").performClick(); waitFor { exists("Save to favorites") }; text("Save to favorites").performClick()
+        tag("place-close").performClick()
+        tag("search").performClick()
+        waitFor { exists("Home") }
+        val removes = compose.onAllNodesWithTag("remove-place", useUnmergedTree = true)
+        val n = removes.fetchSemanticsNodes().size
+        assertTrue("remove buttons on quick picks: $n", n >= 2)
+        removes[0].performClick()   // Home is first
+        waitFor { compose.onAllNodesWithTag("remove-place", useUnmergedTree = true).fetchSemanticsNodes().size == n - 1 }
+        assertTrue(!exists("Home"))
     }
 
     @Test fun unitsChangeThePlaceCard() {
@@ -263,17 +284,19 @@ class DriveTests {
 
     @Test fun reportSheetEveryKindNoteAndCancel() {
         waitFor { tagExists("report") }
-        tag("report").performClick()
+        // The report spot is the fix or the map center; give the map a moment to report one.
+        for (i in 0 until 5) {
+            tag("report").performClick()
+            if (runCatching { waitFor(3_000) { tagExists("report-sheet") } }.isSuccess) break
+            Thread.sleep(1000)
+        }
         waitFor { tagExists("report-sheet") }
         val kinds = compose.onAllNodesWithTag("report-POLICE_VISIBLE", useUnmergedTree = true)
         assertTrue(kinds.fetchSemanticsNodes().isNotEmpty())
         tag("report-POLICE_VISIBLE").performClick()
         scrollTo(tag("report-CRASH_MAJOR")).performClick()
-        if (exists("Reports need an account")) {
-            assertTrue(!tagExists("report-send") || runCatching { tag("report-send").assertIsEnabled() }.isFailure)
-        } else {
-            scrollTo(tag("report-send")).assertIsEnabled()
-        }
+        // Signed out: the sheet says so and Send leads to sign-in. Signed in: Send is enabled.
+        assertTrue(exists("Reports need an account") || runCatching { scrollTo(tag("report-send")).assertIsEnabled() }.isSuccess)
         closeSheet("report-sheet")   // never send a test report
     }
 

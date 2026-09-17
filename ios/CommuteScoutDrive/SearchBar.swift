@@ -58,17 +58,30 @@ struct SearchBar: View {
             .prefix(3).map { $0 }
     }
 
+    /// Quick picks in the order the web map uses: Home, Work, up to 5
+    /// favorites, then the last 10 destinations. Any of them can be removed.
     private var shortcuts: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(model.places.recents.prefix(5)) { p in row(systemImage: "clock", title: p.shortName, sub: p.name) { pick(p) } }
-            if let home = model.places.home { row(systemImage: "house", title: "Home", sub: home.shortName) { pick(home) } }
-            if let work = model.places.work { row(systemImage: "briefcase", title: "Work", sub: work.shortName) { pick(work) } }
-            ForEach(model.places.saved.prefix(6)) { p in row(systemImage: "star", title: p.shortName, sub: p.name) { pick(p) } }
-            if model.places.places.isEmpty {
-                Text("Type a place, an address, or coordinates like 37.35, -121.94.")
-                    .font(.footnote).foregroundStyle(.secondary).padding(12)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if let home = model.places.home {
+                    row(systemImage: "house", title: "Home", sub: home.shortName, remove: { model.places.remove(home) }) { pick(home) }
+                }
+                if let work = model.places.work {
+                    row(systemImage: "briefcase", title: "Work", sub: work.shortName, remove: { model.places.remove(work) }) { pick(work) }
+                }
+                ForEach(model.places.saved.prefix(5)) { p in
+                    row(systemImage: "star", title: p.shortName, sub: p.name, remove: { model.places.remove(p) }) { pick(p) }
+                }
+                ForEach(model.places.recents.prefix(10)) { p in
+                    row(systemImage: "clock", title: p.shortName, sub: p.name, remove: { model.places.remove(p) }) { pick(p) }
+                }
+                if model.places.places.isEmpty {
+                    Text("Type a place, an address, or coordinates like 37.35, -121.94.")
+                        .font(.footnote).foregroundStyle(.secondary).padding(12)
+                }
             }
         }
+        .frame(maxHeight: 380)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .padding(.top, 6)
     }
@@ -91,20 +104,32 @@ struct SearchBar: View {
         .padding(.top, 6)
     }
 
-    private func row(systemImage: String, title: String, sub: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: systemImage).frame(width: 20).foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.body).foregroundStyle(.primary).lineLimit(1)
-                    if sub != title { Text(sub).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+    private func row(systemImage: String, title: String, sub: String, remove: (() -> Void)? = nil,
+                     action: @escaping () -> Void) -> some View {
+        HStack(spacing: 0) {
+            Button(action: action) {
+                HStack(spacing: 10) {
+                    Image(systemName: systemImage).frame(width: 20).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(title).font(.body).foregroundStyle(.primary).lineLimit(1)
+                        if sub != title { Text(sub).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                    }
+                    Spacer()
                 }
-                Spacer()
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            if let remove {
+                Button(action: remove) {
+                    Image(systemName: "xmark").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        .padding(10).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove \(title)")
+                .accessibilityIdentifier("remove-place")
+            }
         }
-        .buttonStyle(.plain)
     }
 
     private func pick(_ place: Place) {

@@ -102,6 +102,27 @@ final class CoverageUITests: XCTestCase {
                       "favorite as a shortcut")
     }
 
+    func testQuickPicksOrderAndRemove() {
+        // Save Home and a favorite, use a place, then the empty field lists
+        // Home, the favorite and the recent, each with a remove button.
+        search("Los Altos")
+        pickResult("Los Altos")
+        XCTAssertTrue(app.buttons["save-menu"].waitForExistence(timeout: 10))
+        app.buttons["save-menu"].tap(); app.buttons["Save as Home"].tap()
+        app.buttons["save-menu"].tap(); app.buttons["Save to favorites"].tap()
+        app.buttons["place-close"].tap()
+        app.textFields["search"].tap()
+        let home = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Home'")).firstMatch
+        XCTAssertTrue(home.waitForExistence(timeout: 5), "Home first")
+        let removes = app.buttons.matching(identifier: "remove-place")
+        XCTAssertGreaterThanOrEqual(removes.count, 2, "remove buttons on quick picks: \(removes.count)")
+        let before = removes.count
+        removes.element(boundBy: 0).tap()   // removes Home
+        XCTAssertTrue(app.buttons.matching(identifier: "remove-place").count < before, "one fewer quick pick")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Home'")).firstMatch.exists, "Home gone")
+        app.buttons["search-clear"].exists ? app.buttons["search-clear"].tap() : ()
+    }
+
     func testUnitsChangeThePlaceCard() {
         openSettings()
         app.buttons["Kilometers"].tap()

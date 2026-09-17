@@ -29,6 +29,9 @@ android {
         applicationId = "com.commutescout.drive"
         minSdk = 26
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Each UI test in its own process: the map's native state does not
+        // survive many launches in one process on the emulator.
+        testInstrumentationRunnerArguments["clearPackageData"] = "true"
         targetSdk = 36
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = "0.2.2"
@@ -65,6 +68,7 @@ android {
         compose = true
         buildConfig = true
     }
+    testOptions { execution = "ANDROIDX_TEST_ORCHESTRATOR" }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
@@ -103,5 +107,6 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:rules:1.6.1")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+    androidTestUtil("androidx.test:orchestrator:1.5.1")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

@@ -56,6 +56,10 @@ EOF
     xcrun altool --upload-app -f "$DD"/export/*.ipa -t ios \
       --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" 2>&1 | tail -6
     ;;
+  test)
+    # UI tests on the simulator. ONLY_TESTING narrows the run (comma-separated).
+    xcodebuild test -project CommuteScoutDrive.xcodeproj -scheme CommuteScoutDrive       -destination "platform=iOS Simulator,name=$SIM" -derivedDataPath "$DD" -skipMacroValidation       $(for t in ${ONLY_TESTING//,/ }; do printf -- "-only-testing:CommuteScoutDriveUITests/%s " "$t"; done)       2>&1 | tee "$DD/last-sim-test.log" | grep -E "Test Case|passed|failed|error:|\*\* TEST" | tail -60
+    ;;
   test-device)
     # XCTest on the phone: Debug builds sign with the Development profiles
     # from asc-setup/devcert.py (see project.yml). The phone must be
