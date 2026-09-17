@@ -100,6 +100,8 @@ EOF
     xcodebuild -exportArchive -archivePath "$DD/CommuteScoutDrive.xcarchive" \
       -exportOptionsPlist "$DD/export-adhoc.plist" -exportPath "$DD/export-adhoc" \
       OTHER_CODE_SIGN_FLAGS="--keychain $KC" 2>&1 | tail -8
+    # INSTALL=no builds and exports only (install later with: xcrun devicectl device install app ...).
+    if [ "${INSTALL:-yes}" = "no" ]; then echo "exported, not installed"; exit 0; fi
     xcrun devicectl device install app --device "$DEVICE" "$DD"/export-adhoc/*.ipa 2>&1 | tail -4
     xcrun devicectl device process launch --terminate-existing --device "$DEVICE" com.commutescout.drive 2>&1 | tail -2
     ;;
