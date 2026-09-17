@@ -33,7 +33,12 @@ struct ContentView: View {
             )
             .navigationSpeedLimit(speedLimit: model.prefs.showSpeedLimit ? model.core.annotation?.speedLimit : nil,
                                   speedLimitStyle: .mutcdStyle)
-            .navigationViewInnerGrid(topCenter: { reroutingBanner })
+            .navigationViewInnerGrid(topCenter: {
+                VStack(spacing: 8) {
+                    reroutingBanner
+                    alertStripOrPill
+                }
+            })
 
             MapHook(
                 layerIds: Set(MarkerIcons.kinds.map { "cs-m-\($0)" }),
@@ -101,35 +106,6 @@ struct ContentView: View {
                     }
                     .padding(.trailing, 12)
                     .padding(.bottom, isNavigating ? 118 : bottomCardHeight + 12)
-                }
-            }
-
-            // Under the maneuver card and its side controls, clear of the
-            // puck, the road name and the trip bar.
-            if isNavigating, let next = model.alerts.ahead.first,
-               next.alongMeters - model.alerts.hereAlong <= model.prefs.stripAheadMeters {
-                if stripCollapsed {
-                    // Tucked away: a pill with the icon and distance; tap to bring it back.
-                    HStack {
-                        Spacer()
-                        Button { withAnimation { stripCollapsed = false } } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: MarkerIcons.name(next.marker.kind)).foregroundStyle(MarkerIcons.tint(next.marker.kind))
-                                Text(Units.distance(max(0, next.alongMeters - model.alerts.hereAlong))).font(.caption.weight(.semibold))
-                                if model.alerts.ahead.count > 1 { Text("+\(model.alerts.ahead.count - 1)").font(.caption2).foregroundStyle(.secondary) }
-                            }
-                            .padding(.horizontal, 10).padding(.vertical, 8)
-                            .background(.regularMaterial, in: Capsule())
-                            .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-                        }
-                        .accessibilityIdentifier("alert-pill")
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 216)
-                } else {
-                    AlertStrip(item: next, along: model.alerts.hereAlong, onCollapse: { withAnimation { stripCollapsed = true } })
-                        .padding(.horizontal, 12)
-                        .padding(.top, 216)
                 }
             }
 
@@ -238,6 +214,37 @@ struct ContentView: View {
         CircleStyleLayer(identifier: "cs-pin", source: pin)
             .radius(7).color(UIColor(red: 0.18, green: 0.5, blue: 0.97, alpha: 1))
             .strokeWidth(2).strokeColor(.white)
+    }
+
+    /// The next alert within the chosen distance: a strip, or a pill when
+    /// tucked away. Placed by the navigation view's grid under the
+    /// instruction card, so it never overlaps it whatever its height.
+    @ViewBuilder private var alertStripOrPill: some View {
+        if isNavigating, let next = model.alerts.ahead.first,
+           next.alongMeters - model.alerts.hereAlong <= model.prefs.stripAheadMeters {
+            if stripCollapsed {
+                // Tucked away: a pill with the icon and distance; tap to bring it back.
+                HStack {
+                    Spacer()
+                    Button { withAnimation { stripCollapsed = false } } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: MarkerIcons.name(next.marker.kind)).foregroundStyle(MarkerIcons.tint(next.marker.kind))
+                            Text(Units.distance(max(0, next.alongMeters - model.alerts.hereAlong))).font(.caption.weight(.semibold))
+                            if model.alerts.ahead.count > 1 { Text("+\(model.alerts.ahead.count - 1)").font(.caption2).foregroundStyle(.secondary) }
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 8)
+                        .background(.regularMaterial, in: Capsule())
+                        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                    }
+                    .accessibilityIdentifier("alert-pill")
+                }
+                .padding(.horizontal, 12)
+            } else {
+                AlertStrip(item: next, along: model.alerts.hereAlong, onCollapse: { withAnimation { stripCollapsed = true } })
+                    .padding(.horizontal, 12)
+            }
+        }
+
     }
 
     @ViewBuilder private var reroutingBanner: some View {

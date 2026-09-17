@@ -17,6 +17,7 @@ final class AlertsEngine: ObservableObject {
     struct Upcoming: Identifiable, Hashable {
         let marker: RoadMarker
         let alongMeters: Double     // distance along the route from its start
+        var offsetMeters: Double = 0   // how far off the route line the marker sits
         var id: String { marker.key }
     }
 
@@ -117,6 +118,7 @@ final class AlertsEngine: ObservableObject {
         let pts = route, cum = cumulative
         let found: [Upcoming] = await Task.detached(priority: .utility) {
             markers.compactMap { m in
+                if m.tooMinorToAnnounce { return nil }
                 let hit = Self.along(pts, cum, m.coordinate, near: nil)
                 guard hit.offset <= m.corridorMeters else { return nil }
                 // A closure for the other direction of a divided road is not ahead of this driver.
@@ -124,7 +126,7 @@ final class AlertsEngine: ObservableObject {
                     let rb = Self.bearing(pts[hit.segment], pts[hit.segment + 1])
                     if Self.angleBetween(h, rb) > 110 { return nil }
                 }
-                return Upcoming(marker: m, alongMeters: hit.along)
+                return Upcoming(marker: m, alongMeters: hit.along, offsetMeters: hit.offset)
             }.sorted { $0.alongMeters < $1.alongMeters }
         }.value
         all = found
