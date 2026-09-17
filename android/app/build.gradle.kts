@@ -34,7 +34,7 @@ android {
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
         targetSdk = 36
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
-        versionName = "0.2.3"
+        versionName = "0.2.4"
     }
 
     signingConfigs {
