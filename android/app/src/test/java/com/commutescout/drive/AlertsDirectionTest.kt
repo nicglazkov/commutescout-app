@@ -20,6 +20,10 @@ class AlertsDirectionTest {
     @Test fun headingFromDirField() {
         assertEquals(0.0, AlertsEngine.headingOf(marker("Crash", dir = "NB")))
         assertEquals(180.0, AlertsEngine.headingOf(marker("Crash", dir = "SB")))
+        // What the server actually sends for LCS closures.
+        assertEquals(0.0, AlertsEngine.headingOf(marker("I-5 lane closure (Lebec), 1 of 4 lanes closed", dir = "North")))
+        assertEquals(180.0, AlertsEngine.headingOf(marker("I-5 lane closure (Lebec)", dir = "South")))
+        assertNull(AlertsEngine.headingOf(marker("I-5 lane closure", dir = "Both")))
     }
 
     @Test fun bothDirectionsOrNoneSaysNothing() {
