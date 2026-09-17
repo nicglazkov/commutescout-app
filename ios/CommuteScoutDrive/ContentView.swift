@@ -87,6 +87,19 @@ struct ContentView: View {
         CircleStyleLayer(identifier: "cs-pin", source: pin)
             .radius(7).color(UIColor(red: 0.18, green: 0.5, blue: 0.97, alpha: 1))
             .strokeWidth(2).strokeColor(.white)
+        // The alternative under consideration, drawn like the navigation route.
+        let line = ShapeSource(identifier: "cs-route") {
+            if case .choosing = model.state, let route = model.preview {
+                let coords = route.geometry.map(\.clLocationCoordinate2D)
+                MLNPolylineFeature(coordinates: coords, count: UInt(coords.count))
+            }
+        }
+        LineStyleLayer(identifier: "cs-route-border", source: line)
+            .lineColor(UIColor(red: 0.11, green: 0.31, blue: 0.66, alpha: 1)).lineWidth(9)
+            .lineCap(.round).lineJoin(.round)
+        LineStyleLayer(identifier: "cs-route", source: line)
+            .lineColor(UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1)).lineWidth(6)
+            .lineCap(.round).lineJoin(.round)
     }
 
     @ViewBuilder private var reroutingBanner: some View {
@@ -222,7 +235,7 @@ struct RoutesCard: View {
             }
             ForEach(Array(routes.enumerated()), id: \.offset) { i, route in
                 let seconds = route.steps.reduce(0) { $0 + $1.duration }
-                Button { chosen = i } label: {
+                Button { chosen = i; model.preview = route } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(i == 0 ? "Fastest" : "Alternate \(i)").font(.subheadline.weight(.semibold))

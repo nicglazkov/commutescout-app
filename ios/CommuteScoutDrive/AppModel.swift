@@ -72,6 +72,7 @@ final class AppModel: ObservableObject {
     @Published var state: DriveState = .browsing
     @Published var camera: MapViewCamera = .default()
     @Published var coreState: NavigationState?
+    @Published var preview: Route?          // the alternative under consideration
     @Published var errorMessage: String?
     @Published var muted = false
     @Published var simulating = false { didSet { location.simulate = simulating } }
@@ -139,6 +140,7 @@ final class AppModel: ObservableObject {
     // MARK: browsing
 
     func show(_ place: Place) {
+        preview = nil
         state = .found(place)
         camera = .center(place.coordinate, zoom: 14)
     }
@@ -160,6 +162,7 @@ final class AppModel: ObservableObject {
                 initialLocation: UserLocation(clCoordinateLocation2D: from),
                 waypoints: [Waypoint(coordinate: GeographicCoordinate(cl: place.coordinate), kind: .break)])
             guard !found.isEmpty else { throw DriveError.noRoute }
+            preview = found.first
             state = .choosing(found, place)
             camera = .default()
             if let bbox = found.first?.bbox {
@@ -177,6 +180,7 @@ final class AppModel: ObservableObject {
         do {
             if simulating { try location.simulate(route: route) }
             try core.startNavigation(route: route)
+            preview = nil
             places.noteRecent(name: place.name, coordinate: place.coordinate)
             alerts.start(route: route.geometry.map(\.clLocationCoordinate2D))
             camera = .automotiveNavigation()
