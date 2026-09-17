@@ -14,26 +14,27 @@ struct ContentView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            DynamicallyOrientingNavigationView(
-                styleURL: Backend.styleURL,
-                camera: $model.camera,
-                navigationState: model.coreState,
-                isMuted: model.muted,
-                onTapMute: { model.toggleMute() },
-                onTapExit: { model.stop() },
-                makeMapContent: { mapContent }
-            )
-            .navigationSpeedLimit(speedLimit: model.core.annotation?.speedLimit, speedLimitStyle: .mutcdStyle)
-            .navigationViewInnerGrid(topCenter: { reroutingBanner })
+            GeometryReader { geo in
+                DynamicallyOrientingNavigationView(
+                    styleURL: Backend.styleURL,
+                    camera: $model.camera,
+                    navigationState: model.coreState,
+                    isMuted: model.muted,
+                    onTapMute: { model.toggleMute() },
+                    onTapExit: { model.stop() },
+                    makeMapContent: { mapContent }
+                )
+                .navigationSpeedLimit(speedLimit: model.core.annotation?.speedLimit, speedLimitStyle: .mutcdStyle)
+                .navigationViewInnerGrid(topCenter: { reroutingBanner })
+            }
             .ignoresSafeArea()
 
+            // Under the maneuver card and its side controls, clear of the
+            // puck, the road name and the trip bar.
             if isNavigating, let next = model.alerts.ahead.first {
-                VStack {
-                    Spacer()
-                    AlertStrip(item: next, along: currentAlong)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 108)
-                }
+                AlertStrip(item: next, along: currentAlong)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 216)
             }
 
             if !isNavigating {
