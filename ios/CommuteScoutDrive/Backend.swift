@@ -121,10 +121,11 @@ struct RoadMarker: Decodable, Identifiable, Hashable {
     let until: Double?
     let work: String?
     let facility: String?
+    let tier: String?          // approved, unreviewed or private, for plugin markers
 
     enum CodingKeys: String, CodingKey {
         case kind, lat, lon, id, type, cls, label, location, route, status, name, source, description
-        case area, dir, reported, county, lanes, since, until, work, facility
+        case area, dir, reported, county, lanes, since, until, work, facility, tier
         case flareKind = "flare_kind"
         case delayMin = "delay_min"
     }
@@ -150,7 +151,10 @@ struct RoadMarker: Decodable, Identifiable, Hashable {
             if let county, !county.isEmpty { out.append(county + " County") }
             if let reported { out.append("Updated " + Self.when(reported)) }
         } else if kind == "plugin" {
-            if let source, !source.isEmpty { out.append("Reported through " + source) }
+            if let source, !source.isEmpty {
+                let badge = tier == "approved" ? " (approved by CommuteScout)" : tier == "private" ? " (your private plugin)" : " (public, not reviewed)"
+                out.append("Community report via " + source + badge)
+            }
             if let reported { out.append(Self.when(reported)) }
         }
         return out

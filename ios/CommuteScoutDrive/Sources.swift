@@ -17,6 +17,7 @@ struct FlareSource: Codable, Identifiable, Hashable {
     var canConfirm = false
     var attribution: String?
     var trust: String?
+    var tier: String = "unreviewed"
     var count: Int = 0
     var ok: Bool?
 
@@ -29,6 +30,7 @@ private struct PublicSource: Decodable {
     let name: String
     let attribution: Attribution?
     let trust: String?
+    let tier: String?
     let count: Int?
     let ok: Bool?
     struct Attribution: Decodable { let name: String?; let url: String? }
@@ -68,7 +70,7 @@ struct FlareAlert: Decodable {
                    label: description ?? kind.replacingOccurrences(of: "_", with: " ").capitalized,
                    location: road_names?.first, route: nil, status: nil, name: nil, flareKind: kind,
                    source: source.name, description: description, area: nil, dir: nil, reported: report_ts,
-                   county: nil, delayMin: nil, lanes: nil, since: nil, until: nil, work: nil, facility: nil)
+                   county: nil, delayMin: nil, lanes: nil, since: nil, until: nil, work: nil, facility: nil, tier: "private")
     }
 }
 
@@ -110,7 +112,7 @@ final class SourcesStore: ObservableObject {
         guard let r = try? await Backend.get("api/flare/sources", as: SourcesResponse.self) else { return }
         catalog = r.sources.map {
             FlareSource(id: $0.id, name: $0.name, base: nil, token: nil, refreshS: 60, canReport: false, canConfirm: false,
-                        attribution: $0.attribution?.name, trust: $0.trust, count: $0.count ?? 0, ok: $0.ok)
+                        attribution: $0.attribution?.name, trust: $0.trust, tier: $0.tier ?? "unreviewed", count: $0.count ?? 0, ok: $0.ok)
         }
     }
 
@@ -135,7 +137,7 @@ final class SourcesStore: ObservableObject {
             guard h.protocolName.hasPrefix("flare/1") else { error = "Not a Flare v1 plugin."; return false }
             let src = FlareSource(id: h.id, name: h.name, base: base, token: token?.isEmpty == false ? token : nil,
                                   refreshS: max(15, h.refresh_s ?? 60), canReport: h.capabilities?["report"] ?? false,
-                                  canConfirm: h.capabilities?["confirm"] ?? false, attribution: h.attribution?.name, trust: "private")
+                                  canConfirm: h.capabilities?["confirm"] ?? false, attribution: h.attribution?.name, trust: "private", tier: "private")
             mine.removeAll { $0.id == src.id }
             mine.append(src)
             persist()
@@ -218,8 +220,8 @@ final class SourcesStore: ObservableObject {
     }
 }
 
-/// The Sources screen: what feeds the community layer, and the driver's
-/// own private or unlisted plugins.
+/// The Sources screen: what feeds the community layer, in the three
+/// tiers (approved, public but not reviewed, private).
 struct SourcesView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -229,6 +231,16 @@ struct SourcesView: View {
     @State private var adding = false
 
     private var sources: SourcesStore { model.sources }
+
+    private func catalogRow(_ s: FlareSource) -> some View {
+        Toggle(isOn: Binding(get: { sources.isOn(s.id) }, set: { sources.setOn(s.id, $0); model.markers.refresh(force: true) })) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(s.name)
+                Text([s.attribution, "\(s.count) alerts", s.ok == false ? "not answering" : nil]
+                    .compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -240,19 +252,21 @@ struct SourcesView: View {
                         Label("How to write a plugin", systemImage: "safari")
                     }
                 }
-                Section("Public plugins") {
-                    if sources.catalog.isEmpty {
-                        Text("No public plugins are listed right now.").foregroundStyle(.secondary)
+                Section {
+                    if sources.catalog.filter({ $0.tier == "approved" }).isEmpty {
+                        Text("No approved plugin is listed right now.").foregroundStyle(.secondary)
                     }
-                    ForEach(sources.catalog) { s in
-                        Toggle(isOn: Binding(get: { sources.isOn(s.id) }, set: { sources.setOn(s.id, $0); model.markers.refresh(force: true) })) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(s.name)
-                                Text([s.attribution, s.trust, "\(s.count) alerts", s.ok == false ? "not answering" : nil]
-                                    .compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
+                    ForEach(sources.catalog.filter { $0.tier == "approved" }) { s in catalogRow(s) }
+                } header: { Text("Approved plugins") } footer: {
+                    Text("Reviewed by CommuteScout. Drawn by default and may speak.")
+                }
+                Section {
+                    if sources.catalog.filter({ $0.tier != "approved" }).isEmpty {
+                        Text("None listed right now.").foregroundStyle(.secondary)
                     }
+                    ForEach(sources.catalog.filter { $0.tier != "approved" }) { s in catalogRow(s) }
+                } header: { Text("Public plugins, not reviewed") } footer: {
+                    Text("Anyone who passes the conformance check can be listed. Drawn and labelled; voice only if you turn it on in Advanced alerts.")
                 }
                 Section("My plugins") {
                     ForEach(sources.mine) { s in
@@ -269,7 +283,7 @@ struct SourcesView: View {
                         .accessibilityIdentifier("add-source")
                 }
             }
-            .navigationTitle("Sources")
+            .navigationTitle("Plugins")
             .toolbar { Button("Done") { dismiss() } }
             .sheet(isPresented: $showAdd) {
                 NavigationStack {

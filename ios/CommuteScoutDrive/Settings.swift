@@ -93,7 +93,7 @@ struct SettingsSheet: View {
                 }
                 #endif
                 Section("Community") {
-                    NavigationLink("Sources (Flare plugins)") { SourcesView() }
+                    NavigationLink("Plugins (community sources)") { SourcesView() }
                 }
                 Section("Help and docs") {
                     Link(destination: URL(string: "https://commutescout.com/map")!) { Label("Live map on the web", systemImage: "map") }

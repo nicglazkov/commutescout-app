@@ -24,7 +24,7 @@ struct ToolsSheet: View {
                     .accessibilityIdentifier("tool-watches")
                 Button { page = .ask } label: { Label("Ask about the roads", systemImage: "bubble.left.and.text.bubble.right") }
                     .accessibilityIdentifier("tool-ask")
-                Button { page = .sources } label: { Label("Community sources (Flare)", systemImage: "antenna.radiowaves.left.and.right") }
+                Button { page = .sources } label: { Label("Plugins (community sources)", systemImage: "antenna.radiowaves.left.and.right") }
                     .accessibilityIdentifier("tool-sources")
                 Section {
                     Link(destination: URL(string: "https://commutescout.com/map")!) { Label("Open the full map on the web", systemImage: "safari") }

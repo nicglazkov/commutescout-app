@@ -83,7 +83,7 @@ fun ToolsSheet(onPick: (Tool) -> Unit, onClose: () -> Unit) {
             ToolRow(Icons.Default.SwapVert, "Directions from another place", "tool-directions") { onPick(Tool.DIRECTIONS) }
             ToolRow(Icons.Default.Visibility, "Watch areas", "tool-watches") { onPick(Tool.WATCHES) }
             ToolRow(Icons.Default.QuestionAnswer, "Ask about the roads", "tool-ask") { onPick(Tool.ASK) }
-            ToolRow(Icons.Default.Sensors, "Community sources (Flare)", "tool-sources") { onPick(Tool.SOURCES) }
+            ToolRow(Icons.Default.Sensors, "Plugins (community sources)", "tool-sources") { onPick(Tool.SOURCES) }
             LinkRow("Open the full map on the web") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://commutescout.com/map"))) }
         }
     }
@@ -331,22 +331,28 @@ fun SourcesSheet(model: DriveViewModel, onClose: () -> Unit) {
 
     ModalBottomSheet(onDismissRequest = onClose, modifier = Modifier.testTag("sources-sheet")) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Sources", style = MaterialTheme.typography.titleLarge)
-            Text("Community reports come from Flare plugins. Public ones are checked by CommuteScout; private ones you add here are read straight from your phone.",
+            Text("Plugins", style = MaterialTheme.typography.titleLarge)
+            Text("Community reports come from Flare plugins, in three tiers: approved by CommuteScout, public but not reviewed, and your own private ones read straight from your phone.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             LinkRow("How to write a plugin") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://commutescout.com/plugins"))) }
-            Heading("Public plugins")
-            if (catalog.isEmpty()) Text("No public plugins are listed right now.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            catalog.forEach { s ->
+            @Composable fun catalogRow(s: FlareSource) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(s.name)
-                        Text(listOfNotNull(s.attribution, s.trust, "${s.count} alerts", if (s.ok == false) "not answering" else null).joinToString(" · "),
+                        Text(listOfNotNull(s.attribution, "${s.count} alerts", if (s.ok == false) "not answering" else null).joinToString(" · "),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(s.id !in hidden, { model.sources.setOn(s.id, it); model.markers.refresh(true) })
                 }
             }
+            Heading("Approved plugins")
+            Text("Reviewed by CommuteScout. Drawn by default and may speak.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (catalog.none { it.tier == "approved" }) Text("No approved plugin is listed right now.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            catalog.filter { it.tier == "approved" }.forEach { catalogRow(it) }
+            Heading("Public plugins, not reviewed")
+            Text("Anyone who passes the conformance check can be listed. Drawn and labelled; voice only if you turn it on in Advanced alerts.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (catalog.none { it.tier != "approved" }) Text("None listed right now.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            catalog.filter { it.tier != "approved" }.forEach { catalogRow(it) }
             Heading("My plugins")
             mine.forEach { s ->
                 Row(verticalAlignment = Alignment.CenterVertically) {

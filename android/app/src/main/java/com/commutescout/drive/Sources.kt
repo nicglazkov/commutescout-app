@@ -42,12 +42,13 @@ data class FlareSource(
     val canConfirm: Boolean = false,
     val attribution: String? = null,
     val trust: String? = null,
+    val tier: String = "unreviewed",
     val count: Int = 0,
     val ok: Boolean? = null,
 ) { val isDirect get() = base != null }
 
 @Serializable private data class Attribution(val name: String? = null, val url: String? = null)
-@Serializable private data class PublicSource(val id: String, val name: String, val attribution: Attribution? = null, val trust: String? = null, val count: Int? = null, val ok: Boolean? = null)
+@Serializable private data class PublicSource(val id: String, val name: String, val attribution: Attribution? = null, val trust: String? = null, val tier: String? = null, val count: Int? = null, val ok: Boolean? = null)
 @Serializable private data class SourcesResponse(val sources: List<PublicSource> = emptyList())
 @Serializable private data class Handshake(val protocol: String, val id: String, val name: String, val capabilities: Map<String, Boolean>? = null,
                                            val refresh_s: Int? = null, val attribution: Attribution? = null, val auth: String? = null)
@@ -58,6 +59,7 @@ data class FlareSource(
         kind = "plugin", lat = lat, lon = lon, id = "${source.id}:$id",
         label = description ?: kind.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() },
         location = road_names?.firstOrNull(), flare_kind = kind, source = source.name, description = description, reported = report_ts,
+        tier = "private",
     )
 }
 @Serializable private data class FlareAlerts(val alerts: List<FlareAlert> = emptyList(), val ttl_s: Int? = null)
@@ -98,7 +100,7 @@ class SourcesStore(context: Context) {
 
     suspend fun loadCatalog() {
         val r = runCatching { Backend.get<SourcesResponse>("/api/flare/sources", emptyMap()) }.getOrNull() ?: return
-        _catalog.value = r.sources.map { FlareSource(it.id, it.name, attribution = it.attribution?.name, trust = it.trust, count = it.count ?: 0, ok = it.ok) }
+        _catalog.value = r.sources.map { FlareSource(it.id, it.name, attribution = it.attribution?.name, trust = it.trust, tier = it.tier ?: "unreviewed", count = it.count ?: 0, ok = it.ok) }
     }
 
     /** Adds a private or unlisted plugin by its base URL after a handshake. */
@@ -117,7 +119,7 @@ class SourcesStore(context: Context) {
             val h = Backend.json.decodeFromString<Handshake>(text)
             if (!h.protocol.startsWith("flare/1")) { _error.value = "Not a Flare v1 plugin."; return false }
             val src = FlareSource(h.id, h.name, base, token?.takeIf { it.isNotBlank() }, max(15, h.refresh_s ?: 60),
-                h.capabilities?.get("report") == true, h.capabilities?.get("confirm") == true, h.attribution?.name, "private")
+                h.capabilities?.get("report") == true, h.capabilities?.get("confirm") == true, h.attribution?.name, "private", "private")
             _mine.value = _mine.value.filter { it.id != src.id } + src
             persist(); schedule(src)
             true

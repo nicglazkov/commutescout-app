@@ -151,7 +151,7 @@ final class DriveUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Ask"].waitForExistence(timeout: 5))
         app.buttons["Done"].firstMatch.tap()
         app.buttons["tool-sources"].tap()
-        XCTAssertTrue(app.navigationBars["Sources"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Plugins"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["add-source"].waitForExistence(timeout: 5))
         app.buttons["Done"].firstMatch.tap()
         app.buttons["tool-watches"].tap()

@@ -89,6 +89,7 @@ data class RoadMarker(
     val until: Long? = null,
     val work: String? = null,
     val facility: String? = null,
+    val tier: String? = null,          // approved, unreviewed or private, for plugin markers
 ) {
     val key: String get() = "$kind:${id ?: "%.4f,%.4f".format(lat, lon)}"
 
@@ -116,7 +117,10 @@ data class RoadMarker(
                     reported?.let { out.add("Updated " + whenText(it)) }
                 }
                 "plugin" -> {
-                    source?.takeIf { it.isNotBlank() }?.let { out.add("Reported through $it") }
+                    source?.takeIf { it.isNotBlank() }?.let {
+                        val badge = when (tier) { "approved" -> " (approved by CommuteScout)"; "private" -> " (your private plugin)"; else -> " (public, not reviewed)" }
+                        out.add("Community report via $it$badge")
+                    }
                     reported?.let { out.add(whenText(it)) }
                 }
             }
