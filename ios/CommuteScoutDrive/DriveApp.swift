@@ -34,7 +34,14 @@ enum AutoDrive {
             if parts.count >= 2, let lat = Double(parts[0]), let lon = Double(parts[1]) {
                 let place = Place(name: parts.count > 2 ? parts[2] : all[i + 1],
                                   coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon), kind: .recent)
-                DriveLog.note("remote start requested: \(place.name)")
+                if let v = all.firstIndex(of: "-csVia"), v + 1 < all.count {
+                    model.via = all[v + 1].split(separator: ";").compactMap { pair in
+                        let p = pair.split(separator: ",").map(String.init)
+                        guard p.count == 2, let la = Double(p[0]), let lo = Double(p[1]) else { return nil }
+                        return CLLocationCoordinate2D(latitude: la, longitude: lo)
+                    }
+                }
+                DriveLog.note("remote start requested: \(place.name), via \(model.via.count) point(s)")
                 for _ in 0 ..< 30 where model.here == nil { try? await Task.sleep(nanoseconds: 1_000_000_000) }
                 model.show(place)
                 try? await Task.sleep(nanoseconds: 1_000_000_000)

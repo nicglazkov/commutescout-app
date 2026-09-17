@@ -145,7 +145,11 @@ object Engine {
         // Rerouting: when the driver leaves the route, ask for a new one and take it.
         core.deviationHandler = RouteDeviationHandler { _, _, remaining -> CorrectiveAction.GetNewRoutes(remaining) }
         core.alternativeRouteProcessor = AlternativeRouteProcessor { c, routes ->
-            if (routes.isNotEmpty()) c.replaceRoute(routes.first())
+            routes.firstOrNull()?.let { r ->
+                c.replaceRoute(r)
+                // The alerts engine must follow the new geometry.
+                alerts.start(r.geometry.map { LatLon(it.lat, it.lng) })
+            }
         }
         core.spokenInstructionObserver = tts
         return core

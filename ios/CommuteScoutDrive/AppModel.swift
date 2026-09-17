@@ -100,6 +100,8 @@ final class AppModel: ObservableObject {
     var origin: Place?                      // a chosen start instead of the driver
     @Published var toast: String?
     private let delegate = NavDelegate()
+    /// Optional via points for the next route (a corridor to prefer), cleared when a trip starts.
+    var via: [CLLocationCoordinate2D] = []
     private var cancellables = Set<AnyCancellable>()
     private var coreSink: AnyCancellable?
     private var builtFor = ""
@@ -331,7 +333,8 @@ final class AppModel: ObservableObject {
         do {
             let found = try await core.getRoutes(
                 initialLocation: UserLocation(clCoordinateLocation2D: from),
-                waypoints: [Waypoint(coordinate: GeographicCoordinate(cl: place.coordinate), kind: .break)])
+                waypoints: via.map { Waypoint(coordinate: GeographicCoordinate(cl: $0), kind: .via) }
+                    + [Waypoint(coordinate: GeographicCoordinate(cl: place.coordinate), kind: .break)])
             guard !found.isEmpty else { throw DriveError.noRoute }
             preview = found.first
             state = .choosing(found, place)
@@ -358,6 +361,12 @@ final class AppModel: ObservableObject {
             origin = nil
             places.noteRecent(name: place.name, coordinate: place.coordinate)
             alerts.start(route: route.geometry.map(\.clLocationCoordinate2D))
+            via = []
+            delegate.onReroute = { [weak self] r in
+                guard let self else { return }
+                self.alerts.start(route: r.geometry.map(\.clLocationCoordinate2D))
+                DriveLog.note("rerouted: \(DriveLog.meters(r.distance)), \(r.geometry.count) pts")
+            }
             camera = navigationCamera
             state = .navigating(place)
             UIApplication.shared.isIdleTimerDisabled = prefs.keepAwake
@@ -403,6 +412,9 @@ enum DriveError: LocalizedError {
 /// Rerouting: when the driver leaves the route, ask for a new one and
 /// take it. The server applies the same closure exclusions every time.
 final class NavDelegate: FerrostarCoreDelegate {
+    /// The app's hook for a taken reroute: the alerts engine must follow the new geometry.
+    var onReroute: ((Route) -> Void)?
+
     func core(_: FerrostarCore, didStartWith _: Route) {}
 
     func core(_: FerrostarCore, correctiveActionForDeviation _: DeviationKind,
@@ -413,6 +425,7 @@ final class NavDelegate: FerrostarCoreDelegate {
     func core(_ core: FerrostarCore, loadedAlternateRoutes routes: [Route]) {
         guard core.state?.isCalculatingNewRoute ?? false, let route = routes.first else { return }
         try? core.startNavigation(route: route)
+        onReroute?(route)
     }
 }
 
