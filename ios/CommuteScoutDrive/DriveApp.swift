@@ -25,6 +25,11 @@ enum AutoDrive {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-csResetPlaces") { model.places.removeAll() }
+        if args.contains("-csResetPrefs") {
+            let d = UserDefaults.standard
+            for k in d.dictionaryRepresentation().keys where k.hasPrefix("cs.") && k != "cs.places.v1" { d.removeObject(forKey: k) }
+            model.prefs.objectWillChange.send()
+        }
         if args.contains("-csSimulate") { model.simulating = true }
         if args.contains("-csFocusMarker") {
             // Center on the closest live marker so a UI test can tap it.

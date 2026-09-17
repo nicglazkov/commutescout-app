@@ -9,7 +9,7 @@ final class DriveUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["-csSimulate", "-csResetPlaces"]
+        app.launchArguments = ["-csSimulate", "-csResetPlaces", "-csResetPrefs"]
         app.launch()
     }
 
@@ -104,27 +104,27 @@ final class DriveUITests: XCTestCase {
         app.buttons["Miles"].tap()
         let tolls = app.switches["Avoid tolls"]
         if tolls.exists { tolls.tap(); tolls.tap() }
-        let link = app.staticTexts["Live map on the web"]
-        XCTAssertTrue(reveal(link) || link.exists, "link back to the website")
         // The row is a NavigationLink: a button labelled "Advanced alerts, Off".
         let advanced = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Advanced alerts'")).firstMatch
-        let found = reveal(advanced)
-        if !found {
-            for line in app.debugDescription.components(separatedBy: CharacterSet.newlines) where line.contains("Advanced") || line.contains("Keep the screen") {
-                NSLog("CSDBG %@", String(line))
-            }
-            let shot = XCTAttachment(screenshot: app.screenshot())
-            shot.name = "advanced-missing"
-            shot.lifetime = .keepAlways
-            add(shot)
-        }
-        XCTAssertTrue(found, "advanced alerts row")
+        XCTAssertTrue(reveal(advanced), "advanced alerts row")
         advanced.tap()
-        XCTAssertTrue(app.switches["advanced-toggle"].waitForExistence(timeout: 5))
-        app.switches["advanced-toggle"].tap()
-        XCTAssertTrue(app.staticTexts["Police reports"].waitForExistence(timeout: 5), "per-kind rules appear")
-        app.switches["advanced-toggle"].tap()
+        let toggle = app.switches["advanced-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        sleep(1)   // let the push animation finish
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()   // the switch itself, not its label
+        XCTAssertTrue(app.staticTexts["Incidents"].waitForExistence(timeout: 5), "per-kind rules appear")
+        XCTAssertTrue(reveal(app.staticTexts["Police reports"]), "community kinds have rules too")
+        // Back to the top of the screen the simple way: leave and re-enter, then switch it off again.
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(reveal(advanced))
+        advanced.tap()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        sleep(1)
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        XCTAssertTrue(app.staticTexts["Incidents"].waitForNonExistence(timeout: 5), "rules hidden again")
         app.navigationBars.buttons.firstMatch.tap()   // back
+        let link = app.staticTexts["Live map on the web"]
+        XCTAssertTrue(reveal(link) || link.exists, "link back to the website")
         app.buttons["Done"].tap()
         app.buttons["tools"].tap()
         app.buttons["tool-layers"].tap()
