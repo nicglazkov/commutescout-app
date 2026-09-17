@@ -7,6 +7,7 @@ Both apps talk only to [commutescout.com](https://commutescout.com). Routing, ma
 ## Install
 
 - **iOS**: TestFlight. Testers get an invitation by email from App Store Connect.
+  For a quick check on a paired phone, `DEVICE=<id> scripts/ios_build.sh device` installs an Ad Hoc build over USB or Wi-Fi in a few minutes (`xcrun devicectl list devices` shows the id).
 - **Android**: download the APK from the latest [release](https://github.com/nicglazkov/commutescout-app/releases), open it on the phone, and allow installing from that source when asked.
 
 ## What it does
