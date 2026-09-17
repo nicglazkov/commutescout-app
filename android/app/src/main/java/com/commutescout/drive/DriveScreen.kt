@@ -54,6 +54,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -209,6 +210,7 @@ fun DriveScreen(model: DriveViewModel) {
                 val d = proj.positionFromScreenLocation(DpOffset(0.dp, h))
                 val lats = listOf(a, b, c, d).map { it.latitude }; val lons = listOf(a, b, c, d).map { it.longitude }
                 model.markers.view(lats.min(), lons.min(), lats.max(), lons.max(), pos.zoom, prefs.apiKinds)
+                model.viewCenter = LatLon(pos.target.latitude, pos.target.longitude)
                 model.sources.view(LatLon(pos.target.latitude, pos.target.longitude))
             }
         }
@@ -668,7 +670,7 @@ private fun AlertStrip(item: Upcoming, along: Double, more: Int, onCollapse: (()
 private fun LayersSheet(model: DriveViewModel, onClose: () -> Unit) {
     val prefs = model.prefs
     val context = LocalContext.current
-    ModalBottomSheet(onDismissRequest = onClose, modifier = Modifier.testTag("layers-sheet")) {
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("layers-sheet")) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Layers", style = MaterialTheme.typography.titleLarge)
             Heading("Base map")

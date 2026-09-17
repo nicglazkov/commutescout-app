@@ -21,7 +21,7 @@ import com.stadiamaps.ferrostar.core.AndroidTtsStatusListener
 import java.util.Locale
 
 class MainActivity : ComponentActivity(), AndroidTtsStatusListener {
-    private val model: DriveViewModel by viewModels()
+    internal val model: DriveViewModel by viewModels()   // internal: instrumented tests drive it
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,8 +44,12 @@ class MainActivity : ComponentActivity(), AndroidTtsStatusListener {
                 Surface { DriveScreen(model) }
             }
         }
-        if (intent?.getBooleanExtra("csAutoDrive", false) == true && BuildConfig.DEBUG) {
-            AutoDrive.run(model)
+        // Test hooks, debug builds only: the same flags as the iOS app.
+        if (BuildConfig.DEBUG) {
+            if (intent?.getBooleanExtra("csResetPlaces", false) == true) Engine.places.removeAll()
+            if (intent?.getBooleanExtra("csResetPrefs", false) == true) Engine.prefs.resetForTests()
+            if (intent?.getBooleanExtra("csSimulate", false) == true) model.simulating.value = true
+            if (intent?.getBooleanExtra("csAutoDrive", false) == true) AutoDrive.run(model)
         }
     }
 

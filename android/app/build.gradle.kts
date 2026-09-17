@@ -28,6 +28,7 @@ android {
     defaultConfig {
         applicationId = "com.commutescout.drive"
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         targetSdk = 36
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = "0.2.2"
@@ -95,4 +96,12 @@ dependencies {
     implementation(libs.credentials)
     implementation(libs.credentials.play)
     implementation(libs.googleid)
+    // Instrumented UI tests (app/src/androidTest): every control on the emulator or a phone.
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

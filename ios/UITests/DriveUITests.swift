@@ -24,7 +24,9 @@ final class DriveUITests: XCTestCase {
             form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
                 .press(forDuration: 0.05, thenDragTo: form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42)))
         }
-        return element.exists && element.isHittable
+        let ok = element.exists && element.isHittable
+        if !ok { print("CS-REVEAL-MISS", element, "\n", app.debugDescription) }
+        return ok
     }
 
     private func search(_ text: String) {
@@ -71,7 +73,7 @@ final class DriveUITests: XCTestCase {
 
     func testCoordinatesBecomeAPin() {
         search("37.372, -122.110")
-        app.keyboards.buttons["search"].firstMatch.tap()
+        app.textFields["search"].typeText("\n")   // the return key, whatever the keyboard calls it
         XCTAssertTrue(app.buttons["navigate"].waitForExistence(timeout: 10), "a pin from typed coordinates")
         app.buttons["place-close"].tap()
         XCTAssertFalse(app.buttons["navigate"].exists)
@@ -168,7 +170,13 @@ final class DriveUITests: XCTestCase {
         app.buttons["report"].tap()
         XCTAssertTrue(app.buttons["report-POLICE_VISIBLE"].waitForExistence(timeout: 5))
         app.buttons["report-POLICE_VISIBLE"].tap()
-        XCTAssertTrue(app.buttons["Sign in"].exists, "signed-out reports ask for an account")
+        // Signed out (the simulator): the sheet asks for an account. Signed
+        // in (Nic's phone): a chosen kind enables Send. Never send here.
+        if app.buttons["Sign in"].exists {
+            XCTAssertFalse(app.buttons["report-send"].isEnabled, "signed-out reports cannot be sent")
+        } else {
+            XCTAssertTrue(app.buttons["report-send"].isEnabled, "signed in with a kind chosen: send enabled")
+        }
         app.buttons["Cancel"].firstMatch.tap()
     }
 

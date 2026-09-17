@@ -38,6 +38,15 @@ class Prefs(context: Context) {
         )
     }
 
+    /** Back to defaults, for UI tests that must start the same way every run. */
+    fun resetForTests() {
+        p.edit().clear().apply()
+        theme = Theme.SYSTEM; mapStyle = MapStyle.AUTO; is3D = true; traffic = false; hiddenKinds = emptySet()
+        spokenAlerts = true; alertAheadMeters = 1500.0; showSpeedLimit = true; keepAwake = true
+        avoidTolls = false; avoidHighways = false; avoidFerries = false; stripAheadMeters = 16093.0
+        advancedAlerts = false; alertRulesRaw = ""; useMiles = true
+    }
+
     var theme by state(Theme.valueOf(p.getString("theme", "SYSTEM")!!)) { p.edit().putString("theme", it.name).apply() }
     var mapStyle by state(MapStyle.valueOf(p.getString("mapstyle", "AUTO")!!)) { p.edit().putString("mapstyle", it.name).apply() }
     var is3D by state(p.getBoolean("3d", true)) { p.edit().putBoolean("3d", it).apply() }

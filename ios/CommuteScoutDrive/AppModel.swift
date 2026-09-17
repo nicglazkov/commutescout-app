@@ -158,6 +158,7 @@ final class AppModel: ObservableObject {
 
     private func wireCore() {
         coreSink = core.$state.receive(on: DispatchQueue.main).sink { [weak self] s in
+            self?.noteLocation(s)
             guard let self else { return }
             self.coreState = s
             if let loc = s?.preferredUserLocation?.clLocation.coordinate, self.state.isNavigating {
@@ -249,6 +250,7 @@ final class AppModel: ObservableObject {
     }
 
     func clearFound() {
+        origin = nil
         if case .found = state { state = .browsing; follow() }
     }
 
@@ -259,6 +261,37 @@ final class AppModel: ObservableObject {
     }
 
     func clearMarker() { selectedMarker = nil }
+
+    // Drive log: a fix every few seconds is normal; a gap says the phone
+    // lost GPS or the app was paused. A summary line every minute.
+    private var lastFixAt: Date?
+    private var fixes = 0
+    private var lastSummary = Date()
+    private var lastDeviating = false
+    private func noteLocation(_ s: NavigationState?) {
+        guard let loc = s?.preferredUserLocation else { return }
+        let now = Date()
+        if let last = lastFixAt, now.timeIntervalSince(last) > 15 {
+            DriveLog.note("location gap \(Int(now.timeIntervalSince(last))) s")
+        }
+        lastFixAt = now
+        fixes += 1
+        if case .navigating = state, now.timeIntervalSince(lastSummary) >= 60 {
+            let speed = loc.speed.map { String(format: "%.0f km/h", $0.value * 3.6) } ?? "?"
+            DriveLog.note("nav: \(fixes) fixes/min, speed \(speed), acc \(Int(loc.horizontalAccuracy)) m, "
+                          + "alerts ahead \(alerts.ahead.count)")
+            fixes = 0
+            lastSummary = now
+        }
+        if let dev = s?.currentDeviation {
+            let off: Bool
+            if case .noDeviation = dev { off = false } else { off = true }
+            if off != lastDeviating {
+                DriveLog.note(off ? "off route: rerouting" : "back on route")
+                lastDeviating = off
+            }
+        }
+    }
 
     /// A long press on the map: a pin named by Apple's reverse geocoder.
     func dropPin(at coordinate: CLLocationCoordinate2D) {
@@ -318,8 +351,11 @@ final class AppModel: ObservableObject {
         do {
             if simulating { try location.simulate(route: route) }
             try core.startNavigation(route: route)
+            DriveLog.note("route start to '\(place.name)': \(DriveLog.meters(route.distance)) \(Int(route.steps.reduce(0) { $0 + $1.duration } / 60)) min, "
+                          + "\(route.geometry.count) pts, simulated=\(simulating), alertsAhead=\(Int(prefs.alertAheadMeters)) m")
             preview = nil
             selectedMarker = nil
+            origin = nil
             places.noteRecent(name: place.name, coordinate: place.coordinate)
             alerts.start(route: route.geometry.map(\.clLocationCoordinate2D))
             camera = navigationCamera
@@ -331,6 +367,7 @@ final class AppModel: ObservableObject {
     }
 
     func stop() {
+        DriveLog.note("route stop")
         core.stopNavigation()
         alerts.stop()
         UIApplication.shared.isIdleTimerDisabled = false

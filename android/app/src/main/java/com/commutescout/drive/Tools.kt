@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.CircularProgressIndicator
@@ -75,7 +76,7 @@ enum class Tool { LAYERS, ALERTS, DIRECTIONS, WATCHES, ASK, SOURCES }
 @Composable
 fun ToolsSheet(onPick: (Tool) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
-    ModalBottomSheet(onDismissRequest = onClose, modifier = Modifier.testTag("tools-sheet")) {
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("tools-sheet")) {
         Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 32.dp)) {
             Text("Tools", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(8.dp))
             ToolRow(Icons.Default.Layers, "Layers and base map", "tool-layers") { onPick(Tool.LAYERS) }
@@ -105,7 +106,7 @@ fun AlertsListSheet(model: DriveViewModel, mapState: NavigationMapState, onClose
     val here by model.here.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val sorted = (markers + direct).filter { model.prefs.isShown(it.kind) }.sortedBy { m -> here?.let { AlertsEngine.meters(it, LatLon(m.lat, m.lon)) } ?: 0.0 }
-    ModalBottomSheet(onDismissRequest = onClose, modifier = Modifier.testTag("alerts-sheet")) {
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("alerts-sheet")) {
         Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 24.dp)) {
             Text("Alerts nearby", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(8.dp))
             if (sorted.isEmpty()) Text("Nothing reported in the area on screen. Zoom out or move the map to see more.", Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -153,16 +154,16 @@ fun DirectionsSheet(model: DriveViewModel, onClose: () -> Unit) {
         scope.launch { delay(150); runCatching { Search.suggest(t, here?.let { it.lat to it.lon }) }.getOrNull()?.let(set) }
     }
 
-    ModalBottomSheet(onDismissRequest = onClose, modifier = Modifier.testTag("directions-sheet")) {
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("directions-sheet")) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Directions", style = MaterialTheme.typography.titleLarge)
             Heading("From")
             TextButton({ from = null; fromText = "" }) { Text(from?.shortName ?: "My location") }
-            OutlinedTextField(fromText, { fromText = it; suggest(it) { r -> fromResults = r } }, Modifier.fillMaxWidth(), placeholder = { Text("Or search a start") }, singleLine = true)
+            OutlinedTextField(fromText, { fromText = it; suggest(it) { r -> fromResults = r } }, Modifier.fillMaxWidth().testTag("from-field"), placeholder = { Text("Or search a start") }, singleLine = true)
             fromResults.forEach { s -> TextButton({ from = Place(name = s.name, lat = s.lat, lon = s.lon, kind = PlaceKind.recent); fromText = s.name.substringBefore(","); fromResults = emptyList() }) { Text(s.name, maxLines = 1) } }
             Heading("To")
             to?.let { Text(it.shortName, color = MaterialTheme.colorScheme.primary) }
-            OutlinedTextField(toText, { toText = it; suggest(it) { r -> toResults = r } }, Modifier.fillMaxWidth(), placeholder = { Text("Search a destination") }, singleLine = true)
+            OutlinedTextField(toText, { toText = it; suggest(it) { r -> toResults = r } }, Modifier.fillMaxWidth().testTag("to-field"), placeholder = { Text("Search a destination") }, singleLine = true)
             toResults.forEach { s -> TextButton({ to = Place(name = s.name, lat = s.lat, lon = s.lon, kind = PlaceKind.recent); toText = s.name.substringBefore(","); toResults = emptyList() }) { Text(s.name, maxLines = 1) } }
             Button({ to?.let { model.origin = from; onClose(); model.routes(it) } }, Modifier.fillMaxWidth(), enabled = to != null) { Text("Show routes") }
             Text("Route options (tolls, highways, ferries) are in Settings. Full closures are always avoided.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -204,7 +205,7 @@ fun WatchesSheet(model: DriveViewModel, onClose: () -> Unit) {
     }
     LaunchedEffect(user) { load() }
 
-    ModalBottomSheet(onDismissRequest = onClose, modifier = Modifier.testTag("watches-sheet")) {
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("watches-sheet")) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Watch areas", style = MaterialTheme.typography.titleLarge)
             if (user == null) {
@@ -296,7 +297,7 @@ fun AskSheet(model: DriveViewModel, onClose: () -> Unit) {
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onClose, modifier = Modifier.testTag("ask-sheet")) {
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("ask-sheet")) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Ask", style = MaterialTheme.typography.titleLarge)
             Column(Modifier.height(300.dp).verticalScroll(rememberScrollState())) {
@@ -308,7 +309,7 @@ fun AskSheet(model: DriveViewModel, onClose: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(question, { question = it }, Modifier.weight(1f).testTag("ask-field"), placeholder = { Text("Ask about the roads") }, maxLines = 3)
                 Spacer(Modifier.width(8.dp))
-                Button({ ask() }, enabled = question.isNotBlank() && !running) { Icon(Icons.Default.Send, "Ask") }
+                Button({ ask() }, Modifier.testTag("ask-send"), enabled = question.isNotBlank() && !running) { Icon(Icons.Default.Send, "Ask") }
             }
         }
     }
@@ -329,7 +330,7 @@ fun SourcesSheet(model: DriveViewModel, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    ModalBottomSheet(onDismissRequest = onClose, modifier = Modifier.testTag("sources-sheet")) {
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("sources-sheet")) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Plugins", style = MaterialTheme.typography.titleLarge)
             Text("Community reports come from Flare plugins, in three tiers: approved by CommuteScout, public but not reviewed, and your own private ones read straight from your phone.",

@@ -91,6 +91,7 @@ final class AlertsEngine: ObservableObject {
 
     /// Repeat an alert on demand, muted or not.
     func say(_ marker: RoadMarker) {
+        DriveLog.note("say (tap): \(marker.kind) \(marker.displayTitle)")
         let utterance = AVSpeechUtterance(string: marker.spokenTitle)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         synth.speak(utterance)
@@ -99,6 +100,7 @@ final class AlertsEngine: ObservableObject {
     private func announce(_ marker: RoadMarker, in gap: Double) {
         let text = marker.spokenTitle + (gap > 200 ? ", in " + Units.spoken(gap) : "")
         lastAnnounced = text
+        DriveLog.note("alert spoken: \(marker.kind) '\(marker.displayTitle)' in \(DriveLog.meters(gap))")
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         synth.speak(utterance)

@@ -44,6 +44,7 @@ class PlaceStore(context: Context) {
     }
 
     fun remove(place: Place) = save(_places.value.filter { it.id != place.id })
+    fun removeAll() = save(emptyList())
 
     fun noteRecent(name: String, lat: Double, lon: Double) {
         val others = _places.value.filter { !(it.kind == PlaceKind.recent && near(it, lat, lon)) }

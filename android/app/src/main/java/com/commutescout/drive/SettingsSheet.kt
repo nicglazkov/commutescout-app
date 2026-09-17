@@ -21,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -56,7 +57,7 @@ fun SettingsSheet(model: DriveViewModel, onClose: () -> Unit) {
     val context = LocalContext.current
     fun open(url: String) = context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
 
-    ModalBottomSheet(onDismissRequest = onClose, modifier = Modifier.testTag("settings-sheet")) {
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("settings-sheet")) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -205,7 +206,7 @@ fun AdvancedAlertsSheet(model: DriveViewModel, onClose: () -> Unit) {
     val prefs = model.prefs
     val steps = if (prefs.useMiles) listOf(402.0, 805.0, 1609.0, 2414.0, 3219.0, 4828.0, 8047.0) else listOf(300.0, 500.0, 1000.0, 1500.0, 2000.0, 3000.0, 5000.0, 8000.0)
     fun nearest(m: Double) = steps.minByOrNull { kotlin.math.abs(it - m) } ?: m
-    ModalBottomSheet(onDismissRequest = onClose, modifier = Modifier.testTag("advanced-alerts")) {
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("advanced-alerts")) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Advanced alerts", style = MaterialTheme.typography.titleLarge)
             ToggleRow("Set alerts per kind", prefs.advancedAlerts) { prefs.advancedAlerts = it }

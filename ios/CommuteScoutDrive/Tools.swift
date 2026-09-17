@@ -3,6 +3,20 @@ import SwiftUI
 
 /// The website's rail, on the phone: everything that is not the search
 /// bar or Settings lives behind one button.
+/// Pages inside the Tools sheet are sheets themselves. When a page acts on
+/// the map (center on an alert, show routes) it must close the Tools sheet
+/// too, or the menu stays over the map. Pages call this instead of dismiss.
+private struct DismissToolsKey: EnvironmentKey {
+    static let defaultValue: () -> Void = {}
+}
+
+extension EnvironmentValues {
+    var dismissTools: () -> Void {
+        get { self[DismissToolsKey.self] }
+        set { self[DismissToolsKey.self] = newValue }
+    }
+}
+
 struct ToolsSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -33,13 +47,16 @@ struct ToolsSheet: View {
             .navigationTitle("Tools")
             .toolbar { Button("Done") { dismiss() } }
             .sheet(item: $page) { p in
-                switch p {
-                case .alerts: AlertsListView()
-                case .watches: WatchesView()
-                case .ask: AskView()
-                case .sources: SourcesView()
-                case .directions: DirectionsView()
+                Group {
+                    switch p {
+                    case .alerts: AlertsListView()
+                    case .watches: WatchesView()
+                    case .ask: AskView()
+                    case .sources: SourcesView()
+                    case .directions: DirectionsView()
+                    }
                 }
+                .environment(\.dismissTools, { page = nil; dismiss() })
             }
         }
     }
@@ -51,6 +68,7 @@ struct ToolsSheet: View {
 struct AlertsListView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissTools) private var dismissTools
 
     private var sorted: [RoadMarker] {
         let here = model.here ?? model.viewCenter
@@ -70,7 +88,7 @@ struct AlertsListView: View {
                     Button {
                         model.selectedMarker = m
                         model.camera = .center(m.coordinate, zoom: 14, pitch: 0, direction: 0)
-                        dismiss()
+                        dismissTools()
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: MarkerIcons.name(m.kind)).foregroundStyle(MarkerIcons.tint(m.kind)).frame(width: 24)
@@ -98,12 +116,15 @@ struct AlertsListView: View {
 struct DirectionsView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissTools) private var dismissTools
     @State private var fromText = ""
     @State private var toText = ""
     @State private var fromResults: [Suggestion] = []
     @State private var toResults: [Suggestion] = []
     @State private var from: Place?
     @State private var to: Place?
+    private enum Field { case from, to }
+    @FocusState private var focus: Field?   // a pick drops the keyboard so Show routes is reachable
 
     var body: some View {
         NavigationStack {
@@ -112,17 +133,19 @@ struct DirectionsView: View {
                     Button { from = nil; fromText = "" } label: {
                         Label(from == nil ? "My location" : from!.shortName, systemImage: from == nil ? "location.fill" : "mappin")
                     }
-                    field("Or search a start", text: $fromText, results: $fromResults) { from = $0; fromText = $0.shortName; fromResults = [] }
+                    field("Or search a start", text: $fromText, results: $fromResults) { from = $0; fromText = $0.shortName; fromResults = []; focus = nil }
+                        .focused($focus, equals: .from)
                 }
                 Section("To") {
                     if let to { Label(to.shortName, systemImage: "mappin.and.ellipse") }
-                    field("Search a destination", text: $toText, results: $toResults) { to = $0; toText = $0.shortName; toResults = [] }
+                    field("Search a destination", text: $toText, results: $toResults) { to = $0; toText = $0.shortName; toResults = []; focus = nil }
+                        .focused($focus, equals: .to)
                 }
                 Section {
                     Button {
                         guard let to else { return }
                         model.origin = from
-                        dismiss()
+                        dismissTools()
                         Task { await model.routes(to: to) }
                     } label: { Label("Show routes", systemImage: "arrow.triangle.turn.up.right.diamond.fill").frame(maxWidth: .infinity) }
                     .disabled(to == nil)

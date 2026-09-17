@@ -37,10 +37,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -104,6 +106,9 @@ object Reporter {
     }
 }
 
+@kotlinx.serialization.Serializable
+data class Snap(val snapped: Boolean = false, val lat: Double, val lon: Double, val road: String? = null, val distance_m: Double = 0.0)
+
 /** The Waze-style report sheet: one tap on a kind, an optional note, send. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,12 +117,21 @@ fun ReportSheet(model: DriveViewModel, lat: Double, lon: Double, onClose: () -> 
     var note by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // The nearest road within 60 m (the server's /api/snap), unless the
+    // driver asks for the exact spot.
+    var snap by remember { mutableStateOf<Snap?>(null) }
+    var useExact by remember { mutableStateOf(false) }
+    LaunchedEffect(lat, lon) {
+        snap = runCatching { Backend.get<Snap>("/api/snap", mapOf("lat" to "%.6f".format(lat), "lon" to "%.6f".format(lon))) }.getOrNull()
+    }
+    val placedLat = if (snap?.snapped == true && !useExact) snap!!.lat else lat
+    val placedLon = if (snap?.snapped == true && !useExact) snap!!.lon else lon
     val user by model.account.user.collectAsStateWithLifecycle()
     val busy by model.account.busy.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    ModalBottomSheet(onDismissRequest = onClose, modifier = Modifier.testTag("report-sheet")) {
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("report-sheet")) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Report", style = MaterialTheme.typography.titleLarge)
             if (user == null) {
@@ -144,7 +158,13 @@ fun ReportSheet(model: DriveViewModel, lat: Double, lon: Double, onClose: () -> 
                 }
             }
             OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth(), placeholder = { Text("Add a note (optional)") }, maxLines = 3)
-            Text("Reported at %.5f, %.5f. Reports show on the map for everyone and go to the plugins you use, under a pseudonym.".format(lat, lon),
+            if (snap?.snapped == true) {
+                Row(Modifier.fillMaxWidth().testTag("report-snap"), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (useExact) "At the exact spot." else "On ${snap?.road ?: "the road"}.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    TextButton({ useExact = !useExact }, Modifier.testTag("report-exact")) { Text(if (useExact) "Snap to road" else "Use the exact spot") }
+                }
+            }
+            Text("Reported at %.5f, %.5f. Reports show on the map for everyone and go to the plugins you use, under a pseudonym.".format(placedLat, placedLon),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Button(
@@ -155,7 +175,7 @@ fun ReportSheet(model: DriveViewModel, lat: Double, lon: Double, onClose: () -> 
                         if (token == null) { (context as? Activity)?.let { model.account.signInWithGoogle(it) }; return@launch }
                         sending = true
                         try {
-                            Reporter.send(k, lat, lon, model.courseDegrees, note, token)
+                            Reporter.send(k, placedLat, placedLon, model.courseDegrees, note, token)
                             model.markers.refresh(true)
                             model.toast("Thanks. Your report is on the map.")
                             onClose()

@@ -70,6 +70,23 @@ struct ReportSheet: View {
     @State private var note = ""
     @State private var error: String?
     @State private var showSignIn = false
+    /// Where the report lands: the nearest road within 60 m of the spot
+    /// (the server's /api/snap), unless the driver asks for the exact spot.
+    @State private var snapped: Snap?
+    @State private var useExact = false
+
+    struct Snap: Decodable {
+        let snapped: Bool
+        let lat: Double
+        let lon: Double
+        let road: String?
+        let distance_m: Double
+    }
+
+    private var placed: CLLocationCoordinate2D {
+        if let s = snapped, s.snapped, !useExact { return CLLocationCoordinate2D(latitude: s.lat, longitude: s.lon) }
+        return coordinate
+    }
 
     private let columns = [GridItem(.adaptive(minimum: 96), spacing: 10)]
 
@@ -105,7 +122,17 @@ struct ReportSheet: View {
                     }
                     TextField("Add a note (optional)", text: $note, axis: .vertical).lineLimit(1 ... 3)
                         .textFieldStyle(.roundedBorder)
-                    Text("Reported at \(coordinate.pretty). Reports show on the map for everyone and go to the plugins you use, under a pseudonym.")
+                    if let s = snapped, s.snapped {
+                        HStack(spacing: 6) {
+                            Image(systemName: "road.lanes").foregroundStyle(.secondary)
+                            Text(useExact ? "At the exact spot." : "On \(s.road ?? "the road").").font(.footnote)
+                            Spacer()
+                            Button(useExact ? "Snap to road" : "Use the exact spot") { useExact.toggle() }
+                                .font(.footnote).accessibilityIdentifier("report-exact")
+                        }
+                        .accessibilityIdentifier("report-snap")
+                    }
+                    Text("Reported at \(placed.pretty). Reports show on the map for everyone and go to the plugins you use, under a pseudonym.")
                         .font(.footnote).foregroundStyle(.secondary)
                     Button {
                         Task { await send() }
@@ -121,6 +148,10 @@ struct ReportSheet: View {
             }
             .navigationTitle("Report")
             .toolbar { Button("Cancel") { dismiss() } }
+            .task {
+                snapped = try? await Backend.get("api/snap", query: ["lat": String(format: "%.6f", coordinate.latitude),
+                                                                    "lon": String(format: "%.6f", coordinate.longitude)], as: Snap.self)
+            }
             .sheet(isPresented: $showSignIn) { SignInSheet(reason: "Sign in to send reports.") }
             .alert("Could not send", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button("OK") { error = nil }
@@ -132,7 +163,7 @@ struct ReportSheet: View {
         guard let kind else { return }
         guard let token = await model.account.token() else { showSignIn = true; return }
         do {
-            try await model.reporter.send(kind: kind, at: coordinate, heading: model.courseDegrees, description: note, token: token)
+            try await model.reporter.send(kind: kind, at: placed, heading: model.courseDegrees, description: note, token: token)
             model.markers.refresh(force: true)
             model.toast = "Thanks. Your report is on the map."
             dismiss()

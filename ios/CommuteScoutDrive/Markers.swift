@@ -56,7 +56,7 @@ final class MarkerStore: ObservableObject {
             let result = await Task { try await LiveData.markers(in: (b.s, b.w, b.n, b.e), kinds: kinds) }.result
             if case let .failure(e) = result { NSLog("CS markers fetch failed: %@", String(describing: e)) }
             if case let .success(found) = result, !Task.isCancelled {
-                NSLog("CS markers: %d in box", found.count)
+                DriveLog.note("markers: \(found.count) in box")
                 markers = found
                 byKey = Dictionary(found.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
                 fetchedAt = Date()
@@ -130,6 +130,7 @@ struct MarkerCard: View {
                 }
                 Spacer()
                 Button { model.clearMarker() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .accessibilityIdentifier("marker-close")
             }
             HStack(spacing: 8) {
                 Button {

@@ -19,6 +19,10 @@ struct SettingsSheet: View {
                         LabeledContent("Signed in as", value: model.account.displayName)
                         Button("Sign out") { model.account.signOut() }
                         Button("Delete account", role: .destructive) { confirmDelete = true }
+                            .confirmationDialog("Delete your account?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                                Button("Delete account", role: .destructive) { Task { _ = await model.account.deleteAccount() } }
+                                Button("Cancel", role: .cancel) {}
+                            } message: { Text("This removes your watches, API keys and reports. It cannot be undone.") }
                         Text("Deleting removes your watches, API keys and reports from commutescout.com.")
                             .font(.footnote).foregroundStyle(.secondary)
                     } else {
@@ -31,9 +35,11 @@ struct SettingsSheet: View {
                     Picker("Theme", selection: Binding(get: { prefs.theme }, set: { prefs.theme = $0 })) {
                         ForEach(Prefs.Theme.allCases) { t in Text(t.label).tag(t) }
                     }
+                    .pickerStyle(.segmented)
                     Picker("Base map", selection: Binding(get: { prefs.mapStyle }, set: { prefs.mapStyle = $0 })) {
                         ForEach(Prefs.MapStyle.allCases) { s in Text(s.label).tag(s) }
                     }
+                    .pickerStyle(.segmented)
                     Toggle("3D perspective", isOn: Binding(get: { prefs.is3D }, set: { _ in model.toggle3D() }))
                 }
                 Section("Distances") {
@@ -112,10 +118,6 @@ struct SettingsSheet: View {
             .navigationTitle("Settings")
             .toolbar { Button("Done") { dismiss() } }
             .sheet(isPresented: $showSignIn) { SignInSheet(reason: "Sign in to report, keep watch areas and manage API keys.") }
-            .confirmationDialog("Delete your account?", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("Delete account", role: .destructive) { Task { _ = await model.account.deleteAccount() } }
-                Button("Cancel", role: .cancel) {}
-            } message: { Text("This removes your watches, API keys and reports. It cannot be undone.") }
         }
     }
 

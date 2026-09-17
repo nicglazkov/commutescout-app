@@ -174,8 +174,11 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         get() = navigationUiState.value.location?.courseOverGround?.degrees?.toDouble()
 
     /** Where a report goes: the pin while browsing one, else the driver. */
+    /** Where the map is looking, kept by the screen; the report fallback before a fix. */
+    var viewCenter: LatLon? = null
+
     val reportLatLon: LatLon?
-        get() = (_state.value as? DriveState.Found)?.place?.let { LatLon(it.lat, it.lon) } ?: _here.value
+        get() = (_state.value as? DriveState.Found)?.place?.let { LatLon(it.lat, it.lon) } ?: _here.value ?: viewCenter
 
     /** The base map for the current choice and appearance. */
     val styleUrl: String get() = Backend.styleUrl(prefs.mapStyle.serverStyle(isDark))

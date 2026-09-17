@@ -87,6 +87,12 @@ targets:
       configs:
         Debug:
           OTHER_SWIFT_FLAGS: -DDEBUG
+          # Debug builds for a real phone (scripts/ios_build.sh test-device)
+          # sign with the Development certificate and profile that
+          # asc-setup/devcert.py made; simulator builds ignore these.
+          CODE_SIGN_STYLE: Manual
+          "CODE_SIGN_IDENTITY[sdk=iphoneos*]": Apple Development
+          "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]": CommuteScout Drive Dev
         Release:
           # TestFlight builds sign manually from the build keychain that
           # scripts/ios_signing.sh sets up (see scripts/ios_build.sh).
@@ -105,7 +111,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.commutescout.drive.uitests
         TEST_TARGET_NAME: CommuteScoutDrive
         GENERATE_INFOPLIST_FILE: YES
-        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_STYLE: Manual
+        "CODE_SIGN_IDENTITY[sdk=iphoneos*]": Apple Development
+        "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]": CommuteScout Drive Dev Runner
 schemes:
   CommuteScoutDrive:
     build:

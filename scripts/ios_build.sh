@@ -3,6 +3,8 @@
 #   scripts/ios_build.sh sim        # generate the project and build for the simulator
 #   scripts/ios_build.sh run        # install and launch on the booted simulator
 #   scripts/ios_build.sh testflight # archive, export, upload to TestFlight
+#   scripts/ios_build.sh test       # UI tests on the simulator
+#   scripts/ios_build.sh test-device # UI tests on the paired iPhone (DEVICE=<udid>, unlocked)
 #   scripts/ios_build.sh device     # archive, export Ad Hoc, install on the paired iPhone
 #                                   # (DEVICE=<coredevice id>, profile "CommuteScout Drive AdHoc")
 set -euo pipefail
@@ -53,6 +55,15 @@ EOF
     xcodebuild -exportArchive -archivePath "$DD/CommuteScoutDrive.xcarchive"       -exportOptionsPlist "$DD/export.plist" -exportPath "$DD/export"       OTHER_CODE_SIGN_FLAGS="--keychain $KC" 2>&1 | tail -8
     xcrun altool --upload-app -f "$DD"/export/*.ipa -t ios \
       --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" 2>&1 | tail -6
+    ;;
+  test-device)
+    # XCTest on the phone: Debug builds sign with the Development profiles
+    # from asc-setup/devcert.py (see project.yml). The phone must be
+    # unlocked. ONLY_TESTING narrows the run, e.g. ONLY_TESTING=DriveUITests/testMarkerTapOpensCard.
+    KC="$HOME/Library/Keychains/cs-build.keychain-db"
+    DEVICE="${DEVICE:?set DEVICE to the phone UDID from: xcrun xctrace list devices}"
+    security unlock-keychain -p "$(cat "$HOME/.appstoreconnect/cs-build/keychain.pw")" "$KC"
+    xcodebuild test -project CommuteScoutDrive.xcodeproj -scheme CommuteScoutDrive       -destination "id=$DEVICE" -derivedDataPath "$DD" -skipMacroValidation       -resultBundlePath "$DD/device-tests-$(date +%H%M%S).xcresult"       $(for t in ${ONLY_TESTING//,/ }; do printf -- "-only-testing:CommuteScoutDriveUITests/%s " "$t"; done)       OTHER_CODE_SIGN_FLAGS="--keychain $KC" 2>&1 | tee "$DD/last-device-test.log" | grep -E "Test Case|passed|failed|error:|\*\* TEST" | tail -60
     ;;
   device)
     # Same archive as TestFlight, re-signed on export with the Ad Hoc
