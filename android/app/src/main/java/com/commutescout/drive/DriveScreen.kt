@@ -95,6 +95,12 @@ import kotlinx.serialization.json.buildJsonObject
 import org.maplibre.compose.camera.CameraPosition
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.layers.CircleLayer
+import org.maplibre.compose.layers.LineLayer
+import org.maplibre.compose.expressions.value.LineCap
+import org.maplibre.compose.expressions.value.LineJoin
+import org.maplibre.spatialk.geojson.LineString
+import androidx.compose.foundation.layout.PaddingValues
+import com.stadiamaps.ferrostar.maplibreui.runtime.navigationCameraOptions
 import org.maplibre.compose.map.MapOptions
 import org.maplibre.compose.map.OrnamentOptions
 import org.maplibre.compose.sources.GeoJsonData
@@ -132,36 +138,40 @@ fun DriveScreen(model: DriveViewModel) {
     }
     LaunchedEffect(Unit) { if (!hasPermission) launcher.launch(permissions) }
 
-    // The map rests on the driver; a pin moves it to the place.
-    var followed by remember { mutableStateOf(false) }
-    LaunchedEffect(here, state) {
-        val h = here
-        if (state is DriveState.Browsing && h != null && !followed) {
-            followed = true
-            mapState.cameraState.animateTo(CameraPosition(target = Position(h.lon, h.lat), zoom = 14.0))
-        }
-        (state as? DriveState.Found)?.let { f ->
-            mapState.cameraMode = NavigationCameraMode.FREE
-            mapState.cameraState.animateTo(CameraPosition(target = Position(f.place.lon, f.place.lat), zoom = 14.5))
-        }
-        (state as? DriveState.Choosing)?.let { c ->
-            c.routes.firstOrNull()?.let { r ->
+    // Ferrostar follows the driver while browsing; a pin or a route
+    // preview takes the camera over, and Browsing hands it back.
+    LaunchedEffect(state) {
+        when (val s = state) {
+            is DriveState.Found -> {
                 mapState.cameraMode = NavigationCameraMode.FREE
-                mapState.cameraState.animateTo(
-                    org.maplibre.compose.camera.CameraPosition(
-                        target = Position((r.bbox.sw.lng + r.bbox.ne.lng) / 2, (r.bbox.sw.lat + r.bbox.ne.lat) / 2),
-                        zoom = zoomFor(r.bbox.ne.lat - r.bbox.sw.lat, r.bbox.ne.lng - r.bbox.sw.lng),
-                    )
-                )
+                delay(350)   // let the keyboard finish closing; a resize cancels camera animations
+                try {
+                    mapState.cameraState.animateTo(CameraPosition(
+                        target = Position(s.place.lon, s.place.lat), zoom = 14.5,
+                        padding = PaddingValues(bottom = 220.dp)))
+                } catch (e: Exception) {
+                    android.util.Log.w("DriveScreen", "pin camera move failed: $e")
+                }
             }
+            is DriveState.Choosing -> s.routes.firstOrNull()?.let { r ->
+                mapState.cameraMode = NavigationCameraMode.FREE
+                mapState.cameraState.animateTo(CameraPosition(
+                    target = Position((r.bbox.sw.lng + r.bbox.ne.lng) / 2, (r.bbox.sw.lat + r.bbox.ne.lat) / 2),
+                    zoom = zoomFor(r.bbox.ne.lat - r.bbox.sw.lat, r.bbox.ne.lng - r.bbox.sw.lng),
+                    padding = PaddingValues(top = 120.dp, bottom = 340.dp)))
+            }
+            is DriveState.Browsing -> mapState.recenter(isNavigating = false)
+            else -> {}
         }
     }
+    var chosenRoute by remember { mutableStateOf<Route?>(null) }
 
     Box(Modifier.fillMaxSize()) {
         DynamicallyOrientingNavigationView(
             modifier = Modifier.fillMaxSize(),
             baseStyle = BaseStyle.Uri(Backend.STYLE_URL),
             navigationMapState = mapState,
+            navigationCameraOptions = navigationCameraOptions().copy(browsingZoom = 14.0),
             viewModel = model,
             config = VisualNavigationViewConfig.Default().withSpeedLimitStyle(SignageStyle.MUTCD),
             views = NavigationViewComponentBuilder.Default().withCustomOverlayView { modifier ->
@@ -173,6 +183,7 @@ fun DriveScreen(model: DriveViewModel) {
             mapOptions = MapOptions(ornamentOptions = OrnamentOptions(isCompassEnabled = false, isScaleBarEnabled = false)),
         ) {
             (state as? DriveState.Found)?.let { PinLayer(it.place) }
+            if (state is DriveState.Choosing) chosenRoute?.let { RouteLine(it) }
         }
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
@@ -196,7 +207,7 @@ fun DriveScreen(model: DriveViewModel) {
                         Spacer(Modifier.width(10.dp)); Text("Finding routes")
                     }
                 }
-                is DriveState.Choosing -> RoutesCard(s.routes, s.place, model)
+                is DriveState.Choosing -> RoutesCard(s.routes, s.place, model) { chosenRoute = it }
                 else -> {}
             }
         }
@@ -225,6 +236,19 @@ private fun PinLayer(place: Place) {
         strokeColor = const(Color.White), strokeWidth = const(2.dp))
 }
 
+/** The alternative under consideration, drawn like the navigation route. */
+@Composable
+@MaplibreComposable
+private fun RouteLine(route: Route) {
+    val source = rememberGeoJsonSource(GeoJsonData.Features(FeatureCollection(
+        Feature(geometry = LineString(route.geometry.map { Position(it.lng, it.lat) }), properties = buildJsonObject {})
+    )))
+    LineLayer(id = "cs-route-border", source = source, color = const(Color(0xFF1B4FA8)), width = const(9.dp),
+        cap = const(LineCap.Round), join = const(LineJoin.Round))
+    LineLayer(id = "cs-route", source = source, color = const(Color(0xFF3B82F6)), width = const(6.dp),
+        cap = const(LineCap.Round), join = const(LineJoin.Round))
+}
+
 /** Search, settings and locate, floating over the map while browsing. */
 @Composable
 private fun BrowsingOverlay(modifier: Modifier, model: DriveViewModel, mapState: NavigationMapState, onSettings: () -> Unit) {
@@ -236,11 +260,7 @@ private fun BrowsingOverlay(modifier: Modifier, model: DriveViewModel, mapState:
             Spacer(Modifier.width(8.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 RoundIcon(Icons.Default.Settings, "Settings", onSettings)
-                RoundIcon(Icons.Default.MyLocation, "My location") {
-                    here?.let { h ->
-                        scope.launch { mapState.cameraState.animateTo(CameraPosition(target = Position(h.lon, h.lat), zoom = 14.0)) }
-                    }
-                }
+                RoundIcon(Icons.Default.MyLocation, "My location") { mapState.recenter(isNavigating = false) }
             }
         }
     }
@@ -380,8 +400,9 @@ private fun PlaceCard(place: Place, here: LatLon?, model: DriveViewModel) {
 
 /** The alternatives, fastest first, one tap to go. */
 @Composable
-private fun RoutesCard(routes: List<Route>, place: Place, model: DriveViewModel) {
+private fun RoutesCard(routes: List<Route>, place: Place, model: DriveViewModel, onChosen: (Route) -> Unit) {
     var chosen by remember { mutableStateOf(0) }
+    LaunchedEffect(chosen, routes) { routes.getOrNull(chosen)?.let(onChosen) }
     Card(Modifier.padding(12.dp).fillMaxWidth().safeDrawingPadding(), elevation = CardDefaults.cardElevation(6.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
