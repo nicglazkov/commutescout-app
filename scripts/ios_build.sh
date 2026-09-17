@@ -25,13 +25,13 @@ case "${1:-sim}" in
     xcrun simctl launch booted com.commutescout.drive
     ;;
   testflight)
+    # Manual signing with the build keychain that scripts/ios_signing.sh set
+    # up: the login keychain is not reachable from a remote shell.
     BUILD="${BUILD:-$(date +%Y%m%d%H%M)}"
-    xcodebuild -project CommuteScoutDrive.xcodeproj -scheme CommuteScoutDrive \
-      -destination "generic/platform=iOS" -derivedDataPath "$DD" -skipMacroValidation \
-      -archivePath "$DD/CommuteScoutDrive.xcarchive" \
-      -allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY_PATH" \
-      -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-      CURRENT_PROJECT_VERSION="$BUILD" archive 2>&1 | tail -15
+    KC="$HOME/Library/Keychains/cs-build.keychain-db"
+    PROFILE="CommuteScout Drive AppStore"
+    security unlock-keychain -p "$(cat "$HOME/.appstoreconnect/cs-build/keychain.pw")" "$KC"
+    xcodebuild -project CommuteScoutDrive.xcodeproj -scheme CommuteScoutDrive       -destination "generic/platform=iOS" -derivedDataPath "$DD" -skipMacroValidation       -archivePath "$DD/CommuteScoutDrive.xcarchive"       OTHER_CODE_SIGN_FLAGS="--keychain $KC"       CURRENT_PROJECT_VERSION="$BUILD" archive 2>&1 | tail -15
     cat > "$DD/export.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -40,15 +40,16 @@ case "${1:-sim}" in
   <key>destination</key><string>export</string>
   <key>teamID</key><string>M7D6YHVDNK</string>
   <key>uploadSymbols</key><true/>
-  <key>signingStyle</key><string>automatic</string>
+  <key>signingStyle</key><string>manual</string>
+  <key>signingCertificate</key><string>Apple Distribution</string>
+  <key>provisioningProfiles</key><dict>
+    <key>com.commutescout.drive</key><string>$PROFILE</string>
+  </dict>
 </dict></plist>
 EOF
     rm -rf "$DD/export"
-    xcodebuild -exportArchive -archivePath "$DD/CommuteScoutDrive.xcarchive" \
-      -exportOptionsPlist "$DD/export.plist" -exportPath "$DD/export" \
-      -allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY_PATH" \
-      -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" 2>&1 | tail -8
-    xcrun altool --upload-app -f "$DD/export/CommuteScoutDrive.ipa" -t ios \
+    xcodebuild -exportArchive -archivePath "$DD/CommuteScoutDrive.xcarchive"       -exportOptionsPlist "$DD/export.plist" -exportPath "$DD/export"       OTHER_CODE_SIGN_FLAGS="--keychain $KC" 2>&1 | tail -8
+    xcrun altool --upload-app -f "$DD"/export/*.ipa -t ios \
       --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" 2>&1 | tail -6
     ;;
 esac

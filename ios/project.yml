@@ -68,3 +68,9 @@ targets:
       configs:
         Debug:
           OTHER_SWIFT_FLAGS: -DDEBUG
+        Release:
+          # TestFlight builds sign manually from the build keychain that
+          # scripts/ios_signing.sh sets up (see scripts/ios_build.sh).
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: CommuteScout Drive AppStore
