@@ -70,6 +70,13 @@ final class AlertsEngine: ObservableObject {
         }
     }
 
+    /// Repeat an alert on demand, muted or not.
+    func say(_ marker: RoadMarker) {
+        let utterance = AVSpeechUtterance(string: marker.spokenTitle)
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        synth.speak(utterance)
+    }
+
     private func announce(_ marker: RoadMarker) {
         let text = marker.spokenTitle
         lastAnnounced = text

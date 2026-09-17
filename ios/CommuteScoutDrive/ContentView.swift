@@ -24,8 +24,17 @@ struct ContentView: View {
                 makeMapContent: { mapContent }
             )
             .navigationSpeedLimit(speedLimit: model.core.annotation?.speedLimit, speedLimitStyle: .mutcdStyle)
-            .navigationViewInnerGrid(topCenter: { topBanner })
+            .navigationViewInnerGrid(topCenter: { reroutingBanner })
             .ignoresSafeArea()
+
+            if isNavigating, let next = model.alerts.ahead.first {
+                VStack {
+                    Spacer()
+                    AlertStrip(item: next, along: currentAlong)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 108)
+                }
+            }
 
             if !isNavigating {
                 VStack(spacing: 0) {
@@ -74,13 +83,8 @@ struct ContentView: View {
             .strokeWidth(2).strokeColor(.white)
     }
 
-    @ViewBuilder private var topBanner: some View {
-        if case .navigating = model.state, let next = model.alerts.ahead.first {
-            NavigationUIBanner(severity: .info) {
-                Text("\(next.marker.displayTitle) in \(Units.distance(max(0, next.alongMeters - currentAlong)))")
-                    .lineLimit(2)
-            }
-        } else if model.coreState?.isCalculatingNewRoute == true {
+    @ViewBuilder private var reroutingBanner: some View {
+        if model.coreState?.isCalculatingNewRoute == true {
             NavigationUIBanner(severity: .loading) { Text("Rerouting") }
         }
     }
@@ -108,6 +112,49 @@ struct ContentView: View {
             RoutesCard(routes: routes, place: place)
         case .navigating:
             EmptyView()
+        }
+    }
+}
+
+/// The next road event on the route, above the trip bar: what it is
+/// and how far ahead. Tap to hear it again.
+struct AlertStrip: View {
+    @EnvironmentObject var model: AppModel
+    let item: AlertsEngine.Upcoming
+    let along: Double
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).font(.title3).foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.marker.displayTitle).font(.subheadline.weight(.semibold)).lineLimit(2)
+                Text("in \(Units.distance(max(0, item.alongMeters - along)))" +
+                     (model.alerts.ahead.count > 1 ? ", \(model.alerts.ahead.count - 1) more ahead" : ""))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        .onTapGesture { model.alerts.say(item.marker) }
+    }
+
+    private var symbol: String {
+        switch item.marker.kind {
+        case "closure": "xmark.octagon.fill"
+        case "chain": "snowflake"
+        case "fire": "flame.fill"
+        default: "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var tint: Color {
+        switch item.marker.kind {
+        case "closure": .red
+        case "chain": .blue
+        case "fire": .orange
+        default: .yellow
         }
     }
 }
