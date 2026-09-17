@@ -302,7 +302,7 @@ fun AskSheet(model: DriveViewModel, onClose: () -> Unit) {
             Column(Modifier.height(300.dp).verticalScroll(rememberScrollState())) {
                 if (answer.isEmpty() && !running) Text("Ask about closures, chain controls, fires or traffic, for example \"Is 80 over Donner open?\" or \"Anything between here and Tahoe?\"", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (answer.isNotEmpty()) Text(answer)
+                if (answer.isNotEmpty()) Text(answer.replace("**", "").replace(Regex("(?m)^#+ "), ""))
                 if (running) CircularProgressIndicator(Modifier.padding(8.dp))
             }
             Row(verticalAlignment = Alignment.CenterVertically) {

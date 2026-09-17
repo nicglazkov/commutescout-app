@@ -15,12 +15,16 @@ final class DriveUITests: XCTestCase {
 
     /// Forms are lazy: swipe until the element is on screen.
     @discardableResult
-    private func reveal(_ element: XCUIElement, tries: Int = 8) -> Bool {
+    private func reveal(_ element: XCUIElement, tries: Int = 16) -> Bool {
+        let form = app.collectionViews.firstMatch.exists ? app.collectionViews.firstMatch : app.tables.firstMatch
         for _ in 0 ..< tries {
             if element.exists && element.isHittable { return true }
-            app.swipeUp()
+            // A third of the form at a time, so no row is skipped: lazy
+            // forms only expose rows that are on screen.
+            form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+                .press(forDuration: 0.05, thenDragTo: form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42)))
         }
-        return element.exists
+        return element.exists && element.isHittable
     }
 
     private func search(_ text: String) {
@@ -100,9 +104,22 @@ final class DriveUITests: XCTestCase {
         app.buttons["Miles"].tap()
         let tolls = app.switches["Avoid tolls"]
         if tolls.exists { tolls.tap(); tolls.tap() }
-        XCTAssertTrue(reveal(app.descendants(matching: .any)["Live map on the web"]), "link back to the website")
-        XCTAssertTrue(reveal(app.buttons["advanced-alerts"]), "advanced alerts row")
-        app.buttons["advanced-alerts"].tap()
+        let link = app.staticTexts["Live map on the web"]
+        XCTAssertTrue(reveal(link) || link.exists, "link back to the website")
+        // The row is a NavigationLink: a button labelled "Advanced alerts, Off".
+        let advanced = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Advanced alerts'")).firstMatch
+        let found = reveal(advanced)
+        if !found {
+            for line in app.debugDescription.components(separatedBy: CharacterSet.newlines) where line.contains("Advanced") || line.contains("Keep the screen") {
+                NSLog("CSDBG %@", String(line))
+            }
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "advanced-missing"
+            shot.lifetime = .keepAlways
+            add(shot)
+        }
+        XCTAssertTrue(found, "advanced alerts row")
+        advanced.tap()
         XCTAssertTrue(app.switches["advanced-toggle"].waitForExistence(timeout: 5))
         app.switches["advanced-toggle"].tap()
         XCTAssertTrue(app.staticTexts["Police reports"].waitForExistence(timeout: 5), "per-kind rules appear")
