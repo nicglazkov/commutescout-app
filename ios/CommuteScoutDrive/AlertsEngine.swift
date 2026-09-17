@@ -136,12 +136,23 @@ final class AlertsEngine: ObservableObject {
     /// `dir` field or a "(northbound)" / "NB" in its label. Nil when it
     /// applies to both directions or says nothing.
     nonisolated static func heading(of m: RoadMarker) -> Double? {
-        let text = ((m.dir ?? "") + " " + m.displayTitle).lowercased()
+        // The server's dir field: "North", "NB", "N"... and only that word.
+        if let d = m.dir?.trimmingCharacters(in: .whitespaces).lowercased(), !d.isEmpty {
+            if d.hasPrefix("both") || d.contains("/") || d.contains("&") { return nil }
+            switch d.first {
+            case "n": return 0
+            case "e": return 90
+            case "s": return 180
+            case "w": return 270
+            default: break
+            }
+        }
+        // Otherwise a "(northbound)" or "NB" in the label; two directions say nothing.
+        let text = " " + m.displayTitle.lowercased()
         let table: [(String, Double)] = [("northbound", 0), ("eastbound", 90), ("southbound", 180), ("westbound", 270),
                                           (" nb", 0), (" eb", 90), (" sb", 180), (" wb", 270)]
-        var found: [Double] = []
-        for (k, b) in table where text.contains(k) || text.hasPrefix(k.trimmingCharacters(in: .whitespaces)) { found.append(b) }
-        return found.count == 1 ? found[0] : nil   // "north and southbound" says nothing
+        let found = table.filter { text.contains($0.0) }.map(\.1)
+        return found.count == 1 ? found[0] : nil
     }
 
     nonisolated static func bearing(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {

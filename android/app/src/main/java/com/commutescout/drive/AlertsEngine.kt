@@ -84,10 +84,17 @@ class AlertsEngine(context: Context) {
 
         /** The direction a marker applies to as a bearing, from `dir` or "(northbound)" / "NB" in the label; null when both or unknown. */
         fun headingOf(m: RoadMarker): Double? {
-            val text = ((m.dir ?: "") + " " + (m.label ?: "")).lowercase()
+            // The server's dir field: "North", "NB", "N"... and only that word.
+            val d = m.dir?.trim()?.lowercase()
+            if (!d.isNullOrEmpty()) {
+                if (d.startsWith("both") || '/' in d || '&' in d) return null
+                when (d[0]) { 'n' -> return 0.0; 'e' -> return 90.0; 's' -> return 180.0; 'w' -> return 270.0 }
+            }
+            // Otherwise a "(northbound)" or "NB" in the label; two directions say nothing.
+            val text = " " + (m.label ?: "").lowercase()
             val table = listOf("northbound" to 0.0, "eastbound" to 90.0, "southbound" to 180.0, "westbound" to 270.0,
                                " nb" to 0.0, " eb" to 90.0, " sb" to 180.0, " wb" to 270.0)
-            val found = table.filter { (k, _) -> text.contains(k) || text.startsWith(k.trim()) }.map { it.second }
+            val found = table.filter { (k, _) -> text.contains(k) }.map { it.second }
             return if (found.size == 1) found[0] else null
         }
 
