@@ -40,11 +40,9 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     HStack(alignment: .top, spacing: 8) {
                         SearchBar()
-                        Button { showSettings = true } label: {
-                            Image(systemName: "gearshape.fill")
-                                .padding(11)
-                                .background(.regularMaterial, in: Circle())
-                                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                        VStack(spacing: 8) {
+                            Button { showSettings = true } label: { roundIcon("gearshape.fill") }
+                            Button { model.follow() } label: { roundIcon("location.fill") }
                         }
                     }
                     .padding(.horizontal, 12)
@@ -68,6 +66,14 @@ struct ContentView: View {
     private var isNavigating: Bool {
         if case .navigating = model.state { return true }
         return false
+    }
+
+    private func roundIcon(_ name: String) -> some View {
+        Image(systemName: name)
+            .frame(width: 20, height: 20)
+            .padding(11)
+            .background(.regularMaterial, in: Circle())
+            .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
     }
 
     @MapViewContentBuilder private var mapContent: [StyleLayerDefinition] {

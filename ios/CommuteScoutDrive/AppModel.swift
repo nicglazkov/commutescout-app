@@ -113,11 +113,25 @@ final class AppModel: ObservableObject {
             }
         }.store(in: &cancellables)
         location.startUpdating()
-        if let here = location.lastLocation?.clLocation.coordinate {
-            camera = .center(here, zoom: 13)
-        } else {
-            camera = .center(CLLocationCoordinate2D(latitude: 37.5, longitude: -121.9), zoom: 8)
+        camera = .center(CLLocationCoordinate2D(latitude: 37.5, longitude: -121.9), zoom: 8)
+        Task { await followOnceAllowed() }
+    }
+
+    /// Follow the driver as soon as location is allowed (the first launch
+    /// asks for permission, so this waits for the answer).
+    private func followOnceAllowed() async {
+        for _ in 0 ..< 120 {
+            if location.enabled {
+                if case .browsing = state { follow() }
+                return
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
         }
+    }
+
+    /// Keep the map on the driver, north up, like a maps app at rest.
+    func follow() {
+        camera = .trackUserLocation(zoom: 14)
     }
 
     var here: CLLocationCoordinate2D? { location.lastLocation?.clLocation.coordinate }
@@ -177,8 +191,8 @@ final class AppModel: ObservableObject {
         core.stopNavigation()
         alerts.stop()
         UIApplication.shared.isIdleTimerDisabled = false
-        if let here { camera = .center(here, zoom: 13) }
         state = .browsing
+        follow()
     }
 
     func toggleMute() {
