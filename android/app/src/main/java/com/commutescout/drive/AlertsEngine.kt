@@ -41,6 +41,9 @@ class AlertsEngine(context: Context) {
     val hereAlong = _hereAlong.asStateFlow()
     var spoken = true
     var announceAheadMeters = 1500.0
+    /** Per-kind rules from Settings; null means the one distance above. */
+    var rules: ((RoadMarker) -> Prefs.AlertRule)? = null
+    private val repeated = HashSet<String>()
 
     private var route: List<LatLon> = emptyList()
     private var cumulative: DoubleArray = DoubleArray(0)
@@ -122,7 +125,7 @@ class AlertsEngine(context: Context) {
         val lats = coordinates.map { it.lat }; val lons = coordinates.map { it.lon }
         if (lats.isEmpty()) return
         box = doubleArrayOf(lats.min() - 0.05, lons.min() - 0.05, lats.max() + 0.05, lons.max() + 0.05)
-        announced.clear()
+        announced.clear(); repeated.clear()
         refreshJob = scope.launch {
             while (isActive) {
                 refresh()
@@ -143,21 +146,25 @@ class AlertsEngine(context: Context) {
         val hit = along(route, cumulative, position, lastSegment)
         lastSegment = hit.segment
         _hereAlong.value = hit.along
-        val upcoming = all.filter { it.alongMeters > hit.along - 100 }
+        val upcoming = all.filter { it.alongMeters > hit.along - 100 && (rules?.invoke(it.marker)?.enabled ?: true) }
         if (upcoming != _ahead.value) _ahead.value = upcoming
         for (item in upcoming) {
-            if (item.id in announced) continue
+            val rule = rules?.invoke(item.marker) ?: Prefs.AlertRule(true, spoken, announceAheadMeters, 0.0)
             val gap = item.alongMeters - hit.along
-            if (gap <= announceAheadMeters && gap > -100) {
+            if (item.id !in announced && gap <= rule.firstMeters && gap > -100) {
                 announced.add(item.id)
-                if (spoken) say(item.marker)
+                if (rule.speak) say(item.marker, gap)
+            } else if (item.id in announced && item.id !in repeated && rule.repeatMeters > 0 && gap <= rule.repeatMeters && gap > -100) {
+                repeated.add(item.id)
+                if (rule.speak) say(item.marker, gap)
             }
         }
     }
 
-    fun say(marker: RoadMarker) {
+    fun say(marker: RoadMarker, gap: Double = 0.0) {
         if (!ttsReady) return
-        tts?.speak(marker.spokenTitle, TextToSpeech.QUEUE_ADD, null, marker.key)
+        val text = marker.spokenTitle + if (gap > 200) ", in " + Units.spoken(gap) else ""
+        tts?.speak(text, TextToSpeech.QUEUE_ADD, null, marker.key)
     }
 
     private suspend fun refresh() {

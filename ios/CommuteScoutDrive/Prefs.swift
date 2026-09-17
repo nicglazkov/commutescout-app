@@ -50,6 +50,63 @@ final class Prefs: ObservableObject {
     @AppStorage("cs.avoid.highways") var avoidHighways: Bool = false
     @AppStorage("cs.avoid.ferries") var avoidFerries: Bool = false
     @AppStorage("cs.units") var unitsRaw: String = ""              // "", "mi" or "km"
+    @AppStorage("cs.alerts.rules") var alertRulesRaw: String = ""   // JSON, per kind
+    @AppStorage("cs.alerts.advanced") var advancedAlerts: Bool = false
+
+    /// How one kind of alert is announced: at what distance, whether it
+    /// repeats closer, and whether it is spoken at all. The advanced
+    /// mode edits these per kind; the simple mode uses one distance.
+    struct AlertRule: Codable, Equatable {
+        var enabled = true
+        var speak = true
+        var firstMeters = 1500.0
+        var repeatMeters = 0.0       // 0 = no second warning
+    }
+
+    /// The kinds a rule can be set for: the road data kinds plus the
+    /// community report groups drivers care about most.
+    static let alertKinds: [(key: String, label: String)] = [
+        ("incident", "Incidents"),
+        ("lane_closure", "Closures and lane work"),
+        ("chain_control", "Chain controls"),
+        ("wildfire", "Wildfires"),
+        ("police", "Police reports"),
+        ("hazard", "Hazard and crash reports"),
+        ("plugin", "Other community reports"),
+    ]
+
+    var alertRules: [String: AlertRule] {
+        get {
+            guard let d = alertRulesRaw.data(using: .utf8), let r = try? JSONDecoder().decode([String: AlertRule].self, from: d) else { return [:] }
+            return r
+        }
+        set {
+            if let d = try? JSONEncoder().encode(newValue), let s = String(data: d, encoding: .utf8) { alertRulesRaw = s }
+            objectWillChange.send()
+        }
+    }
+
+    func rule(for kind: String) -> AlertRule {
+        if !advancedAlerts { return AlertRule(enabled: true, speak: spokenAlerts, firstMeters: alertAheadMeters, repeatMeters: 0) }
+        return alertRules[kind] ?? AlertRule()
+    }
+
+    func setRule(_ r: AlertRule, for kind: String) {
+        var all = alertRules
+        all[kind] = r
+        alertRules = all
+    }
+
+    /// The rule group for a marker: community reports split by what they are.
+    static func ruleKind(for m: RoadMarker) -> String {
+        if m.kind == "plugin" {
+            let k = (m.flareKind ?? "").uppercased()
+            if k.hasPrefix("POLICE") { return "police" }
+            if k.hasPrefix("HAZARD") || k.hasPrefix("CRASH") { return "hazard" }
+            return "plugin"
+        }
+        return m.kind
+    }
 
     var theme: Theme {
         get { Theme(rawValue: themeRaw) ?? .system }

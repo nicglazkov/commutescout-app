@@ -101,8 +101,16 @@ final class DriveUITests: XCTestCase {
         let tolls = app.switches["Avoid tolls"]
         if tolls.exists { tolls.tap(); tolls.tap() }
         XCTAssertTrue(reveal(app.descendants(matching: .any)["Live map on the web"]), "link back to the website")
+        XCTAssertTrue(reveal(app.buttons["advanced-alerts"]), "advanced alerts row")
+        app.buttons["advanced-alerts"].tap()
+        XCTAssertTrue(app.switches["advanced-toggle"].waitForExistence(timeout: 5))
+        app.switches["advanced-toggle"].tap()
+        XCTAssertTrue(app.staticTexts["Police reports"].waitForExistence(timeout: 5), "per-kind rules appear")
+        app.switches["advanced-toggle"].tap()
+        app.navigationBars.buttons.firstMatch.tap()   // back
         app.buttons["Done"].tap()
-        app.buttons["layers"].tap()
+        app.buttons["tools"].tap()
+        app.buttons["tool-layers"].tap()
         XCTAssertTrue(app.staticTexts["Base map"].waitForExistence(timeout: 5))
         app.buttons["Dark"].tap()
         app.buttons["Match theme"].tap()
@@ -114,6 +122,37 @@ final class DriveUITests: XCTestCase {
         XCTAssertTrue(app.buttons["locate"].exists)
         app.buttons["perspective"].tap()
         app.buttons["locate"].tap()
+    }
+
+    func testToolsMenuOpensEachTool() {
+        app.buttons["tools"].tap()
+        XCTAssertTrue(app.buttons["tool-alerts"].waitForExistence(timeout: 5))
+        app.buttons["tool-alerts"].tap()
+        XCTAssertTrue(app.navigationBars["Alerts nearby"].waitForExistence(timeout: 8))
+        app.buttons["Done"].firstMatch.tap()
+        app.buttons["tool-ask"].tap()
+        XCTAssertTrue(app.navigationBars["Ask"].waitForExistence(timeout: 5))
+        app.buttons["Done"].firstMatch.tap()
+        app.buttons["tool-sources"].tap()
+        XCTAssertTrue(app.navigationBars["Sources"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["add-source"].waitForExistence(timeout: 5))
+        app.buttons["Done"].firstMatch.tap()
+        app.buttons["tool-watches"].tap()
+        XCTAssertTrue(app.navigationBars["Watch areas"].waitForExistence(timeout: 5))
+        app.buttons["Done"].firstMatch.tap()
+        app.buttons["tool-directions"].tap()
+        XCTAssertTrue(app.navigationBars["Directions"].waitForExistence(timeout: 5))
+        app.buttons["Cancel"].firstMatch.tap()
+        app.buttons["Done"].firstMatch.tap()
+    }
+
+    func testReportSheetAsksForSignIn() {
+        XCTAssertTrue(app.buttons["report"].waitForExistence(timeout: 10))
+        app.buttons["report"].tap()
+        XCTAssertTrue(app.buttons["report-POLICE_VISIBLE"].waitForExistence(timeout: 5))
+        app.buttons["report-POLICE_VISIBLE"].tap()
+        XCTAssertTrue(app.buttons["Sign in"].exists, "signed-out reports ask for an account")
+        app.buttons["Cancel"].firstMatch.tap()
     }
 
     func testLongPressDropsAPin() {

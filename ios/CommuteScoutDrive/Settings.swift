@@ -59,6 +59,10 @@ struct SettingsSheet: View {
                         Text(Units.useMiles ? "1 mi ahead" : "1.5 km ahead").tag(1500.0)
                         Text(Units.useMiles ? "2 mi ahead" : "3 km ahead").tag(3000.0)
                     }
+                    NavigationLink { AdvancedAlertsView() } label: {
+                        LabeledContent("Advanced alerts", value: prefs.advancedAlerts ? "On" : "Off")
+                    }
+                    .accessibilityIdentifier("advanced-alerts")
                     Toggle("Show speed limit", isOn: Binding(get: { prefs.showSpeedLimit }, set: { prefs.showSpeedLimit = $0; prefs.objectWillChange.send() }))
                     Toggle("Keep the screen on", isOn: Binding(get: { prefs.keepAwake }, set: { prefs.keepAwake = $0; prefs.objectWillChange.send() }))
                 }
@@ -82,6 +86,9 @@ struct SettingsSheet: View {
                     Toggle("Simulate driving the route", isOn: $model.simulating)
                 }
                 #endif
+                Section("Community") {
+                    NavigationLink("Sources (Flare plugins)") { SourcesView() }
+                }
                 Section("Help and docs") {
                     Link(destination: URL(string: "https://commutescout.com/map")!) { Label("Live map on the web", systemImage: "map") }
                     Link(destination: URL(string: "https://commutescout.com/data-sources")!) { Label("Data sources", systemImage: "list.bullet.rectangle") }
@@ -113,5 +120,53 @@ struct SettingsSheet: View {
             Spacer()
             Button(role: .destructive) { model.places.remove(p) } label: { Image(systemName: "trash") }
         }
+    }
+}
+
+/// Highway Radar-style control: per kind, at what distance the first
+/// warning comes, whether it repeats closer, and whether it is spoken.
+struct AdvancedAlertsView: View {
+    @EnvironmentObject var model: AppModel
+    private var prefs: Prefs { model.prefs }
+
+    private var steps: [Double] {
+        Units.useMiles ? [402, 805, 1609, 2414, 3219, 4828, 8047] : [300, 500, 1000, 1500, 2000, 3000, 5000, 8000]
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Set alerts per kind", isOn: Binding(get: { prefs.advancedAlerts }, set: { prefs.advancedAlerts = $0; prefs.objectWillChange.send() }))
+                    .accessibilityIdentifier("advanced-toggle")
+                Text("Off: every alert uses the one distance in While driving. On: each kind below has its own first warning, an optional second warning closer in, and its own voice.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            if prefs.advancedAlerts {
+                ForEach(Prefs.alertKinds, id: \.key) { k in
+                    Section(k.label) {
+                        let rule = prefs.alertRules[k.key] ?? Prefs.AlertRule()
+                        Toggle("Warn", isOn: Binding(get: { rule.enabled }, set: { var r = rule; r.enabled = $0; prefs.setRule(r, for: k.key) }))
+                        if rule.enabled {
+                            Picker("First warning", selection: Binding(get: { nearest(rule.firstMeters) }, set: { var r = rule; r.firstMeters = $0; if r.repeatMeters >= $0 { r.repeatMeters = 0 }; prefs.setRule(r, for: k.key) })) {
+                                ForEach(steps, id: \.self) { m in Text(Units.distance(m) + " ahead").tag(m) }
+                            }
+                            Picker("Second warning", selection: Binding(get: { rule.repeatMeters == 0 ? 0 : nearest(rule.repeatMeters) }, set: { var r = rule; r.repeatMeters = $0; prefs.setRule(r, for: k.key) })) {
+                                Text("None").tag(0.0)
+                                ForEach(steps.filter { $0 < nearest(rule.firstMeters) }, id: \.self) { m in Text(Units.distance(m) + " ahead").tag(m) }
+                            }
+                            Toggle("Speak it", isOn: Binding(get: { rule.speak }, set: { var r = rule; r.speak = $0; prefs.setRule(r, for: k.key) }))
+                        }
+                    }
+                }
+                Section {
+                    Button("Reset to defaults") { prefs.alertRules = [:] }
+                }
+            }
+        }
+        .navigationTitle("Advanced alerts")
+    }
+
+    private func nearest(_ m: Double) -> Double {
+        steps.min { abs($0 - m) < abs($1 - m) } ?? m
     }
 }

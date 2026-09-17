@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Place
@@ -135,7 +136,12 @@ fun DriveScreen(model: DriveViewModel) {
     val here by model.here.collectAsStateWithLifecycle()
     val hasPermission by model.hasPermission.collectAsStateWithLifecycle()
     val selected by model.selectedMarker.collectAsStateWithLifecycle()
-    val allMarkers by model.markers.markers.collectAsStateWithLifecycle()
+    val siteMarkers by model.markers.markers.collectAsStateWithLifecycle()
+    val directMarkers by model.sources.directMarkers.collectAsStateWithLifecycle()
+    val hiddenSources by model.sources.hidden.collectAsStateWithLifecycle()
+    val allMarkers = (siteMarkers + directMarkers).filter { (it.source ?: "") !in hiddenSources }
+    var tool by remember { mutableStateOf<Tool?>(null) }
+    var showTools by remember { mutableStateOf(false) }
     val mapState = rememberNavigationMapState()
     val scope = rememberCoroutineScope()
     var showSettings by remember { mutableStateOf(false) }
@@ -201,6 +207,7 @@ fun DriveScreen(model: DriveViewModel) {
                 val d = proj.positionFromScreenLocation(DpOffset(0.dp, h))
                 val lats = listOf(a, b, c, d).map { it.latitude }; val lons = listOf(a, b, c, d).map { it.longitude }
                 model.markers.view(lats.min(), lons.min(), lats.max(), lons.max(), pos.zoom, prefs.apiKinds)
+                model.sources.view(LatLon(pos.target.latitude, pos.target.longitude))
             }
         }
 
@@ -213,7 +220,7 @@ fun DriveScreen(model: DriveViewModel) {
             config = VisualNavigationViewConfig.Default().withSpeedLimitStyle(SignageStyle.MUTCD),
             views = NavigationViewComponentBuilder.Default().withCustomOverlayView { modifier ->
                 if (!uiState.isNavigating()) {
-                    BrowsingOverlay(modifier, model, onSettings = { showSettings = true }, onLayers = { showLayers = true })
+                    BrowsingOverlay(modifier, model, onSettings = { showSettings = true }, onLayers = { showTools = true })
                 }
             },
             onTapExit = { model.stopNavigation() },
@@ -288,6 +295,15 @@ fun DriveScreen(model: DriveViewModel) {
 
     if (showSettings) SettingsSheet(model) { showSettings = false; model.applyPrefs() }
     if (showLayers) LayersSheet(model) { showLayers = false }
+    if (showTools) ToolsSheet(onPick = { showTools = false; if (it == Tool.LAYERS) showLayers = true else tool = it }) { showTools = false }
+    when (tool) {
+        Tool.ALERTS -> AlertsListSheet(model, mapState) { tool = null }
+        Tool.DIRECTIONS -> DirectionsSheet(model) { tool = null }
+        Tool.WATCHES -> WatchesSheet(model) { tool = null }
+        Tool.ASK -> AskSheet(model) { tool = null }
+        Tool.SOURCES -> SourcesSheet(model) { tool = null }
+        else -> {}
+    }
     reportAt?.let { at -> ReportSheet(model, at.lat, at.lon) { reportAt = null } }
     error?.let {
         AlertDialog(onDismissRequest = { model.clearError() }, confirmButton = { TextButton({ model.clearError() }) { Text("OK") } },
@@ -369,7 +385,7 @@ private fun BrowsingOverlay(modifier: Modifier, model: DriveViewModel, onSetting
             Spacer(Modifier.width(8.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 RoundIcon(Icons.Default.Settings, "Settings", tag = "settings", onClick = onSettings)
-                RoundIcon(Icons.Default.Layers, "Layers", tag = "layers", onClick = onLayers)
+                RoundIcon(Icons.Default.Menu, "Tools", tag = "tools", onClick = onLayers)
             }
         }
     }

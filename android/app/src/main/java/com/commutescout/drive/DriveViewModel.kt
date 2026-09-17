@@ -65,6 +65,7 @@ object Engine {
     lateinit var places: PlaceStore
     lateinit var prefs: Prefs
     lateinit var account: Account
+    lateinit var sources: SourcesStore
     val markers = MarkerStore()
 
     val location: NavigationLocationProvider by lazy {
@@ -130,8 +131,10 @@ object Engine {
         places = PlaceStore(application)
         alerts = AlertsEngine(application)
         account = Account(application)
+        sources = SourcesStore(application)
         alerts.spoken = prefs.spokenAlerts
         alerts.announceAheadMeters = prefs.alertAheadMeters
+        alerts.rules = { m -> prefs.rule(prefs.ruleKind(m)) }
         Log.i(TAG, "engine ready")
     }
 }
@@ -154,6 +157,10 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     val prefs get() = Engine.prefs
     val markers get() = Engine.markers
     val account get() = Engine.account
+    val sources get() = Engine.sources
+    var origin: Place? = null                 // a chosen start instead of the driver
+
+    fun marker(key: String): RoadMarker? = Engine.markers.marker(key) ?: Engine.sources.directMarkers.value.firstOrNull { it.key == key }
     private val _toast = MutableStateFlow<String?>(null)
     val toast = _toast.asStateFlow()
 
@@ -219,7 +226,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     fun clearFound() { if (_state.value is DriveState.Found) _state.value = DriveState.Browsing }
 
     fun showMarker(key: String) {
-        val m = Engine.markers.marker(key) ?: return
+        val m = marker(key) ?: return
         _selectedMarker.value = m
         if (_state.value is DriveState.Found) _state.value = DriveState.Browsing
     }
@@ -250,7 +257,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     // routes
 
     fun routes(place: Place) {
-        val from = if (simulating.value) LatLon(37.3382, -121.8863) else _here.value
+        val from = origin?.let { LatLon(it.lat, it.lon) } ?: if (simulating.value) LatLon(37.3382, -121.8863) else _here.value
         if (from == null) { _error.value = "Waiting for your location."; return }
         _state.value = DriveState.Routing
         _selectedMarker.value = null

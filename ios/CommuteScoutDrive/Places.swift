@@ -119,6 +119,20 @@ enum Units {
         return km < 10 ? String(format: "%.1f km", km) : "\(Int(km.rounded())) km"
     }
 
+    /// Distances as a voice says them: "half a mile", "2 miles", "800 meters".
+    static func spoken(_ meters: Double) -> String {
+        if useMiles {
+            let mi = meters / 1609.344
+            if mi < 0.3 { return "a quarter mile" }
+            if mi < 0.6 { return "half a mile" }
+            if mi < 1.3 { return "one mile" }
+            return "\(Int(mi.rounded())) miles"
+        }
+        if meters < 950 { return "\(Int((meters / 100).rounded() * 100)) meters" }
+        let km = meters / 1000
+        return km < 1.5 ? "one kilometer" : "\(Int(km.rounded())) kilometers"
+    }
+
     static func duration(_ seconds: Double) -> String {
         let m = Int((seconds / 60).rounded())
         if m < 60 { return "\(m) min" }

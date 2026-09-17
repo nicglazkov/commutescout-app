@@ -25,11 +25,14 @@ final class AlertsEngine: ObservableObject {
     @Published private(set) var lastAnnounced: String?
     @Published var spoken = true
     var announceAheadMeters = 1500.0
+    /// Per-kind rules from Settings; nil means the one distance above.
+    var rules: ((RoadMarker) -> Prefs.AlertRule)?
 
     private var route: [CLLocationCoordinate2D] = []
     private var cumulative: [Double] = []
     private var all: [Upcoming] = []
     private var announced: Set<String> = []
+    private var repeated: Set<String> = []
     private var timer: Timer?
     private var box: (south: Double, west: Double, north: Double, east: Double)?
     private var lastSegment = 0
@@ -46,6 +49,7 @@ final class AlertsEngine: ObservableObject {
         guard let s = lats.min(), let n = lats.max(), let w = lons.min(), let e = lons.max() else { return }
         box = (s - 0.05, w - 0.05, n + 0.05, e + 0.05)
         announced = []
+        repeated = []
         Task { await refresh() }
         timer = Timer.scheduledTimer(withTimeInterval: Self.refreshSeconds, repeats: true) { [weak self] _ in
             Task { await self?.refresh() }
@@ -69,13 +73,18 @@ final class AlertsEngine: ObservableObject {
         let hit = Self.along(route, cumulative, position, near: lastSegment)
         lastSegment = hit.segment
         hereAlong = hit.along
-        let upcoming = all.filter { $0.alongMeters > hit.along - 100 }
+        let upcoming = all.filter { $0.alongMeters > hit.along - 100 && (rules?($0.marker).enabled ?? true) }
         if upcoming != ahead { ahead = upcoming }
-        for item in upcoming where !announced.contains(item.id) {
+        for item in upcoming {
+            let rule = rules?(item.marker) ?? Prefs.AlertRule(enabled: true, speak: spoken, firstMeters: announceAheadMeters, repeatMeters: 0)
             let gap = item.alongMeters - hit.along
-            if gap <= announceAheadMeters, gap > -100 {
+            if !announced.contains(item.id), gap <= rule.firstMeters, gap > -100 {
                 announced.insert(item.id)
-                announce(item.marker)
+                if rule.speak { announce(item.marker, in: gap) }
+            } else if announced.contains(item.id), !repeated.contains(item.id), rule.repeatMeters > 0,
+                      gap <= rule.repeatMeters, gap > -100 {
+                repeated.insert(item.id)
+                if rule.speak { announce(item.marker, in: gap) }
             }
         }
     }
@@ -87,10 +96,9 @@ final class AlertsEngine: ObservableObject {
         synth.speak(utterance)
     }
 
-    private func announce(_ marker: RoadMarker) {
-        let text = marker.spokenTitle
+    private func announce(_ marker: RoadMarker, in gap: Double) {
+        let text = marker.spokenTitle + (gap > 200 ? ", in " + Units.spoken(gap) : "")
         lastAnnounced = text
-        guard spoken else { return }
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         synth.speak(utterance)

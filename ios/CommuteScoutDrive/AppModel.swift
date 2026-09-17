@@ -96,6 +96,8 @@ final class AppModel: ObservableObject {
     let prefs = Prefs()
     let account = Account()
     let reporter = Reporter()
+    let sources = SourcesStore()
+    var origin: Place?                      // a chosen start instead of the driver
     @Published var toast: String?
     private let delegate = NavDelegate()
     private var cancellables = Set<AnyCancellable>()
@@ -110,6 +112,7 @@ final class AppModel: ObservableObject {
         core.delegate = delegate
         alerts.spoken = prefs.spokenAlerts
         alerts.announceAheadMeters = prefs.alertAheadMeters
+        alerts.rules = { [prefs] m in prefs.rule(for: Prefs.ruleKind(for: m)) }
         location.startUpdating()
         camera = .center(CLLocationCoordinate2D(latitude: 37.5, longitude: -121.9), zoom: 8)
         prefs.objectWillChange.sink { [weak self] _ in
@@ -118,7 +121,7 @@ final class AppModel: ObservableObject {
         // Views watch the model; changes in the stores it owns must show.
         for child in [places.objectWillChange.eraseToAnyPublisher(), markers.objectWillChange.eraseToAnyPublisher(),
                       alerts.objectWillChange.eraseToAnyPublisher(), account.objectWillChange.eraseToAnyPublisher(),
-                      reporter.objectWillChange.eraseToAnyPublisher()] {
+                      reporter.objectWillChange.eraseToAnyPublisher(), sources.objectWillChange.eraseToAnyPublisher()] {
             child.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         }
         Task { await followOnceAllowed() }
@@ -250,7 +253,7 @@ final class AppModel: ObservableObject {
     }
 
     func showMarker(key: String) {
-        guard let m = markers.marker(for: key) else { return }
+        guard let m = marker(for: key) else { return }
         selectedMarker = m
         if case .found = state { state = .browsing }
     }
@@ -277,8 +280,15 @@ final class AppModel: ObservableObject {
 
     // MARK: routes
 
+    /// Every marker on the map: the site's plus the driver's own plugins.
+    var allMarkers: [RoadMarker] { markers.markers + sources.directMarkers }
+
+    func marker(for key: String) -> RoadMarker? {
+        markers.marker(for: key) ?? sources.directMarkers.first { $0.key == key }
+    }
+
     func routes(to place: Place) async {
-        guard let from = here else {
+        guard let from = origin?.coordinate ?? here else {
             errorMessage = location.denied
                 ? "Location is off for CommuteScout Drive. Turn it on in Settings to navigate."
                 : "Waiting for your location."

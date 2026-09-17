@@ -80,6 +80,22 @@ object Units {
         return if (km < 10) "%.1f km".format(km) else "${km.toInt()} km"
     }
 
+    /** Distances as a voice says them. */
+    fun spoken(meters: Double): String {
+        if (useMiles) {
+            val mi = meters / 1609.344
+            return when {
+                mi < 0.3 -> "a quarter mile"
+                mi < 0.6 -> "half a mile"
+                mi < 1.3 -> "one mile"
+                else -> "${Math.round(mi)} miles"
+            }
+        }
+        if (meters < 950) return "${(Math.round(meters / 100) * 100)} meters"
+        val km = meters / 1000
+        return if (km < 1.5) "one kilometer" else "${Math.round(km)} kilometers"
+    }
+
     fun duration(seconds: Double): String {
         val m = (seconds / 60).toInt()
         if (m < 60) return "$m min"

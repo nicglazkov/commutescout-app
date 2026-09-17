@@ -50,10 +50,44 @@ class Prefs(context: Context) {
     var avoidTolls by state(p.getBoolean("avoid.tolls", false)) { p.edit().putBoolean("avoid.tolls", it).apply() }
     var avoidHighways by state(p.getBoolean("avoid.highways", false)) { p.edit().putBoolean("avoid.highways", it).apply() }
     var avoidFerries by state(p.getBoolean("avoid.ferries", false)) { p.edit().putBoolean("avoid.ferries", it).apply() }
+    var advancedAlerts by state(p.getBoolean("alerts.advanced", false)) { p.edit().putBoolean("alerts.advanced", it).apply() }
+    var alertRulesRaw by state(p.getString("alerts.rules", "")!!) { p.edit().putString("alerts.rules", it).apply() }
     var useMiles by state(if (p.contains("miles")) p.getBoolean("miles", true) else localeMiles()) { p.edit().putBoolean("miles", it).apply() }
 
     fun isShown(kind: String) = kind !in hiddenKinds
     fun setShown(kind: String, on: Boolean) { hiddenKinds = if (on) hiddenKinds - kind else hiddenKinds + kind }
+
+    /**
+     * How one kind of alert is announced: at what distance, whether it
+     * repeats closer, and whether it is spoken at all.
+     */
+    @kotlinx.serialization.Serializable
+    data class AlertRule(val enabled: Boolean = true, val speak: Boolean = true, val firstMeters: Double = 1500.0, val repeatMeters: Double = 0.0)
+
+    val alertKinds = listOf(
+        "incident" to "Incidents", "lane_closure" to "Closures and lane work", "chain_control" to "Chain controls",
+        "wildfire" to "Wildfires", "police" to "Police reports", "hazard" to "Hazard and crash reports", "plugin" to "Other community reports",
+    )
+
+    var alertRules: Map<String, AlertRule>
+        get() = runCatching { Backend.json.decodeFromString<Map<String, AlertRule>>(alertRulesRaw) }.getOrDefault(emptyMap())
+        set(v) { alertRulesRaw = Backend.json.encodeToString(kotlinx.serialization.serializer<Map<String, AlertRule>>(), v) }
+
+    fun rule(kind: String): AlertRule =
+        if (!advancedAlerts) AlertRule(true, spokenAlerts, alertAheadMeters, 0.0) else alertRules[kind] ?: AlertRule()
+
+    fun setRule(kind: String, r: AlertRule) { alertRules = alertRules + (kind to r) }
+
+    /** The rule group for a marker: community reports split by what they are. */
+    fun ruleKind(m: RoadMarker): String {
+        if (m.kind != "plugin") return m.kind
+        val k = (m.flare_kind ?: "").uppercase()
+        return when {
+            k.startsWith("POLICE") -> "police"
+            k.startsWith("HAZARD") || k.startsWith("CRASH") -> "hazard"
+            else -> "plugin"
+        }
+    }
 
     /** The kinds parameter for /api/mapdata for what is switched on. */
     val apiKinds: String get() = layerKinds.filter { isShown(it.key) }.joinToString(",") { it.api }

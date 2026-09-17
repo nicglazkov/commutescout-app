@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var showLayers = false
     @State private var showReport = false
+    @State private var showTools = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -45,6 +46,7 @@ struct ContentView: View {
                     model.viewCenter = center
                     model.viewZoom = zoom
                     model.markers.view(bounds: bounds, zoom: zoom, kinds: model.prefs.apiKinds)
+                    model.sources.view(center: center)
                 }
             )
             .frame(width: 1, height: 1)
@@ -57,8 +59,8 @@ struct ContentView: View {
                         VStack(spacing: 8) {
                             Button { showSettings = true } label: { roundIcon("gearshape.fill") }
                                 .accessibilityIdentifier("settings")
-                            Button { showLayers = true } label: { roundIcon("square.3.layers.3d") }
-                                .accessibilityIdentifier("layers")
+                            Button { showTools = true } label: { roundIcon("line.3.horizontal") }
+                                .accessibilityIdentifier("tools")
                         }
                     }
                     .padding(.horizontal, 12)
@@ -118,6 +120,7 @@ struct ContentView: View {
         .onChange(of: colorScheme) { s in model.isDark = s == .dark }
         .sheet(isPresented: $showSettings) { SettingsSheet() }
         .sheet(isPresented: $showLayers) { LayersSheet().presentationDetents([.medium, .large]) }
+        .sheet(isPresented: $showTools) { ToolsSheet(showLayers: $showLayers).presentationDetents([.medium, .large]) }
         .sheet(isPresented: $showReport) {
             if let c = model.reportCoordinate { ReportSheet(coordinate: c).presentationDetents([.large]) }
         }
@@ -180,7 +183,7 @@ struct ContentView: View {
     @MapViewContentBuilder private var mapContent: [StyleLayerDefinition] {
         // Live road markers, one layer per kind so each has its icon.
         let markers = ShapeSource(identifier: "cs-markers") {
-            for m in model.markers.markers where model.prefs.isShown(m.kind) {
+            for m in model.allMarkers where model.prefs.isShown(m.kind) && model.sources.isOn(m.source ?? "") {
                 let f = MLNPointFeature(coordinate: m.coordinate)
                 f.attributes = ["key": m.key, "kind": m.kind]
                 f
@@ -397,6 +400,7 @@ struct LayersSheet: View {
                     }
                 }
                 Section {
+                    NavigationLink("Community sources (Flare plugins)") { SourcesView() }
                     Link(destination: URL(string: "https://commutescout.com/data-sources")!) {
                         Label("Where this data comes from", systemImage: "safari")
                     }
