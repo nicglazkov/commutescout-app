@@ -1,0 +1,11 @@
+ios/*.xcodeproj/
+ios/build/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/*.jks
+android/keystore.properties
+*.ipa
+*.apk
+.DS_Store
