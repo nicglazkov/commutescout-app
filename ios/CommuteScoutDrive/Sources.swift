@@ -236,7 +236,7 @@ struct SourcesView: View {
                 Section {
                     Text("Community reports come from Flare plugins. Public ones are checked by CommuteScout; private ones you add here are read straight from your phone.")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Link(destination: URL(string: "https://commutescout.com/developers")!) {
+                    Link(destination: URL(string: "https://commutescout.com/plugins")!) {
                         Label("How to write a plugin", systemImage: "safari")
                     }
                 }

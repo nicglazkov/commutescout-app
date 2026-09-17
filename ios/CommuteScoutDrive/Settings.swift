@@ -59,6 +59,12 @@ struct SettingsSheet: View {
                         Text(Units.useMiles ? "1 mi ahead" : "1.5 km ahead").tag(1500.0)
                         Text(Units.useMiles ? "2 mi ahead" : "3 km ahead").tag(3000.0)
                     }
+                    Picker("Show the next alert within", selection: Binding(get: { prefs.stripAheadMeters }, set: { prefs.stripAheadMeters = $0; prefs.objectWillChange.send() })) {
+                        Text(Units.useMiles ? "5 mi" : "8 km").tag(8047.0)
+                        Text(Units.useMiles ? "10 mi" : "16 km").tag(16093.0)
+                        Text(Units.useMiles ? "25 mi" : "40 km").tag(40234.0)
+                        Text("Whole route").tag(1e9)
+                    }
                     NavigationLink { AdvancedAlertsView() } label: {
                         LabeledContent("Advanced alerts", value: prefs.advancedAlerts ? "On" : "Off")
                     }

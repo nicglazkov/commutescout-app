@@ -52,6 +52,7 @@ final class Prefs: ObservableObject {
     @AppStorage("cs.units") var unitsRaw: String = ""              // "", "mi" or "km"
     @AppStorage("cs.alerts.rules") var alertRulesRaw: String = ""   // JSON, per kind
     @AppStorage("cs.alerts.advanced") var advancedAlerts: Bool = false
+    @AppStorage("cs.alerts.strip") var stripAheadMeters: Double = 16093   // the strip shows the next alert within this
 
     /// How one kind of alert is announced: at what distance, whether it
     /// repeats closer, and whether it is spoken at all. The advanced

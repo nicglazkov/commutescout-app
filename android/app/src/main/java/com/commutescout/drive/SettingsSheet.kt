@@ -114,6 +114,9 @@ fun SettingsSheet(model: DriveViewModel, onClose: () -> Unit) {
             val aheadLabels = if (prefs.useMiles) listOf("0.5 mi ahead", "1 mi ahead", "2 mi ahead") else listOf("800 m ahead", "1.5 km ahead", "3 km ahead")
             val aheadValues = listOf(800.0, 1500.0, 3000.0)
             Choice("Warn about alerts", aheadLabels, aheadValues.indexOf(prefs.alertAheadMeters).coerceAtLeast(0)) { prefs.alertAheadMeters = aheadValues[it] }
+            val stripLabels = if (prefs.useMiles) listOf("5 mi", "10 mi", "25 mi", "Whole route") else listOf("8 km", "16 km", "40 km", "Whole route")
+            val stripValues = listOf(8047.0, 16093.0, 40234.0, 1e9)
+            Choice("Show the next alert within", stripLabels, stripValues.indexOf(prefs.stripAheadMeters).coerceAtLeast(0)) { prefs.stripAheadMeters = stripValues[it] }
             var showAdvanced by remember { mutableStateOf(false) }
             LinkRow("Advanced alerts: ${if (prefs.advancedAlerts) "on" else "off"}") { showAdvanced = true }
             if (showAdvanced) AdvancedAlertsSheet(model) { showAdvanced = false }

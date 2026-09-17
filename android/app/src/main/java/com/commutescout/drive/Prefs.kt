@@ -50,6 +50,7 @@ class Prefs(context: Context) {
     var avoidTolls by state(p.getBoolean("avoid.tolls", false)) { p.edit().putBoolean("avoid.tolls", it).apply() }
     var avoidHighways by state(p.getBoolean("avoid.highways", false)) { p.edit().putBoolean("avoid.highways", it).apply() }
     var avoidFerries by state(p.getBoolean("avoid.ferries", false)) { p.edit().putBoolean("avoid.ferries", it).apply() }
+    var stripAheadMeters by state(p.getFloat("alerts.strip", 16093f).toDouble()) { p.edit().putFloat("alerts.strip", it.toFloat()).apply() }
     var advancedAlerts by state(p.getBoolean("alerts.advanced", false)) { p.edit().putBoolean("alerts.advanced", it).apply() }
     var alertRulesRaw by state(p.getString("alerts.rules", "")!!) { p.edit().putString("alerts.rules", it).apply() }
     var useMiles by state(if (p.contains("miles")) p.getBoolean("miles", true) else localeMiles()) { p.edit().putBoolean("miles", it).apply() }

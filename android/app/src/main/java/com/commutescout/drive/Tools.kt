@@ -334,7 +334,7 @@ fun SourcesSheet(model: DriveViewModel, onClose: () -> Unit) {
             Text("Sources", style = MaterialTheme.typography.titleLarge)
             Text("Community reports come from Flare plugins. Public ones are checked by CommuteScout; private ones you add here are read straight from your phone.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LinkRow("How to write a plugin") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://commutescout.com/developers"))) }
+            LinkRow("How to write a plugin") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://commutescout.com/plugins"))) }
             Heading("Public plugins")
             if (catalog.isEmpty()) Text("No public plugins are listed right now.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             catalog.forEach { s ->

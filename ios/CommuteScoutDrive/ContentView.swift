@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var showLayers = false
     @State private var showReport = false
     @State private var showTools = false
+    @State private var stripCollapsed = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -105,10 +106,31 @@ struct ContentView: View {
 
             // Under the maneuver card and its side controls, clear of the
             // puck, the road name and the trip bar.
-            if isNavigating, let next = model.alerts.ahead.first {
-                AlertStrip(item: next, along: model.alerts.hereAlong)
+            if isNavigating, let next = model.alerts.ahead.first,
+               next.alongMeters - model.alerts.hereAlong <= model.prefs.stripAheadMeters {
+                if stripCollapsed {
+                    // Tucked away: a pill with the icon and distance; tap to bring it back.
+                    HStack {
+                        Spacer()
+                        Button { withAnimation { stripCollapsed = false } } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: MarkerIcons.name(next.marker.kind)).foregroundStyle(MarkerIcons.tint(next.marker.kind))
+                                Text(Units.distance(max(0, next.alongMeters - model.alerts.hereAlong))).font(.caption.weight(.semibold))
+                                if model.alerts.ahead.count > 1 { Text("+\(model.alerts.ahead.count - 1)").font(.caption2).foregroundStyle(.secondary) }
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 8)
+                            .background(.regularMaterial, in: Capsule())
+                            .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                        }
+                        .accessibilityIdentifier("alert-pill")
+                    }
                     .padding(.horizontal, 12)
                     .padding(.top, 216)
+                } else {
+                    AlertStrip(item: next, along: model.alerts.hereAlong, onCollapse: { withAnimation { stripCollapsed = true } })
+                        .padding(.horizontal, 12)
+                        .padding(.top, 216)
+                }
             }
 
             VStack {
@@ -253,6 +275,7 @@ struct AlertStrip: View {
     @EnvironmentObject var model: AppModel
     let item: AlertsEngine.Upcoming
     let along: Double
+    var onCollapse: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -264,6 +287,12 @@ struct AlertStrip: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
+            if let onCollapse {
+                Button(action: onCollapse) {
+                    Image(systemName: "chevron.up").font(.caption.weight(.bold)).foregroundStyle(.secondary).padding(6)
+                }
+                .accessibilityIdentifier("alert-collapse")
+            }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))

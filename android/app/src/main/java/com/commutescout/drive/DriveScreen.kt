@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
@@ -147,6 +148,7 @@ fun DriveScreen(model: DriveViewModel) {
     var showSettings by remember { mutableStateOf(false) }
     var showLayers by remember { mutableStateOf(false) }
     var reportAt by remember { mutableStateOf<LatLon?>(null) }
+    var stripCollapsed by remember { mutableStateOf(false) }
     val toastText by model.toast.collectAsStateWithLifecycle()
     val isNavigating = uiState.isNavigating()
 
@@ -268,9 +270,22 @@ fun DriveScreen(model: DriveViewModel) {
         if (isNavigating) {
             val ahead by model.alerts.ahead.collectAsStateWithLifecycle()
             val along by model.alerts.hereAlong.collectAsStateWithLifecycle()
-            ahead.firstOrNull()?.let { next ->
-                Box(Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 300.dp)) {
-                    AlertStrip(next, along, ahead.size - 1) { model.alerts.say(next.marker) }
+            ahead.firstOrNull()?.takeIf { it.alongMeters - along <= prefs.stripAheadMeters }?.let { next ->
+                if (stripCollapsed) {
+                    // Tucked away: a pill with the icon and distance; tap to bring it back.
+                    Row(Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(top = 300.dp, end = 12.dp)
+                        .shadow(4.dp, RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp))
+                        .clickable { stripCollapsed = false }.padding(horizontal = 10.dp, vertical = 8.dp).testTag("alert-pill"),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Icon(MarkerIcons.icon(next.marker.kind), null, Modifier.size(18.dp), tint = MarkerIcons.color(next.marker.kind))
+                        Spacer(Modifier.width(6.dp))
+                        Text(Units.distance(max(0.0, next.alongMeters - along)), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                        if (ahead.size > 1) Text(" +${ahead.size - 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    Box(Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 300.dp)) {
+                        AlertStrip(next, along, ahead.size - 1, onCollapse = { stripCollapsed = true }) { model.alerts.say(next.marker) }
+                    }
                 }
             }
         }
@@ -630,15 +645,18 @@ private fun RoutesCard(routes: List<Route>, place: Place, model: DriveViewModel,
 
 /** The next road event on the route, above the trip bar. Tap to hear it again. */
 @Composable
-private fun AlertStrip(item: Upcoming, along: Double, more: Int, onTap: () -> Unit) {
+private fun AlertStrip(item: Upcoming, along: Double, more: Int, onCollapse: (() -> Unit)? = null, onTap: () -> Unit) {
     Card(Modifier.padding(horizontal = 12.dp).fillMaxWidth().clickable(onClick = onTap).testTag("alert-strip"), elevation = CardDefaults.cardElevation(6.dp)) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(MarkerIcons.icon(item.marker.kind), null, tint = MarkerIcons.color(item.marker.kind))
             Spacer(Modifier.width(10.dp))
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(item.marker.displayTitle, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text("in ${Units.distance(max(0.0, item.alongMeters - along))}" + (if (more > 0) ", $more more ahead" else ""),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (onCollapse != null) IconButton(onCollapse, Modifier.size(32.dp).testTag("alert-collapse")) {
+                Icon(Icons.Default.KeyboardArrowUp, "Hide", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
