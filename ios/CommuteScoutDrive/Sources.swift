@@ -83,7 +83,7 @@ private struct Handshake: Decodable {
     let auth: String?
     let extensions: Extensions?
     struct Extensions: Decodable { let user_sessions: UserSessions? }
-    struct UserSessions: Decodable { let path: String?; let auth: String?; let idle_s: Int? }
+    struct UserSessions: Decodable { let path: String?; let auth: String?; let idle_s: Int?; let poll_s: Int? }
     enum CodingKeys: String, CodingKey { case protocolName = "protocol", id, name, capabilities, refresh_s, attribution, auth, extensions }
 }
 
@@ -224,7 +224,9 @@ final class SourcesStore: ObservableObject {
                   (resp as? HTTPURLResponse)?.statusCode == 200,
                   let h = try? JSONDecoder().decode(Handshake.self, from: data),
                   let us = h.extensions?.user_sessions, let path = us.path, us.auth == "firebase", h.id == id else { continue }
-            found.append(FlareSource(id: h.id, name: h.name, base: base, token: nil, refreshS: max(15, h.refresh_s ?? 20),
+            // An own session goes stale in seconds while the phone moves: its
+            // cadence is the extension's poll_s, not the mediated refresh_s.
+            found.append(FlareSource(id: h.id, name: h.name, base: base, token: nil, refreshS: max(15, min(us.poll_s ?? 15, 300)),
                                      canReport: h.capabilities?["report"] ?? false, canConfirm: h.capabilities?["confirm"] ?? false,
                                      attribution: h.attribution?.name, trust: "community", ownSessionPath: path))
         }
