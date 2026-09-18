@@ -1,7 +1,10 @@
 package com.commutescout.drive
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -109,6 +112,11 @@ data class FlareSource(
  */
 class SourcesStore(context: Context) {
     private val p = context.getSharedPreferences("cs.flare", Context.MODE_PRIVATE)
+    // A private plugin's bearer token lives here, keyed by plugin id and
+    // encrypted with a key from the Android keystore; the rest of the record
+    // stays in the plain preferences. If the keystore is unusable the tokens
+    // are kept in memory only and come back from the account on sign-in.
+    private val secure: SharedPreferences = openSecure(context) ?: MemoryPrefs()
     private val _catalog = MutableStateFlow<List<FlareSource>>(emptyList())
     val catalog = _catalog.asStateFlow()
     private val _mine = MutableStateFlow(load())
@@ -163,7 +171,7 @@ class SourcesStore(context: Context) {
         }
         if (added.isNotEmpty()) {
             _mine.value = _mine.value + added
-            p.edit().putString("mine", Backend.json.encodeToString(_mine.value)).apply()
+            save()
             added.forEach { schedule(it) }
         }
         rebuild()
@@ -242,6 +250,7 @@ class SourcesStore(context: Context) {
 
     fun remove(src: FlareSource) {
         _mine.value = _mine.value.filter { it.id != src.id }
+        secure.edit().remove(src.id).apply()
         jobs.remove(src.id)?.cancel(); perSource.remove(src.id)
         persist(); rebuild()
     }
@@ -308,8 +317,76 @@ class SourcesStore(context: Context) {
         _direct.value = (_mine.value + _own.value).filter { isOn(it.id) }.flatMap { perSource[it.id] ?: emptyList() }
     }
     private fun persist() {
-        p.edit().putString("mine", Backend.json.encodeToString(_mine.value)).apply()
+        save()
         pushToAccount()
     }
-    private fun load(): List<FlareSource> = p.getString("mine", null)?.let { runCatching { Backend.json.decodeFromString<List<FlareSource>>(it) }.getOrNull() } ?: emptyList()
+
+    /** Writes the list without tokens; each token goes to the encrypted store. */
+    private fun save() {
+        val e = secure.edit()
+        val stripped = _mine.value.map { s ->
+            if (s.token != null) e.putString(s.id, s.token) else e.remove(s.id)
+            s.copy(token = null)
+        }
+        e.apply()
+        p.edit().putString("mine", Backend.json.encodeToString(stripped)).apply()
+    }
+
+    private fun load(): List<FlareSource> {
+        val list = p.getString("mine", null)?.let { runCatching { Backend.json.decodeFromString<List<FlareSource>>(it) }.getOrNull() } ?: return emptyList()
+        // A record saved by an earlier version still carries its token: move
+        // it to the encrypted store once and rewrite the list without it.
+        val legacy = list.filter { it.token != null }
+        if (legacy.isNotEmpty()) {
+            val e = secure.edit()
+            legacy.forEach { e.putString(it.id, it.token) }
+            e.apply()
+            p.edit().putString("mine", Backend.json.encodeToString(list.map { it.copy(token = null) })).apply()
+        }
+        return list.map { it.copy(token = secure.getString(it.id, null)) }
+    }
+
+    private companion object {
+        @Suppress("DEPRECATION")
+        fun openSecure(context: Context): SharedPreferences? = runCatching {
+            val key = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+            EncryptedSharedPreferences.create(context, "cs.flare.secure", key,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
+        }.onFailure { Log.w("Sources", "encrypted store unavailable, tokens kept in memory", it) }.getOrNull()
+    }
+}
+
+/** The in-memory stand-in for the encrypted store: only what this class uses. */
+private class MemoryPrefs : SharedPreferences {
+    private val m = HashMap<String, String>()
+    override fun getString(key: String, defValue: String?) = m[key] ?: defValue
+    override fun contains(key: String) = key in m
+    override fun getAll(): MutableMap<String, *> = HashMap(m)
+    override fun getStringSet(key: String, defValues: MutableSet<String>?) = defValues
+    override fun getInt(key: String, defValue: Int) = defValue
+    override fun getLong(key: String, defValue: Long) = defValue
+    override fun getFloat(key: String, defValue: Float) = defValue
+    override fun getBoolean(key: String, defValue: Boolean) = defValue
+    override fun registerOnSharedPreferenceChangeListener(l: SharedPreferences.OnSharedPreferenceChangeListener?) {}
+    override fun unregisterOnSharedPreferenceChangeListener(l: SharedPreferences.OnSharedPreferenceChangeListener?) {}
+    override fun edit(): SharedPreferences.Editor = object : SharedPreferences.Editor {
+        private val puts = HashMap<String, String>()
+        private val removes = HashSet<String>()
+        private var clear = false
+        override fun putString(key: String, value: String?) = apply { if (value == null) removes.add(key) else puts[key] = value }
+        override fun putStringSet(key: String, values: MutableSet<String>?) = this
+        override fun putInt(key: String, value: Int) = this
+        override fun putLong(key: String, value: Long) = this
+        override fun putFloat(key: String, value: Float) = this
+        override fun putBoolean(key: String, value: Boolean) = this
+        override fun remove(key: String) = apply { removes.add(key) }
+        override fun clear() = apply { clear = true }
+        override fun commit(): Boolean { apply(); return true }
+        override fun apply() {
+            if (clear) m.clear()
+            removes.forEach { m.remove(it) }
+            m.putAll(puts)
+        }
+    }
 }

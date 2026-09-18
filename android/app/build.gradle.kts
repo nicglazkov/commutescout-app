@@ -101,6 +101,7 @@ dependencies {
     implementation(libs.credentials)
     implementation(libs.credentials.play)
     implementation(libs.googleid)
+    implementation(libs.androidx.security.crypto)
     // Instrumented UI tests (app/src/androidTest): every control on the emulator or a phone.
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

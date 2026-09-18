@@ -133,13 +133,25 @@ final class SourcesStore: ObservableObject {
 
     private let mineKey = "cs.flare.mine.v1"
     private let hiddenKey = "cs.flare.hidden.v1"
+    // A private plugin's bearer token lives in the keychain under this
+    // prefix plus the plugin id; the rest of the record stays in defaults.
+    private let tokenPrefix = "plugin-token:"
     private var timers: [String: Timer] = [:]
     private var lastCenter: CLLocationCoordinate2D?
     private var perSource: [String: [RoadMarker]] = [:]
 
     init() {
         if let d = UserDefaults.standard.data(forKey: mineKey), let list = try? JSONDecoder().decode([FlareSource].self, from: d) {
-            mine = list
+            // A record saved by an earlier version still carries its token:
+            // move it to the keychain once and rewrite the list without it.
+            var moved = false
+            mine = list.map { s in
+                var s = s
+                if let t = s.token { KeychainStore.set(t, for: tokenPrefix + s.id); moved = true }
+                s.token = KeychainStore.get(tokenPrefix + s.id)
+                return s
+            }
+            if moved { save() }
         }
         hidden = Set(UserDefaults.standard.stringArray(forKey: hiddenKey) ?? [])
         Task { await loadCatalog() }
@@ -181,7 +193,7 @@ final class SourcesStore: ObservableObject {
             schedule(src)
             added += 1
         }
-        if added > 0, let d = try? JSONEncoder().encode(mine) { UserDefaults.standard.set(d, forKey: mineKey) }
+        if added > 0 { save() }
         rebuild()
         DriveLog.note("plugins: account has \(hidden.count) switched off, \(added) private plugin(s) added")
     }
@@ -270,6 +282,7 @@ final class SourcesStore: ObservableObject {
 
     func remove(_ src: FlareSource) {
         mine.removeAll { $0.id == src.id }
+        KeychainStore.remove(tokenPrefix + src.id)
         timers[src.id]?.invalidate(); timers[src.id] = nil
         perSource[src.id] = nil
         persist()
@@ -342,8 +355,19 @@ final class SourcesStore: ObservableObject {
         directMarkers = (mine + own).filter { isOn($0.id) }.flatMap { perSource[$0.id] ?? [] }
     }
 
+    /// Writes the list to defaults without tokens; each token goes to the keychain.
+    private func save() {
+        let stripped: [FlareSource] = mine.map { s in
+            KeychainStore.set(s.token, for: tokenPrefix + s.id)
+            var s = s
+            s.token = nil
+            return s
+        }
+        if let d = try? JSONEncoder().encode(stripped) { UserDefaults.standard.set(d, forKey: mineKey) }
+    }
+
     private func persist() {
-        if let d = try? JSONEncoder().encode(mine) { UserDefaults.standard.set(d, forKey: mineKey) }
+        save()
         pushToAccount()
     }
 }
