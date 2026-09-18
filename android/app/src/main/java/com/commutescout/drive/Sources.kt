@@ -84,7 +84,7 @@ data class FlareSource(
 @Serializable private data class PublicSource(val id: String, val name: String, val attribution: Attribution? = null, val trust: String? = null, val tier: String? = null, val count: Int? = null, val ok: Boolean? = null,
                                               val description: String? = null, val coverage: List<Double>? = null, val kinds: List<String>? = null, val capabilities: Map<String, Boolean>? = null,
                                               val base: String? = null)
-@Serializable private data class UserSessions(val path: String? = null, val auth: String? = null, val idle_s: Int? = null)
+@Serializable private data class UserSessions(val path: String? = null, val auth: String? = null, val idle_s: Int? = null, val poll_s: Int? = null)
 @Serializable private data class Extensions(val user_sessions: UserSessions? = null)
 @Serializable private data class SourcesResponse(val sources: List<PublicSource> = emptyList())
 @Serializable private data class Handshake(val protocol: String, val id: String, val name: String, val capabilities: Map<String, Boolean>? = null,
@@ -203,7 +203,9 @@ class SourcesStore(context: Context) {
             val us = h.extensions?.user_sessions ?: continue
             val path = us.path ?: continue
             if (us.auth != "firebase" || h.id != id) continue
-            found += FlareSource(h.id, h.name, base, null, max(15, h.refresh_s ?: 20), h.capabilities?.get("report") == true,
+            // An own session goes stale in seconds while the phone moves: its
+            // cadence is the extension's poll_s, not the mediated refresh_s.
+            found += FlareSource(h.id, h.name, base, null, max(15, minOf(us.poll_s ?: 15, 300)), h.capabilities?.get("report") == true,
                 h.capabilities?.get("confirm") == true, h.attribution?.name, trust = "community", ownSessionPath = path)
         }
         _own.value = found
