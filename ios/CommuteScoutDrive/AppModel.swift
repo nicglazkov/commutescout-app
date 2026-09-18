@@ -326,9 +326,10 @@ final class AppModel: ObservableObject {
         // After time in the background the last fix can be minutes old; a
         // route from there starts with an immediate reroute. Wait briefly
         // for a fresh one.
+        state = .routing   // "Finding routes" shows at once, wait or not
         if origin == nil, let ts = location.lastLocation?.clLocation.timestamp, Date().timeIntervalSince(ts) > 20 {
             DriveLog.note("routes: last fix \(Int(Date().timeIntervalSince(ts))) s old, waiting for a fresh one")
-            for _ in 0 ..< 12 {
+            for _ in 0 ..< 6 {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 if let t2 = location.lastLocation?.clLocation.timestamp, Date().timeIntervalSince(t2) <= 20 { break }
             }
@@ -390,6 +391,9 @@ final class AppModel: ObservableObject {
     func stop() {
         DriveLog.note("route stop")
         core.stopNavigation()
+        // Ferrostar stops location updates with the trip; start them again so
+        // the puck stays live and the next route starts from where the phone is.
+        location.startUpdating()
         alerts.stop()
         UIApplication.shared.isIdleTimerDisabled = false
         state = .browsing
