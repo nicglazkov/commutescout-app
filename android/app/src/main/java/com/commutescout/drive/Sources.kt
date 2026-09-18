@@ -50,8 +50,11 @@ data class FlareSource(
     val coverage: List<Double>? = null,
     val kinds: List<String> = emptyList(),
     val acceptsReports: Boolean = false,
+    // A catalog plugin that offers each signed-in person their own session
+    // (handshake extensions.user_sessions): the path the phone polls itself.
+    val ownSessionPath: String? = null,
 ) {
-    val isDirect get() = base != null
+    val isDirect get() = base != null && ownSessionPath == null
 
     /** Where the plugin says it covers, in words. */
     val coverageLabel: String get() {
@@ -79,10 +82,14 @@ data class FlareSource(
 
 @Serializable private data class Attribution(val name: String? = null, val url: String? = null)
 @Serializable private data class PublicSource(val id: String, val name: String, val attribution: Attribution? = null, val trust: String? = null, val tier: String? = null, val count: Int? = null, val ok: Boolean? = null,
-                                              val description: String? = null, val coverage: List<Double>? = null, val kinds: List<String>? = null, val capabilities: Map<String, Boolean>? = null)
+                                              val description: String? = null, val coverage: List<Double>? = null, val kinds: List<String>? = null, val capabilities: Map<String, Boolean>? = null,
+                                              val base: String? = null)
+@Serializable private data class UserSessions(val path: String? = null, val auth: String? = null, val idle_s: Int? = null)
+@Serializable private data class Extensions(val user_sessions: UserSessions? = null)
 @Serializable private data class SourcesResponse(val sources: List<PublicSource> = emptyList())
 @Serializable private data class Handshake(val protocol: String, val id: String, val name: String, val capabilities: Map<String, Boolean>? = null,
-                                           val refresh_s: Int? = null, val attribution: Attribution? = null, val auth: String? = null)
+                                           val refresh_s: Int? = null, val attribution: Attribution? = null, val auth: String? = null,
+                                           val extensions: Extensions? = null)
 @Serializable data class FlareAlert(val id: String, val kind: String, val lat: Double, val lon: Double, val description: String? = null,
                                     val report_ts: String? = null, val road_names: List<String>? = null, val n_confirmations: Int? = null,
                                     val reliability: Double? = null, val source_url: String? = null) {
@@ -93,7 +100,7 @@ data class FlareSource(
         tier = "private",
     )
 }
-@Serializable private data class FlareAlerts(val alerts: List<FlareAlert> = emptyList(), val ttl_s: Int? = null)
+@Serializable private data class FlareAlerts(val alerts: List<FlareAlert> = emptyList(), val ttl_s: Int? = null, val session: String? = null)
 
 /**
  * The catalog and the driver's own sources. Public sources are drawn
@@ -110,6 +117,11 @@ class SourcesStore(context: Context) {
     val hidden = _hidden.asStateFlow()
     private val _direct = MutableStateFlow<List<RoadMarker>>(emptyList())
     val directMarkers = _direct.asStateFlow()
+    // Catalog plugins polled by this phone for the signed-in person's own
+    // session. Only bases from the commutescout.com catalog ever see the
+    // account token; a plugin added by URL never does.
+    private val _own = MutableStateFlow<List<FlareSource>>(emptyList())
+    val ownSessionIds = MutableStateFlow<Set<String>>(emptySet())
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -173,6 +185,31 @@ class SourcesStore(context: Context) {
         val r = runCatching { Backend.get<SourcesResponse>("/api/flare/sources", emptyMap()) }.getOrNull() ?: return
         _catalog.value = r.sources.map { FlareSource(it.id, it.name, attribution = it.attribution?.name, trust = it.trust, tier = it.tier ?: "unreviewed", count = it.count ?: 0, ok = it.ok,
             summary = it.description, coverage = it.coverage, kinds = it.kinds ?: emptyList(), acceptsReports = it.capabilities?.get("report") == true) }
+        discoverOwnSessions(r.sources.mapNotNull { s -> s.base?.let { s.id to it } })
+    }
+
+    /** Catalog plugins whose handshake offers user sessions get polled here. */
+    private suspend fun discoverOwnSessions(bases: List<Pair<String, String>>) {
+        val found = ArrayList<FlareSource>()
+        for ((id, base) in bases) {
+            if (!base.startsWith("https://")) continue
+            val text = runCatching {
+                withContext(Dispatchers.IO) {
+                    val b = Request.Builder().url("$base/flare/v1/handshake").header("Accept", "application/json")
+                    Backend.http.newCall(b.build()).execute().use { r -> if (r.isSuccessful) r.body.string() else null }
+                }
+            }.getOrNull() ?: continue
+            val h = runCatching { Backend.json.decodeFromString<Handshake>(text) }.getOrNull() ?: continue
+            val us = h.extensions?.user_sessions ?: continue
+            val path = us.path ?: continue
+            if (us.auth != "firebase" || h.id != id) continue
+            found += FlareSource(h.id, h.name, base, null, max(15, h.refresh_s ?: 20), h.capabilities?.get("report") == true,
+                h.capabilities?.get("confirm") == true, h.attribution?.name, trust = "community", ownSessionPath = path)
+        }
+        _own.value = found
+        ownSessionIds.value = found.map { it.id }.toSet()
+        found.forEach { schedule(it) }
+        if (found.isNotEmpty()) Log.i("Sources", "own sessions offered by: ${found.joinToString { it.id }}")
     }
 
     /** Adds a private or unlisted plugin by its base URL after a handshake. */
@@ -247,19 +284,27 @@ class SourcesStore(context: Context) {
         val base = src.base ?: return
         val c = lastCenter ?: return
         if (!isOn(src.id)) return
+        // Own session: the account token goes only to a catalog base; signed
+        // out, the mediated copy from commutescout.com is what shows.
+        val own = src.ownSessionPath
+        val bearer = if (own != null) (tokenProvider?.invoke() ?: run { perSource.remove(src.id); rebuild(); return }) else src.token
+        val path = own ?: "/flare/v1/alerts"
         val text = runCatching {
             withContext(Dispatchers.IO) {
-                val b = Request.Builder().url("$base/flare/v1/alerts?lat=%.3f&lon=%.3f&r=50000".format(c.lat, c.lon)).header("Accept", "application/json")
-                src.token?.let { b.header("Authorization", "Bearer $it") }
+                val b = Request.Builder().url("$base$path?lat=%.3f&lon=%.3f&r=50000".format(c.lat, c.lon)).header("Accept", "application/json")
+                bearer?.let { b.header("Authorization", "Bearer $it") }
                 Backend.http.newCall(b.build()).execute().use { r -> if (r.isSuccessful) r.body.string() else null }
             }
         }.getOrNull() ?: return
         val res = runCatching { Backend.json.decodeFromString<FlareAlerts>(text) }.getOrNull() ?: return
         perSource[src.id] = res.alerts.map { it.marker(src) }
+        if (own != null) Log.i("Sources", "${src.id}: ${res.alerts.size} alerts, session=${res.session ?: "?"}")
         rebuild()
     }
 
-    private fun rebuild() { _direct.value = _mine.value.filter { isOn(it.id) }.flatMap { perSource[it.id] ?: emptyList() } }
+    private fun rebuild() {
+        _direct.value = (_mine.value + _own.value).filter { isOn(it.id) }.flatMap { perSource[it.id] ?: emptyList() }
+    }
     private fun persist() {
         p.edit().putString("mine", Backend.json.encodeToString(_mine.value)).apply()
         pushToAccount()

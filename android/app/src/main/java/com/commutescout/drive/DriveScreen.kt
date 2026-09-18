@@ -147,7 +147,9 @@ fun DriveScreen(model: DriveViewModel) {
     val siteMarkers by model.markers.markers.collectAsStateWithLifecycle()
     val directMarkers by model.sources.directMarkers.collectAsStateWithLifecycle()
     val hiddenSources by model.sources.hidden.collectAsStateWithLifecycle()
-    val allMarkers = (siteMarkers + directMarkers).filter { (it.source ?: "") !in hiddenSources }
+    val ownIds by model.sources.ownSessionIds.collectAsStateWithLifecycle()
+    val allMarkers = (siteMarkers.filter { m -> ownIds.none { m.id?.startsWith("$it:") == true } } + directMarkers)
+        .filter { (it.source ?: "") !in hiddenSources }
     var tool by remember { mutableStateOf<Tool?>(null) }
     var showTools by remember { mutableStateOf(false) }
     val mapState = rememberNavigationMapState()
@@ -273,15 +275,15 @@ fun DriveScreen(model: DriveViewModel) {
             }
         }
 
-        // Under the maneuver card and its side controls, clear of the
-        // puck, the road name and the trip bar.
+        // Above the trip bar and left of the side controls, as on iOS: the
+        // instruction card can be any height, so the strip never sits under it.
         if (isNavigating) {
             val ahead by model.alerts.ahead.collectAsStateWithLifecycle()
             val along by model.alerts.hereAlong.collectAsStateWithLifecycle()
             ahead.firstOrNull()?.takeIf { it.alongMeters - along <= prefs.stripAheadMeters }?.let { next ->
                 if (stripCollapsed) {
                     // Tucked away: a pill with the icon and distance; tap to bring it back.
-                    Row(Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(top = 300.dp, end = 12.dp)
+                    Row(Modifier.align(Alignment.BottomEnd).padding(end = 76.dp, bottom = 124.dp)
                         .shadow(4.dp, RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp))
                         .clickable { stripCollapsed = false }.padding(horizontal = 10.dp, vertical = 8.dp).testTag("alert-pill"),
                         verticalAlignment = Alignment.CenterVertically) {
@@ -291,7 +293,7 @@ fun DriveScreen(model: DriveViewModel) {
                         if (ahead.size > 1) Text(" +${ahead.size - 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
-                    Box(Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 300.dp)) {
+                    Box(Modifier.align(Alignment.BottomStart).padding(end = 64.dp, bottom = 124.dp)) {
                         AlertStrip(next, along, ahead.size - 1, onCollapse = { stripCollapsed = true }) { model.alerts.say(next.marker) }
                     }
                 }
