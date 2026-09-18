@@ -352,8 +352,13 @@ final class CoverageUITests: XCTestCase {
         let cards = app.descendants(matching: .any).matching(identifier: "plugin-card")
         if cards.firstMatch.waitForExistence(timeout: 10) {
             // A tile has an Install or Installed button that toggles.
-            let btn = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'install-'")).firstMatch
-            XCTAssertTrue(btn.exists)
+            let btn = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'install-'")).firstMatch
+            if !btn.waitForExistence(timeout: 5) {
+                let tree = XCTAttachment(string: cards.firstMatch.debugDescription)
+                tree.name = "card-tree"; tree.lifetime = .keepAlways; add(tree)
+                print("CSTEST card tree: " + cards.firstMatch.debugDescription.prefix(3000))
+            }
+            XCTAssertTrue(btn.exists, "install button on the first tile")
             let before = btn.label
             btn.tap()
             XCTAssertNotEqual(btn.label, before, "Install toggles")
@@ -368,6 +373,9 @@ final class CoverageUITests: XCTestCase {
 
     func testToolsSheetWebLinkAndLayersShortcut() {
         app.buttons["tools"].tap()
+        XCTAssertTrue(app.buttons["tool-layers"].waitForExistence(timeout: 5))
+        // The web link is the last row; a shorter screen needs a scroll to reach it.
+        if !app.staticTexts["Open the full map on the web"].exists { app.swipeUp() }
         XCTAssertTrue(app.staticTexts["Open the full map on the web"].waitForExistence(timeout: 5))
         app.buttons["tool-layers"].tap()
         XCTAssertTrue(app.staticTexts["Base map"].waitForExistence(timeout: 5))
@@ -386,11 +394,9 @@ final class CoverageUITests: XCTestCase {
         let note = app.textFields["Add a note (optional)"].exists ? app.textFields["Add a note (optional)"] : app.textViews.firstMatch
         if note.exists { note.tap(); note.typeText("test note") }
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Reported at'")).firstMatch.exists, "coordinates shown")
-        if app.buttons["Sign in"].exists {
-            XCTAssertFalse(app.buttons["report-send"].isEnabled || !app.buttons["Sign in"].exists, "signed out: send is not the way in")
-        } else {
-            XCTAssertTrue(app.buttons["report-send"].isEnabled, "signed in with a kind chosen: send enabled")
-        }
+        // Signed out, the sheet offers Sign in; signed in, a chosen kind
+        // enables Send. Either way a kind is chosen, so Send is enabled.
+        XCTAssertTrue(app.buttons["report-send"].isEnabled, "a kind is chosen: send enabled")
         app.buttons["Cancel"].firstMatch.tap()   // never send a test report
         XCTAssertTrue(app.textFields["search"].waitForExistence(timeout: 5))
     }

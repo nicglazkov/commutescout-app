@@ -150,6 +150,7 @@ object Engine {
         core.alternativeRouteProcessor = AlternativeRouteProcessor { c, routes ->
             // A route fetched for a deviation can land after the driver
             // stopped; replacing the route then would restart the trip.
+            Log.i(TAG, "reroute landed: ${routes.size} route(s), tripActive=$tripActive")
             if (!tripActive) return@AlternativeRouteProcessor
             routes.firstOrNull()?.let { r ->
                 c.replaceRoute(r)
@@ -351,6 +352,17 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         Engine.tripActive = false
         Engine.core.stopNavigation()
         Engine.location.disableSimulation()
+        // A location update already in flight can write a Navigating state
+        // after the stop; the core is stopped again if that happens.
+        viewModelScope.launch {
+            repeat(4) {
+                kotlinx.coroutines.delay(750)
+                if (!Engine.tripActive && Engine.core.state.value.tripState is uniffi.ferrostar.TripState.Navigating) {
+                    Log.w("DriveViewModel", "stop: trip state came back after the stop; stopping again")
+                    Engine.core.stopNavigation()
+                }
+            }
+        }
         Engine.alerts.stop()
         _state.value = DriveState.Browsing
     }
