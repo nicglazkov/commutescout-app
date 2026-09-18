@@ -95,6 +95,7 @@ final class AppModel: ObservableObject {
     let markers = MarkerStore()
     let prefs = Prefs()
     let account = Account()
+    lazy var push = PushRegistrar(account: account)
     let reporter = Reporter()
     let sources = SourcesStore()
     var origin: Place?                      // a chosen start instead of the driver
@@ -162,9 +163,15 @@ final class AppModel: ObservableObject {
     private func wireCore() {
         sources.tokenProvider = { [weak self] in await self?.account.token() }
         places.tokenProvider = { [weak self] in await self?.account.token() }
+        account.beforeSignOut = { [weak self] in await self?.push.forget() }
         accountSink = account.$user.receive(on: DispatchQueue.main).sink { [weak self] u in
             guard u != nil else { return }
-            Task { await self?.sources.pullFromAccount(); await self?.places.syncWithAccount() }
+            Task {
+                await self?.sources.pullFromAccount()
+                await self?.places.syncWithAccount()
+                await self?.push.requestPermission()
+                await self?.push.register()
+            }
         }
         coreSink = core.$state.receive(on: DispatchQueue.main).sink { [weak self] s in
             self?.noteLocation(s)

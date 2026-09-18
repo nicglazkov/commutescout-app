@@ -4,6 +4,7 @@ import SwiftUI
 
 @main
 struct DriveApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
 

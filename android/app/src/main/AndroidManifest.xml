@@ -30,6 +30,17 @@
         </activity>
 
         <service
+            android:name=".PushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="alerts" />
+
+        <service
             android:name="com.stadiamaps.ferrostar.core.service.FerrostarForegroundService"
             android:foregroundServiceType="location" />
     </application>
