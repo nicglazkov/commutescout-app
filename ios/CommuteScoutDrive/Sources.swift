@@ -20,8 +20,37 @@ struct FlareSource: Codable, Identifiable, Hashable {
     var tier: String = "unreviewed"
     var count: Int = 0
     var ok: Bool?
+    // For the marketplace card (public catalog entries).
+    var summary: String? = nil
+    var coverage: [Double]? = nil
+    var kinds: [String] = []
+    var acceptsReports = false
 
     var isDirect: Bool { base != nil }
+
+    /// Where the plugin says it covers, in words.
+    var coverageLabel: String {
+        guard let b = coverage, b.count == 4 else { return "Coverage not stated" }
+        let h = b[2] - b[0], w = b[3] - b[1]
+        if h >= 20, w >= 50 { return "Whole country" }
+        if b[0] >= 32, b[2] <= 36, b[1] >= -121, b[3] <= -114 { return "Southern California" }
+        if b[0] >= 32, b[2] <= 42.5, b[1] >= -125, b[3] <= -114 { return "California" }
+        return "\(Int(h.rounded()))\u{00B0} by \(Int(w.rounded()))\u{00B0} area"
+    }
+
+    /// The kinds it shows, grouped into plain words.
+    var kindsLabel: String {
+        var groups: [String] = []
+        func add(_ g: String) { if !groups.contains(g) { groups.append(g) } }
+        for k in kinds {
+            if k.hasPrefix("POLICE") { add("police") } else if k.hasPrefix("CRASH") { add("crashes") }
+            else if k.hasPrefix("HAZARD") { add("hazards") } else if k.hasPrefix("JAM") { add("jams") }
+            else if k.hasPrefix("ROAD_CLOSED") || k.hasPrefix("LANE") { add("closures") }
+            else if k.hasPrefix("WEATHER") { add("weather") } else if k.hasPrefix("CAMERA") { add("cameras") }
+            else if k.hasPrefix("CHAINS") { add("chain controls") } else { add("other") }
+        }
+        return groups.joined(separator: ", ")
+    }
 }
 
 private struct SourcesResponse: Decodable { let sources: [PublicSource] }
@@ -33,6 +62,10 @@ private struct PublicSource: Decodable {
     let tier: String?
     let count: Int?
     let ok: Bool?
+    let description: String?
+    let coverage: [Double]?
+    let kinds: [String]?
+    let capabilities: [String: Bool]?
     struct Attribution: Decodable { let name: String?; let url: String? }
 }
 
@@ -112,7 +145,9 @@ final class SourcesStore: ObservableObject {
         guard let r = try? await Backend.get("api/flare/sources", as: SourcesResponse.self) else { return }
         catalog = r.sources.map {
             FlareSource(id: $0.id, name: $0.name, base: nil, token: nil, refreshS: 60, canReport: false, canConfirm: false,
-                        attribution: $0.attribution?.name, trust: $0.trust, tier: $0.tier ?? "unreviewed", count: $0.count ?? 0, ok: $0.ok)
+                        attribution: $0.attribution?.name, trust: $0.trust, tier: $0.tier ?? "unreviewed", count: $0.count ?? 0, ok: $0.ok,
+                        summary: $0.description, coverage: $0.coverage, kinds: $0.kinds ?? [],
+                        acceptsReports: $0.capabilities?["report"] ?? false)
         }
     }
 
@@ -222,6 +257,92 @@ final class SourcesStore: ObservableObject {
 
 /// The Sources screen: what feeds the community layer, in the three
 /// tiers (approved, public but not reviewed, private).
+/// The plugin marketplace: one tile per listed plugin, nothing else.
+/// Install turns the plugin on for this phone (the same switch as the
+/// Plugins screen); per-account subscriptions come later.
+struct MarketplaceView: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var showSources = false
+    private var sources: SourcesStore { model.sources }
+    private let columns = [GridItem(.adaptive(minimum: 160), spacing: 12)]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Plugins add alerts to the map. Every one here is free. Approved ones are reviewed by CommuteScout; the others are public but not reviewed, and say so.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if sources.catalog.isEmpty {
+                        Text("No plugin is listed yet.").foregroundStyle(.secondary).padding(.vertical, 24)
+                    }
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(sources.catalog) { s in PluginCard(source: s) }
+                    }
+                    HStack {
+                        Button { showSources = true } label: { Label("My plugins and private sources", systemImage: "antenna.radiowaves.left.and.right") }
+                            .accessibilityIdentifier("market-mine")
+                        Spacer()
+                        Link(destination: URL(string: "https://commutescout.com/plugins")!) { Label("Write a plugin", systemImage: "safari") }
+                    }
+                    .font(.footnote).padding(.top, 8)
+                }
+                .padding(16)
+            }
+            .navigationTitle("Marketplace")
+            .toolbar { Button("Done") { dismiss() } }
+            .task { await sources.loadCatalog() }
+            .sheet(isPresented: $showSources) { SourcesView() }
+        }
+    }
+}
+
+/// One marketplace tile.
+struct PluginCard: View {
+    @EnvironmentObject var model: AppModel
+    let source: FlareSource
+    private var installed: Bool { model.sources.isOn(source.id) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                Text(source.name).font(.subheadline.weight(.semibold)).lineLimit(2)
+                Spacer(minLength: 4)
+                Text(source.tier == "approved" ? "Approved" : "Not reviewed")
+                    .font(.caption2.weight(.semibold)).padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(source.tier == "approved" ? Color.green.opacity(0.18) : Color.orange.opacity(0.18), in: Capsule())
+            }
+            Text(source.summary ?? (source.kindsLabel.isEmpty ? "Community alerts for the map." : "Shows \(source.kindsLabel)."))
+                .font(.caption).foregroundStyle(.secondary).lineLimit(4)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(source.coverageLabel)
+                Text(source.ok == false ? "Not answering" : "\(source.count) alerts now")
+                if let a = source.attribution { Text(a).lineLimit(1) }
+                Text(source.acceptsReports ? "Accepts reports" : "Read only")
+                Text("Free")
+            }
+            .font(.caption2).foregroundStyle(.secondary)
+            Button {
+                model.sources.setOn(source.id, !installed)
+                model.markers.refresh(force: true)
+            } label: {
+                Text(installed ? "Installed" : "Install").font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
+            }
+            .installStyle(installed)
+            .accessibilityIdentifier("install-\(source.id)")
+        }
+        .padding(12)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityIdentifier("plugin-card")
+    }
+}
+
+private extension View {
+    @ViewBuilder func installStyle(_ installed: Bool) -> some View {
+        if installed { buttonStyle(.bordered) } else { buttonStyle(.borderedProminent) }
+    }
+}
+
 struct SourcesView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss

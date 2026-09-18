@@ -344,6 +344,28 @@ final class CoverageUITests: XCTestCase {
         app.buttons["Done"].firstMatch.tap()
     }
 
+    func testMarketplaceTilesAndInstall() {
+        app.buttons["tools"].tap()
+        XCTAssertTrue(app.buttons["tool-marketplace"].waitForExistence(timeout: 5))
+        app.buttons["tool-marketplace"].tap()
+        XCTAssertTrue(app.navigationBars["Marketplace"].waitForExistence(timeout: 8))
+        let cards = app.descendants(matching: .any).matching(identifier: "plugin-card")
+        if cards.firstMatch.waitForExistence(timeout: 10) {
+            // A tile has an Install or Installed button that toggles.
+            let btn = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'install-'")).firstMatch
+            XCTAssertTrue(btn.exists)
+            let before = btn.label
+            btn.tap()
+            XCTAssertNotEqual(btn.label, before, "Install toggles")
+            btn.tap()
+            XCTAssertEqual(btn.label, before)
+        } else {
+            XCTAssertTrue(app.staticTexts["No plugin is listed yet."].exists)
+        }
+        XCTAssertTrue(app.buttons["market-mine"].exists, "link to my plugins")
+        app.buttons["Done"].firstMatch.tap()
+    }
+
     func testToolsSheetWebLinkAndLayersShortcut() {
         app.buttons["tools"].tap()
         XCTAssertTrue(app.staticTexts["Open the full map on the web"].waitForExistence(timeout: 5))

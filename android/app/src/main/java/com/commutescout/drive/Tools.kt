@@ -26,6 +26,12 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.QuestionAnswer
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.Button
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -69,7 +75,48 @@ import org.maplibre.spatialk.geojson.Position
 import com.stadiamaps.ferrostar.maplibreui.runtime.NavigationCameraMode
 import com.stadiamaps.ferrostar.maplibreui.runtime.NavigationMapState
 
-enum class Tool { LAYERS, ALERTS, DIRECTIONS, WATCHES, ASK, SOURCES }
+enum class Tool { MARKETPLACE, LAYERS, ALERTS, DIRECTIONS, WATCHES, ASK, SOURCES }
+
+/** The plugin marketplace: one tile per listed plugin, nothing else. Install
+ *  turns the plugin on for this phone (the same switch as the plugins sheet). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MarketplaceSheet(model: DriveViewModel, onClose: () -> Unit) {
+    val catalog by model.sources.catalog.collectAsStateWithLifecycle()
+    val hidden by model.sources.hidden.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { model.sources.loadCatalog() }
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("marketplace-sheet")) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 32.dp).fillMaxHeight(0.92f)) {
+            Text("Marketplace", style = MaterialTheme.typography.titleLarge)
+            Text("Plugins add alerts to the map. Every one here is free. Approved ones are reviewed by CommuteScout; the others are public but not reviewed, and say so.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
+            if (catalog.isEmpty()) Text("No plugin is listed yet.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp))
+            LazyVerticalGrid(columns = GridCells.Adaptive(160.dp), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
+                items(catalog, key = { it.id }) { s ->
+                    val installed = s.id !in hidden
+                    Card(Modifier.testTag("plugin-card")) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text(s.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f), maxLines = 2)
+                                Text(if (s.tier == "approved") "Approved" else "Not reviewed", style = MaterialTheme.typography.labelSmall,
+                                    color = if (s.tier == "approved") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
+                            }
+                            Text(s.summary ?: if (s.kindsLabel.isEmpty()) "Community alerts for the map." else "Shows ${s.kindsLabel}.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4)
+                            Text(listOf(s.coverageLabel, if (s.ok == false) "Not answering" else "${s.count} alerts now", s.attribution ?: "",
+                                if (s.acceptsReports) "Accepts reports" else "Read only", "Free").filter { it.isNotEmpty() }.joinToString("\n"),
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (installed) OutlinedButton({ model.sources.setOn(s.id, false); model.markers.refresh(true) }, Modifier.fillMaxWidth().testTag("install-${s.id}")) { Text("Installed") }
+                            else Button({ model.sources.setOn(s.id, true); model.markers.refresh(true) }, Modifier.fillMaxWidth().testTag("install-${s.id}")) { Text("Install") }
+                        }
+                    }
+                }
+            }
+            LinkRow("Write a plugin") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://commutescout.com/plugins"))) }
+        }
+    }
+}
 
 /** The website's rail, on the phone: everything that is not the search bar or Settings. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -84,7 +131,8 @@ fun ToolsSheet(onPick: (Tool) -> Unit, onClose: () -> Unit) {
             ToolRow(Icons.Default.SwapVert, "Directions from another place", "tool-directions") { onPick(Tool.DIRECTIONS) }
             ToolRow(Icons.Default.Visibility, "Watch areas", "tool-watches") { onPick(Tool.WATCHES) }
             ToolRow(Icons.Default.QuestionAnswer, "Ask about the roads", "tool-ask") { onPick(Tool.ASK) }
-            ToolRow(Icons.Default.Sensors, "Plugins (community sources)", "tool-sources") { onPick(Tool.SOURCES) }
+            ToolRow(Icons.Default.GridView, "Plugin marketplace", "tool-marketplace") { onPick(Tool.MARKETPLACE) }
+            ToolRow(Icons.Default.Sensors, "My plugins and private sources", "tool-sources") { onPick(Tool.SOURCES) }
             LinkRow("Open the full map on the web") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://commutescout.com/map"))) }
         }
     }

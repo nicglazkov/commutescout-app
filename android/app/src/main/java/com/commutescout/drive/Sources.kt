@@ -45,10 +45,41 @@ data class FlareSource(
     val tier: String = "unreviewed",
     val count: Int = 0,
     val ok: Boolean? = null,
-) { val isDirect get() = base != null }
+    // For the marketplace card (public catalog entries).
+    val summary: String? = null,
+    val coverage: List<Double>? = null,
+    val kinds: List<String> = emptyList(),
+    val acceptsReports: Boolean = false,
+) {
+    val isDirect get() = base != null
+
+    /** Where the plugin says it covers, in words. */
+    val coverageLabel: String get() {
+        val b = coverage ?: return "Coverage not stated"
+        if (b.size != 4) return "Coverage not stated"
+        val h = b[2] - b[0]; val w = b[3] - b[1]
+        if (h >= 20 && w >= 50) return "Whole country"
+        if (b[0] >= 32 && b[2] <= 36 && b[1] >= -121 && b[3] <= -114) return "Southern California"
+        if (b[0] >= 32 && b[2] <= 42.5 && b[1] >= -125 && b[3] <= -114) return "California"
+        return "${Math.round(h)}\u00B0 by ${Math.round(w)}\u00B0 area"
+    }
+
+    /** The kinds it shows, grouped into plain words. */
+    val kindsLabel: String get() {
+        val groups = LinkedHashSet<String>()
+        for (k in kinds) groups.add(when {
+            k.startsWith("POLICE") -> "police"; k.startsWith("CRASH") -> "crashes"; k.startsWith("HAZARD") -> "hazards"
+            k.startsWith("JAM") -> "jams"; k.startsWith("ROAD_CLOSED") || k.startsWith("LANE") -> "closures"
+            k.startsWith("WEATHER") -> "weather"; k.startsWith("CAMERA") -> "cameras"; k.startsWith("CHAINS") -> "chain controls"
+            else -> "other"
+        })
+        return groups.joinToString(", ")
+    }
+}
 
 @Serializable private data class Attribution(val name: String? = null, val url: String? = null)
-@Serializable private data class PublicSource(val id: String, val name: String, val attribution: Attribution? = null, val trust: String? = null, val tier: String? = null, val count: Int? = null, val ok: Boolean? = null)
+@Serializable private data class PublicSource(val id: String, val name: String, val attribution: Attribution? = null, val trust: String? = null, val tier: String? = null, val count: Int? = null, val ok: Boolean? = null,
+                                              val description: String? = null, val coverage: List<Double>? = null, val kinds: List<String>? = null, val capabilities: Map<String, Boolean>? = null)
 @Serializable private data class SourcesResponse(val sources: List<PublicSource> = emptyList())
 @Serializable private data class Handshake(val protocol: String, val id: String, val name: String, val capabilities: Map<String, Boolean>? = null,
                                            val refresh_s: Int? = null, val attribution: Attribution? = null, val auth: String? = null)
@@ -100,7 +131,8 @@ class SourcesStore(context: Context) {
 
     suspend fun loadCatalog() {
         val r = runCatching { Backend.get<SourcesResponse>("/api/flare/sources", emptyMap()) }.getOrNull() ?: return
-        _catalog.value = r.sources.map { FlareSource(it.id, it.name, attribution = it.attribution?.name, trust = it.trust, tier = it.tier ?: "unreviewed", count = it.count ?: 0, ok = it.ok) }
+        _catalog.value = r.sources.map { FlareSource(it.id, it.name, attribution = it.attribution?.name, trust = it.trust, tier = it.tier ?: "unreviewed", count = it.count ?: 0, ok = it.ok,
+            summary = it.description, coverage = it.coverage, kinds = it.kinds ?: emptyList(), acceptsReports = it.capabilities?.get("report") == true) }
     }
 
     /** Adds a private or unlisted plugin by its base URL after a handshake. */
