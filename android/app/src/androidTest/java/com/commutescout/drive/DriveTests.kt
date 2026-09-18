@@ -336,7 +336,7 @@ class DriveTests {
         }
         stopNavigation()
         Thread.sleep(3000)
-        scenario?.onActivity { android.util.Log.i("CSTEST", "after stop: navigating=${it.model.navigationUiState.value.isNavigating()} state=${it.model.state.value::class.simpleName}") }
+        scenario?.onActivity { android.util.Log.i("CSTEST", "after stop: navigating=${it.model.navigationUiState.value.isNavigating()} state=${it.model.state.value::class.simpleName} coreTrip=${Engine.core.state.value.tripState?.let { t -> t::class.simpleName }} calc=${Engine.core.state.value.isCalculatingNewRoute} progress=${it.model.navigationUiState.value.progress != null}") }
         if (runCatching { waitFor(30_000) { tagExists("search") } }.isFailure) {
             compose.onRoot(useUnmergedTree = true).printToLog("CSTEST")
             throw AssertionError("search bar did not return after stopping navigation")
