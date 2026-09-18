@@ -27,8 +27,11 @@ struct DriveApp: App {
 /// builds only; release builds ignore the argument.
 enum AutoDrive {
     @MainActor static func runIfAsked(_ model: AppModel) async {
-        // Any build: "-csNavigateTo lat,lon,Name" starts a real route from the
-        // phone's own position, so a drive can be started from a paired Mac.
+        #if DEBUG || CS_TEST_HOOKS
+        // Debug and Ad Hoc builds (scripts/ios_build.sh device sets
+        // CS_TEST_HOOKS): "-csNavigateTo lat,lon,Name" starts a real route
+        // from the phone's own position, so a drive can be started from a
+        // paired Mac. A TestFlight build ignores the argument.
         let all = ProcessInfo.processInfo.arguments
         if let i = all.firstIndex(of: "-csNavigateTo"), i + 1 < all.count {
             let parts = all[i + 1].split(separator: ",", maxSplits: 2).map(String.init)
@@ -55,6 +58,7 @@ enum AutoDrive {
             }
             return
         }
+        #endif
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-csResetPlaces") { model.places.removeAll() }

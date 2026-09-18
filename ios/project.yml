@@ -71,7 +71,6 @@ targets:
           - location
           - audio
         NSLocationWhenInUseUsageDescription: CommuteScout Drive uses your location to navigate and to warn you about what is ahead on the road.
-        NSLocationAlwaysAndWhenInUseUsageDescription: Keep navigation running when the screen is off or another app is in front.
         ITSAppUsesNonExemptEncryption: false
         GIDClientID: 15002631928-mkrc3g1n231pec0k9fvlabuaf2ja7mkh.apps.googleusercontent.com
         CFBundleURLTypes:

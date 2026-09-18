@@ -70,9 +70,11 @@ EOF
     xcodebuild test -project CommuteScoutDrive.xcodeproj -scheme CommuteScoutDrive       -destination "id=$DEVICE" -derivedDataPath "$DD" -skipMacroValidation       -resultBundlePath "$DD/device-tests-$(date +%H%M%S).xcresult"       $(for t in ${ONLY_TESTING//,/ }; do printf -- "-only-testing:CommuteScoutDriveUITests/%s " "$t"; done)       OTHER_CODE_SIGN_FLAGS="--keychain $KC" 2>&1 | tee "$DD/last-device-test.log" | grep -E "Test Case|passed|failed|error:|\*\* TEST" | tail -60
     ;;
   device)
-    # Same archive as TestFlight, re-signed on export with the Ad Hoc
-    # profile (distribution certificate plus the phone's UDID), then
-    # installed over USB or Wi-Fi with devicectl. Minutes, not an hour.
+    # A Release archive like TestFlight's, compiled with CS_TEST_HOOKS so
+    # the -csNavigateTo and -csVia launch arguments stay available on the
+    # test phone, re-signed on export with the Ad Hoc profile
+    # (distribution certificate plus the phone's UDID), then installed
+    # over USB or Wi-Fi with devicectl. Minutes, not an hour.
     BUILD="${BUILD:-$(date +%Y%m%d%H%M)}"
     KC="$HOME/Library/Keychains/cs-build.keychain-db"
     DEVICE="${DEVICE:?set DEVICE to the coredevice identifier from: xcrun devicectl list devices}"
@@ -80,7 +82,7 @@ EOF
     xcodebuild -project CommuteScoutDrive.xcodeproj -scheme CommuteScoutDrive \
       -destination "generic/platform=iOS" -derivedDataPath "$DD" -skipMacroValidation \
       -archivePath "$DD/CommuteScoutDrive.xcarchive" \
-      OTHER_CODE_SIGN_FLAGS="--keychain $KC" \
+      OTHER_CODE_SIGN_FLAGS="--keychain $KC" OTHER_SWIFT_FLAGS="-DCS_TEST_HOOKS" \
       CURRENT_PROJECT_VERSION="$BUILD" archive 2>&1 | tail -15
     cat > "$DD/export-adhoc.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
