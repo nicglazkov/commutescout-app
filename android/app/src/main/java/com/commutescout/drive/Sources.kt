@@ -133,9 +133,11 @@ class SourcesStore(context: Context) {
     // Account sync: Install on one device follows the account.
     var tokenProvider: (suspend () -> String?)? = null
     @Serializable private data class MePlugins(val plugins: MeInner = MeInner())
-    @Serializable private data class MeInner(val off: List<String> = emptyList())
+    @Serializable private data class MeInner(val off: List<String> = emptyList(), val private: List<MeMine> = emptyList())
+    @Serializable private data class MeMine(val id: String, val name: String? = null, val base: String, val token: String? = null, val refresh_s: Int? = null)
 
-    /** On sign-in: the account's choices replace this phone's. */
+    /** On sign-in: the account's switches replace this phone's, and the
+     * account's private plugins (with their tokens) are added here. */
     suspend fun pullFromAccount() {
         val token = tokenProvider?.invoke() ?: return
         val (status, text) = runCatching { Backend.send("GET", "/api/me/plugins", token, null) }.getOrNull() ?: return
@@ -143,13 +145,26 @@ class SourcesStore(context: Context) {
         val me = runCatching { Backend.json.decodeFromString<MePlugins>(text) }.getOrNull() ?: return
         _hidden.value = me.plugins.off.toSet()
         p.edit().putStringSet("hidden", _hidden.value).apply()
+        val known = _mine.value.map { it.id }.toSet()
+        val added = me.plugins.private.filter { it.id !in known }.map {
+            FlareSource(it.id, it.name ?: it.id, it.base, it.token, max(15, it.refresh_s ?: 60), trust = "private", tier = "private")
+        }
+        if (added.isNotEmpty()) {
+            _mine.value = _mine.value + added
+            p.edit().putString("mine", Backend.json.encodeToString(_mine.value)).apply()
+            added.forEach { schedule(it) }
+        }
         rebuild()
+        Log.i("Sources", "account: ${_hidden.value.size} off, ${added.size} private plugin(s) added")
     }
 
+    /** After a change: the account learns this phone's switches and its
+     * private plugins, tokens included, so the next device has them too. */
     private fun pushToAccount() {
         scope.launch {
             val token = tokenProvider?.invoke() ?: return@launch
-            val body = Backend.json.encodeToString(MeInner(_hidden.value.sorted()))
+            val mineWire = _mine.value.mapNotNull { s -> s.base?.let { MeMine(s.id, s.name, it, s.token, s.refreshS) } }
+            val body = Backend.json.encodeToString(MeInner(_hidden.value.sorted(), mineWire))
             runCatching { Backend.send("PUT", "/api/me/plugins", token, body) }
         }
     }
@@ -245,6 +260,9 @@ class SourcesStore(context: Context) {
     }
 
     private fun rebuild() { _direct.value = _mine.value.filter { isOn(it.id) }.flatMap { perSource[it.id] ?: emptyList() } }
-    private fun persist() { p.edit().putString("mine", Backend.json.encodeToString(_mine.value)).apply() }
+    private fun persist() {
+        p.edit().putString("mine", Backend.json.encodeToString(_mine.value)).apply()
+        pushToAccount()
+    }
     private fun load(): List<FlareSource> = p.getString("mine", null)?.let { runCatching { Backend.json.decodeFromString<List<FlareSource>>(it) }.getOrNull() } ?: emptyList()
 }

@@ -146,25 +146,46 @@ final class SourcesStore: ObservableObject {
 
     /// Set by the app model: the signed-in account's ID token, or nil.
     var tokenProvider: (() async -> String?)?
-    private struct MePlugins: Decodable { struct P: Decodable { let off: [String]? }; let plugins: P }
+    private struct MePlugins: Decodable {
+        struct P: Decodable { let off: [String]?; let `private`: [Mine]? }
+        struct Mine: Decodable { let id: String; let name: String?; let base: String; let token: String?; let refresh_s: Int? }
+        let plugins: P
+    }
 
-    /// On sign-in: the account's choices replace this phone's.
+    /// On sign-in: the account's switches replace this phone's, and the
+    /// account's private plugins (with their tokens) are added here.
     func pullFromAccount() async {
         guard let token = await tokenProvider?() else { return }
         guard let (status, data) = try? await Backend.send("GET", "api/me/plugins", token: token, body: nil),
               status == 200, let me = try? JSONDecoder().decode(MePlugins.self, from: data) else { return }
         hidden = Set(me.plugins.off ?? [])
         UserDefaults.standard.set(Array(hidden), forKey: hiddenKey)
+        var added = 0
+        for m in me.plugins.private ?? [] where !mine.contains(where: { $0.id == m.id }) {
+            let src = FlareSource(id: m.id, name: m.name ?? m.id, base: m.base, token: m.token,
+                                  refreshS: max(15, m.refresh_s ?? 60), trust: "private", tier: "private")
+            mine.append(src)
+            schedule(src)
+            added += 1
+        }
+        if added > 0, let d = try? JSONEncoder().encode(mine) { UserDefaults.standard.set(d, forKey: mineKey) }
         rebuild()
-        DriveLog.note("plugins: account has \(hidden.count) switched off")
+        DriveLog.note("plugins: account has \(hidden.count) switched off, \(added) private plugin(s) added")
     }
 
-    /// After a change: the account learns this phone's choices.
+    /// After a change: the account learns this phone's switches and its
+    /// private plugins, tokens included, so the next device has them too.
     private func pushToAccount() {
         let off = Array(hidden).sorted()
+        let mineWire: [[String: Any]] = mine.compactMap { s in
+            guard let base = s.base else { return nil }
+            var d: [String: Any] = ["id": s.id, "name": s.name, "base": base, "refresh_s": s.refreshS]
+            if let t = s.token { d["token"] = t }
+            return d
+        }
         Task {
             guard let token = await tokenProvider?() else { return }
-            _ = try? await Backend.send("PUT", "api/me/plugins", token: token, body: ["off": off])
+            _ = try? await Backend.send("PUT", "api/me/plugins", token: token, body: ["off": off, "private": mineWire])
         }
     }
 
@@ -279,6 +300,7 @@ final class SourcesStore: ObservableObject {
 
     private func persist() {
         if let d = try? JSONEncoder().encode(mine) { UserDefaults.standard.set(d, forKey: mineKey) }
+        pushToAccount()
     }
 }
 
