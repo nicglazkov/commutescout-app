@@ -34,7 +34,9 @@ Both apps talk only to [commutescout.com](https://commutescout.com). Routing, ma
 - `android/`: Jetpack Compose app over the Ferrostar Android artifacts and MapLibre Compose.
 - `scripts/`: `sync_mac.sh` copies the tree to the build Mac, `ios_build.sh sim|run|testflight` builds, `ios_signing.sh` sets up signing from an App Store Connect API key.
 
-Firebase config files (`ios/CommuteScoutDrive/GoogleService-Info.plist`, `android/app/google-services.json`) are not committed; the Android build works without one, with sign-in disabled.
+Firebase config files (`ios/CommuteScoutDrive/GoogleService-Info.plist`, `android/app/google-services.json`) are not committed; the Android build works without one, with sign-in disabled. The Android build and unit tests run on every push and pull request (`.github/workflows/android.yml`).
+
+The iOS project signs with a fixed team id and named provisioning profiles (`ios/project.yml`, `scripts/ios_signing.sh`), so it builds only for the maintainer. To build it elsewhere, change `DEVELOPMENT_TEAM` and the profile names, or switch the target to automatic signing.
 
 ## Build
 
@@ -70,3 +72,7 @@ Debug builds accept a scripted drive for testing without a car: `-csAutoDrive` (
 - Private plugins are read straight from the phone through the [Flare](https://commutescout.com/developers) endpoints `/flare/v1/handshake`, `/flare/v1/alerts`, `/flare/v1/report`.
 
 Map tiles and routing by Stadia Maps, data (c) OpenStreetMap contributors. Road data from the agencies listed on commutescout.com. Verify before you drive.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
