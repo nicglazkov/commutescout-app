@@ -97,6 +97,7 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
+    implementation(libs.firebase.messaging)
     implementation(libs.credentials)
     implementation(libs.credentials.play)
     implementation(libs.googleid)

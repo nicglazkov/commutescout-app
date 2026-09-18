@@ -13,6 +13,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.tasks.await
 import okhttp3.MediaType.Companion.toMediaType
@@ -80,7 +81,17 @@ class Account(context: Context) {
         }
     }
 
-    fun signOut() { auth?.signOut() }
+    /** Runs before the Firebase user goes away, while a token can still be minted. */
+    var beforeSignOut: (suspend () -> Unit)? = null
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
+
+    fun signOut() {
+        val a = auth ?: return
+        scope.launch {
+            runCatching { beforeSignOut?.invoke() }
+            a.signOut()
+        }
+    }
 
     fun clearError() { _error.value = null }
 
@@ -110,7 +121,7 @@ suspend fun Backend.send(method: String, path: String, token: String, body: Stri
         when (method) {
             "POST" -> b.post((body ?: "{}").toRequestBody("application/json".toMediaType()))
             "PATCH" -> b.patch((body ?: "{}").toRequestBody("application/json".toMediaType()))
-            "DELETE" -> b.delete()
+            "DELETE" -> b.delete(body?.toRequestBody("application/json".toMediaType()))
             else -> b.get()
         }
         http.newCall(b.build()).execute().use { r -> r.code to r.body.string() }

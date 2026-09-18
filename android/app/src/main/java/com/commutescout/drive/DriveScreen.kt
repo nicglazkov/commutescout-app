@@ -28,6 +28,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import android.app.Activity
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Campaign
@@ -615,6 +618,32 @@ private fun MarkerCard(marker: RoadMarker, here: LatLon?, model: DriveViewModel)
                 }
                 OutlinedButton({ share(context, marker.webUrl) }) { Icon(Icons.Default.Share, "Share") }
             }
+            if (marker.kind == "plugin") marker.id?.let { ConfirmRow(it, model) }
+        }
+    }
+}
+
+/** Confirm a plugin report or mark it gone, as on the website; sign-in is asked for first. */
+@Composable
+private fun ConfirmRow(alertId: String, model: DriveViewModel) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var voted by remember(alertId) { mutableStateOf<String?>(null) }
+    fun vote(v: String) {
+        scope.launch {
+            val token = model.account.token()
+            if (token == null) { (context as? Activity)?.let { model.account.signInWithGoogle(it) }; return@launch }
+            runCatching { Reporter.confirm(alertId, v, token) }
+                .onSuccess { voted = v; model.toast(if (v == "up") "Thanks, confirmed." else "Thanks, marked as gone.") }
+                .onFailure { model.toast(it.message ?: "Could not record that.") }
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton({ vote("up") }, Modifier.weight(1f).testTag("confirm-up"), enabled = voted == null) {
+            Icon(Icons.Default.ThumbUp, null); Spacer(Modifier.width(6.dp)); Text(if (voted == "up") "Confirmed" else "Still there")
+        }
+        OutlinedButton({ vote("gone") }, Modifier.weight(1f).testTag("confirm-gone"), enabled = voted == null) {
+            Icon(Icons.Default.Clear, null); Spacer(Modifier.width(6.dp)); Text(if (voted == "gone") "Marked gone" else "Gone")
         }
     }
 }

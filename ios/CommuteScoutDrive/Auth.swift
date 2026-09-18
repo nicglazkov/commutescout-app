@@ -83,9 +83,15 @@ final class Account: NSObject, ObservableObject {
         }
     }
 
+    /// Runs before the Firebase user goes away, while a token can still be minted.
+    var beforeSignOut: (() async -> Void)?
+
     func signOut() {
-        try? Auth.auth().signOut()
-        GIDSignIn.sharedInstance.signOut()
+        Task { @MainActor in
+            await beforeSignOut?()
+            try? Auth.auth().signOut()
+            GIDSignIn.sharedInstance.signOut()
+        }
     }
 
     /// The website's "Delete account": the server removes watches, keys

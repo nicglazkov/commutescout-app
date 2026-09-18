@@ -74,6 +74,7 @@ object Engine {
     lateinit var prefs: Prefs
     lateinit var account: Account
     lateinit var sources: SourcesStore
+    lateinit var push: PushRegistrar
     val markers = MarkerStore()
 
     val location: NavigationLocationProvider by lazy {
@@ -168,8 +169,13 @@ object Engine {
         // Account sync: plugin choices and places follow the account.
         sources.tokenProvider = { account.token() }
         places.tokenProvider = { account.token() }
+        push = PushRegistrar(app, account)
+        PushRegistrar.ensureChannel(app)
+        account.beforeSignOut = { push.forget() }
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
-            account.user.collect { u -> if (u != null) { sources.pullFromAccount(); places.syncWithAccount() } }
+            account.user.collect { u ->
+                if (u != null) { sources.pullFromAccount(); places.syncWithAccount(); push.register() }
+            }
         }
         Log.i(TAG, "engine ready")
     }

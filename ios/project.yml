@@ -46,12 +46,15 @@ targets:
         product: MapLibreSwiftDSL
       - package: Firebase
         product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseMessaging
       - package: GoogleSignIn
         product: GoogleSignIn
     entitlements:
       path: CommuteScoutDrive/CommuteScoutDrive.entitlements
       properties:
         com.apple.developer.applesignin: [Default]
+        aps-environment: development
     info:
       path: CommuteScoutDrive/Info.plist
       properties:
