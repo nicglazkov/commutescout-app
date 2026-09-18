@@ -322,6 +322,7 @@ fun DriveScreen(model: DriveViewModel) {
         Tool.WATCHES -> WatchesSheet(model) { tool = null }
         Tool.ASK -> AskSheet(model) { tool = null }
         Tool.SOURCES -> SourcesSheet(model) { tool = null }
+        Tool.MARKETPLACE -> MarketplaceSheet(model) { tool = null }
         else -> {}
     }
     reportAt?.let { at -> ReportSheet(model, at.lat, at.lon) { reportAt = null } }

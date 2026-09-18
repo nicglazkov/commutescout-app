@@ -245,6 +245,21 @@ class DriveTests {
         closeSheet("layers-sheet")
     }
 
+    @Test fun marketplaceTilesAndInstall() {
+        openTool("tool-marketplace"); waitFor { tagExists("marketplace-sheet") }
+        waitFor(20_000) { tagExists("plugin-card") || exists("No plugin is listed yet") }
+        if (tagExists("plugin-card")) {
+            val btns = compose.onAllNodes(androidx.compose.ui.test.hasTestTag("install-wz-flare"), useUnmergedTree = true)
+            if (btns.fetchSemanticsNodes().isNotEmpty()) {
+                val wasInstalled = exists("Installed")
+                btns[0].performClick()
+                waitFor { exists(if (wasInstalled) "Install" else "Installed") }
+                compose.onAllNodes(androidx.compose.ui.test.hasTestTag("install-wz-flare"), useUnmergedTree = true)[0].performClick()
+            }
+        }
+        closeSheet("marketplace-sheet")
+    }
+
     @Test fun alertsNearbyRowShowsTheMarkerCard() {
         openTool("tool-alerts"); waitFor { tagExists("alerts-sheet") }
         Thread.sleep(3000)
