@@ -165,6 +165,12 @@ object Engine {
         alerts.spoken = prefs.spokenAlerts
         alerts.announceAheadMeters = prefs.alertAheadMeters
         alerts.rules = { m -> prefs.rule(prefs.ruleKind(m)) }
+        // Account sync: plugin choices and places follow the account.
+        sources.tokenProvider = { account.token() }
+        places.tokenProvider = { account.token() }
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            account.user.collect { u -> if (u != null) { sources.pullFromAccount(); places.syncWithAccount() } }
+        }
         Log.i(TAG, "engine ready")
     }
 }

@@ -94,6 +94,59 @@ final class PlaceStore: ObservableObject {
         if let data = try? JSONEncoder().encode(places) {
             UserDefaults.standard.set(data, forKey: key)
         }
+        pushToAccount()
+    }
+
+    // MARK: account sync (Home, Work, favorites and recents follow the account)
+
+    /// Set by the app model: the signed-in account's ID token, or nil.
+    var tokenProvider: (() async -> String?)?
+    private var pushTask: Task<Void, Never>?
+
+    private struct Wire: Codable {
+        let id: String
+        let kind: String
+        let name: String
+        let lat: Double
+        let lon: Double
+        let used_at: Double
+    }
+    private struct Body: Decodable { let places: [Wire] }
+
+    private func wire() -> [[String: Any]] {
+        places.map { ["id": $0.id, "kind": $0.kind.rawValue, "name": $0.name,
+                      "lat": $0.lat, "lon": $0.lon, "used_at": $0.lastUsed.timeIntervalSince1970] }
+    }
+
+    private func apply(_ wires: [Wire]) {
+        places = wires.compactMap { w in
+            guard let kind = Place.Kind(rawValue: w.kind) else { return nil }
+            var p = Place(name: w.name, coordinate: CLLocationCoordinate2D(latitude: w.lat, longitude: w.lon), kind: kind)
+            p.id = w.id
+            p.lastUsed = Date(timeIntervalSince1970: w.used_at)
+            return p
+        }
+        if let data = try? JSONEncoder().encode(places) { UserDefaults.standard.set(data, forKey: key) }
+    }
+
+    /// On sign-in: send this phone's list, take the merged list back.
+    func syncWithAccount() async {
+        guard let token = await tokenProvider?() else { return }
+        guard let (status, data) = try? await Backend.send("PUT", "api/me/places", token: token, body: ["places": wire()]),
+              status == 200, let body = try? JSONDecoder().decode(Body.self, from: data) else { return }
+        apply(body.places)
+        DriveLog.note("places: synced \(places.count) with the account")
+    }
+
+    /// After a change: the account gets this phone's list (replace, so a
+    /// removal here is a removal everywhere), debounced.
+    private func pushToAccount() {
+        pushTask?.cancel()
+        pushTask = Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled, let token = await tokenProvider?() else { return }
+            _ = try? await Backend.send("PUT", "api/me/places", token: token, body: ["places": wire(), "replace": true])
+        }
     }
 }
 

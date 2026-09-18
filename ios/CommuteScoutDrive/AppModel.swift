@@ -161,9 +161,10 @@ final class AppModel: ObservableObject {
 
     private func wireCore() {
         sources.tokenProvider = { [weak self] in await self?.account.token() }
+        places.tokenProvider = { [weak self] in await self?.account.token() }
         accountSink = account.$user.receive(on: DispatchQueue.main).sink { [weak self] u in
             guard u != nil else { return }
-            Task { await self?.sources.pullFromAccount() }
+            Task { await self?.sources.pullFromAccount(); await self?.places.syncWithAccount() }
         }
         coreSink = core.$state.receive(on: DispatchQueue.main).sink { [weak self] s in
             self?.noteLocation(s)
