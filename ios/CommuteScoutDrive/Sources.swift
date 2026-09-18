@@ -25,8 +25,11 @@ struct FlareSource: Codable, Identifiable, Hashable {
     var coverage: [Double]? = nil
     var kinds: [String] = []
     var acceptsReports = false
+    // A catalog plugin that offers each signed-in person their own session
+    // (handshake extensions.user_sessions): the path the phone polls itself.
+    var ownSessionPath: String? = nil
 
-    var isDirect: Bool { base != nil }
+    var isDirect: Bool { base != nil && ownSessionPath == nil }
 
     /// Where the plugin says it covers, in words.
     var coverageLabel: String {
@@ -66,6 +69,7 @@ private struct PublicSource: Decodable {
     let coverage: [Double]?
     let kinds: [String]?
     let capabilities: [String: Bool]?
+    let base: String?
     struct Attribution: Decodable { let name: String?; let url: String? }
 }
 
@@ -77,12 +81,16 @@ private struct Handshake: Decodable {
     let refresh_s: Int?
     let attribution: PublicSource.Attribution?
     let auth: String?
-    enum CodingKeys: String, CodingKey { case protocolName = "protocol", id, name, capabilities, refresh_s, attribution, auth }
+    let extensions: Extensions?
+    struct Extensions: Decodable { let user_sessions: UserSessions? }
+    struct UserSessions: Decodable { let path: String?; let auth: String?; let idle_s: Int? }
+    enum CodingKeys: String, CodingKey { case protocolName = "protocol", id, name, capabilities, refresh_s, attribution, auth, extensions }
 }
 
 private struct FlareAlerts: Decodable {
     let alerts: [FlareAlert]
     let ttl_s: Int?
+    let session: String?
 }
 
 /// An alert record from a plugin, mapped onto the map's marker model.
@@ -115,6 +123,11 @@ final class SourcesStore: ObservableObject {
     @Published private(set) var catalog: [FlareSource] = []
     @Published private(set) var mine: [FlareSource] = []
     @Published private(set) var directMarkers: [RoadMarker] = []
+    // Catalog plugins polled by this phone for the signed-in person's own
+    // session. Only bases from the commutescout.com catalog ever see the
+    // account token; a plugin added by URL never does.
+    @Published private(set) var own: [FlareSource] = []
+    var ownSessionIds: Set<String> { Set(own.map(\.id)) }
     @Published var hidden: Set<String> = []     // source ids switched off
     @Published var error: String?
 
@@ -197,6 +210,27 @@ final class SourcesStore: ObservableObject {
                         summary: $0.description, coverage: $0.coverage, kinds: $0.kinds ?? [],
                         acceptsReports: $0.capabilities?["report"] ?? false)
         }
+        await discoverOwnSessions(r.sources.compactMap { s in s.base.map { (s.id, $0) } })
+    }
+
+    /// Catalog plugins whose handshake offers user sessions get polled here.
+    private func discoverOwnSessions(_ bases: [(String, String)]) async {
+        var found: [FlareSource] = []
+        for (id, base) in bases where base.hasPrefix("https://") {
+            guard let url = URL(string: base + "/flare/v1/handshake") else { continue }
+            var req = URLRequest(url: url)
+            req.setValue("application/json", forHTTPHeaderField: "Accept")
+            guard let (data, resp) = try? await Backend.session.data(for: req),
+                  (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let h = try? JSONDecoder().decode(Handshake.self, from: data),
+                  let us = h.extensions?.user_sessions, let path = us.path, us.auth == "firebase", h.id == id else { continue }
+            found.append(FlareSource(id: h.id, name: h.name, base: base, token: nil, refreshS: max(15, h.refresh_s ?? 20),
+                                     canReport: h.capabilities?["report"] ?? false, canConfirm: h.capabilities?["confirm"] ?? false,
+                                     attribution: h.attribution?.name, trust: "community", ownSessionPath: path))
+        }
+        own = found
+        for s in found { schedule(s) }
+        if !found.isEmpty { DriveLog.note("own sessions offered by: " + found.map(\.id).joined(separator: ", ")) }
     }
 
     /// Adds a private or unlisted plugin by its base URL after a handshake.
@@ -280,22 +314,30 @@ final class SourcesStore: ObservableObject {
 
     private func poll(_ src: FlareSource) async {
         guard let base = src.base, let center = lastCenter, isOn(src.id) else { return }
-        var comps = URLComponents(string: base + "/flare/v1/alerts")!
+        // Own session: the account token goes only to a catalog base; signed
+        // out, the mediated copy from commutescout.com is what shows.
+        var bearer = src.token
+        if src.ownSessionPath != nil {
+            guard let t = await tokenProvider?() else { perSource[src.id] = nil; rebuild(); return }
+            bearer = t
+        }
+        var comps = URLComponents(string: base + (src.ownSessionPath ?? "/flare/v1/alerts"))!
         comps.queryItems = [URLQueryItem(name: "lat", value: String(format: "%.3f", center.latitude)),
                             URLQueryItem(name: "lon", value: String(format: "%.3f", center.longitude)),
                             URLQueryItem(name: "r", value: "50000")]
         guard let url = comps.url else { return }
         var req = URLRequest(url: url)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let t = src.token { req.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization") }
+        if let t = bearer { req.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization") }
         guard let (data, _) = try? await Backend.session.data(for: req),
               let res = try? JSONDecoder().decode(FlareAlerts.self, from: data) else { return }
         perSource[src.id] = res.alerts.map { $0.marker(source: src) }
+        if src.ownSessionPath != nil { DriveLog.note("\(src.id): \(res.alerts.count) alerts, session=\(res.session ?? "?")") }
         rebuild()
     }
 
     private func rebuild() {
-        directMarkers = mine.filter { isOn($0.id) }.flatMap { perSource[$0.id] ?? [] }
+        directMarkers = (mine + own).filter { isOn($0.id) }.flatMap { perSource[$0.id] ?? [] }
     }
 
     private func persist() {

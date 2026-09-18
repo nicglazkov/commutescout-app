@@ -330,7 +330,13 @@ final class AppModel: ObservableObject {
     // MARK: routes
 
     /// Every marker on the map: the site's plus the driver's own plugins.
-    var allMarkers: [RoadMarker] { markers.markers + sources.directMarkers }
+    /// Own-session markers replace the mediated copies of the same plugin.
+    var allMarkers: [RoadMarker] {
+        let own = sources.ownSessionIds
+        let mediated = own.isEmpty ? markers.markers
+            : markers.markers.filter { m in !own.contains(where: { (m.id ?? "").hasPrefix($0 + ":") }) }
+        return mediated + sources.directMarkers
+    }
 
     func marker(for key: String) -> RoadMarker? {
         markers.marker(for: key) ?? sources.directMarkers.first { $0.key == key }
