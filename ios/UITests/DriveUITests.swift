@@ -170,13 +170,9 @@ final class DriveUITests: XCTestCase {
         app.buttons["report"].tap()
         XCTAssertTrue(app.buttons["report-POLICE_VISIBLE"].waitForExistence(timeout: 5))
         app.buttons["report-POLICE_VISIBLE"].tap()
-        // Signed out (the simulator): the sheet asks for an account. Signed
-        // in (Nic's phone): a chosen kind enables Send. Never send here.
-        if app.buttons["Sign in"].exists {
-            XCTAssertFalse(app.buttons["report-send"].isEnabled, "signed-out reports cannot be sent")
-        } else {
-            XCTAssertTrue(app.buttons["report-send"].isEnabled, "signed in with a kind chosen: send enabled")
-        }
+        // A chosen kind enables Send; signed out, Send leads to sign-in
+        // rather than a report. Never send here.
+        XCTAssertTrue(app.buttons["report-send"].isEnabled, "a kind is chosen: send enabled")
         app.buttons["Cancel"].firstMatch.tap()
     }
 

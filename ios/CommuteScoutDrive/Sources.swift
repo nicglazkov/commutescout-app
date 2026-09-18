@@ -426,6 +426,9 @@ struct PluginCard: View {
         }
         .padding(12)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        // A container element, so the tile has its id and the Install
+        // button keeps its own (a bare stack passes modifiers to children).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("plugin-card")
     }
 }
