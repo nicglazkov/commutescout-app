@@ -2,6 +2,7 @@ package com.commutescout.drive
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
@@ -55,9 +56,49 @@ class PlaceStore(context: Context) {
     private fun near(p: Place, lat: Double, lon: Double) =
         Math.abs(p.lat - lat) < 0.0005 && Math.abs(p.lon - lon) < 0.0005
 
-    private fun save(list: List<Place>) {
+    private fun save(list: List<Place>, push: Boolean = true) {
         _places.value = list
         prefs.edit().putString("v1", Backend.json.encodeToString(list)).apply()
+        if (push) pushToAccount()
+    }
+
+    // Account sync: Home, Work, favorites and recents follow the account.
+    var tokenProvider: (suspend () -> String?)? = null
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
+    private var pushJob: kotlinx.coroutines.Job? = null
+
+    @kotlinx.serialization.Serializable
+    private data class Wire(val id: String, val kind: String, val name: String, val lat: Double, val lon: Double, val used_at: Double)
+    @kotlinx.serialization.Serializable
+    private data class WireBody(val places: List<Wire> = emptyList())
+
+    private fun wire(): List<Wire> = _places.value.map { Wire(it.id, it.kind.name, it.name, it.lat, it.lon, it.savedAt / 1000.0) }
+
+    private fun apply(wires: List<Wire>) {
+        val list = wires.mapNotNull { w ->
+            val kind = runCatching { PlaceKind.valueOf(w.kind) }.getOrNull() ?: return@mapNotNull null
+            Place(id = w.id, name = w.name, lat = w.lat, lon = w.lon, kind = kind, savedAt = (w.used_at * 1000).toLong())
+        }
+        save(list, push = false)
+    }
+
+    /** On sign-in: send this phone's list, take the merged list back. */
+    suspend fun syncWithAccount() {
+        val token = tokenProvider?.invoke() ?: return
+        val body = Backend.json.encodeToString(WireBody(wire()))
+        val (status, text) = runCatching { Backend.send("PUT", "/api/me/places", token, body) }.getOrNull() ?: return
+        if (status != 200) return
+        runCatching { Backend.json.decodeFromString<WireBody>(text) }.getOrNull()?.let { apply(it.places) }
+    }
+
+    private fun pushToAccount() {
+        pushJob?.cancel()
+        pushJob = scope.launch {
+            kotlinx.coroutines.delay(1500)
+            val token = tokenProvider?.invoke() ?: return@launch
+            val body = Backend.json.encodeToString(WireBody(wire())).dropLast(1) + ",\"replace\":true}"
+            runCatching { Backend.send("PUT", "/api/me/places", token, body) }
+        }
     }
 
     private fun load(): List<Place> =

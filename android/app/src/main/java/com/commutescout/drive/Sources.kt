@@ -127,6 +127,31 @@ class SourcesStore(context: Context) {
         _hidden.value = if (on) _hidden.value - id else _hidden.value + id
         p.edit().putStringSet("hidden", _hidden.value).apply()
         rebuild()
+        pushToAccount()
+    }
+
+    // Account sync: Install on one device follows the account.
+    var tokenProvider: (suspend () -> String?)? = null
+    @Serializable private data class MePlugins(val plugins: MeInner = MeInner())
+    @Serializable private data class MeInner(val off: List<String> = emptyList())
+
+    /** On sign-in: the account's choices replace this phone's. */
+    suspend fun pullFromAccount() {
+        val token = tokenProvider?.invoke() ?: return
+        val (status, text) = runCatching { Backend.send("GET", "/api/me/plugins", token, null) }.getOrNull() ?: return
+        if (status != 200) return
+        val me = runCatching { Backend.json.decodeFromString<MePlugins>(text) }.getOrNull() ?: return
+        _hidden.value = me.plugins.off.toSet()
+        p.edit().putStringSet("hidden", _hidden.value).apply()
+        rebuild()
+    }
+
+    private fun pushToAccount() {
+        scope.launch {
+            val token = tokenProvider?.invoke() ?: return@launch
+            val body = Backend.json.encodeToString(MeInner(_hidden.value.sorted()))
+            runCatching { Backend.send("PUT", "/api/me/plugins", token, body) }
+        }
     }
 
     suspend fun loadCatalog() {
