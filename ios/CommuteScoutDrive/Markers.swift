@@ -140,6 +140,9 @@ struct MarkerCard: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 10)
                 }
                 .buttonStyle(.borderedProminent)
+                if marker.kind == "plugin" {
+                    ConfirmButtons(marker: marker)
+                }
                 ShareLink(item: marker.webURL) {
                     Image(systemName: "square.and.arrow.up").padding(.vertical, 10).padding(.horizontal, 14)
                 }
@@ -151,3 +154,38 @@ struct MarkerCard: View {
         .padding(12)
     }
 }
+
+/// "Still there" and "Gone" for a community report: the vote goes to the
+/// plugin through commutescout.com and moves its confirmation count.
+struct ConfirmButtons: View {
+    @EnvironmentObject var model: AppModel
+    let marker: RoadMarker
+    @State private var voted: String?
+    @State private var showSignIn = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button { Task { await vote("up") } } label: { Image(systemName: voted == "up" ? "hand.thumbsup.fill" : "hand.thumbsup") }
+                .accessibilityIdentifier("confirm-up")
+            Button { Task { await vote("gone") } } label: { Image(systemName: voted == "gone" ? "xmark.circle.fill" : "xmark.circle") }
+                .accessibilityIdentifier("confirm-gone")
+        }
+        .buttonStyle(.bordered)
+        .disabled(voted != nil)
+        .sheet(isPresented: $showSignIn) { SignInSheet(reason: "Sign in to confirm reports.") }
+    }
+
+    private func vote(_ v: String) async {
+        guard let id = marker.id else { return }
+        guard let token = await model.account.token() else { showSignIn = true; return }
+        do {
+            try await model.reporter.confirm(alertId: id, vote: v, token: token)
+            voted = v
+            model.toast = v == "up" ? "Thanks, confirmed." : "Thanks, marked as gone."
+            DriveLog.note("confirm \(v): \(id)")
+        } catch {
+            model.errorMessage = error.localizedDescription
+        }
+    }
+}
+

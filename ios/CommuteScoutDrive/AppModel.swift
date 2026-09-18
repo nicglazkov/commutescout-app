@@ -100,6 +100,7 @@ final class AppModel: ObservableObject {
     var origin: Place?                      // a chosen start instead of the driver
     @Published var toast: String?
     private let delegate = NavDelegate()
+    private var accountSink: AnyCancellable?
     /// Optional via points for the next route (a corridor to prefer), cleared when a trip starts.
     var via: [CLLocationCoordinate2D] = []
     private var cancellables = Set<AnyCancellable>()
@@ -159,6 +160,11 @@ final class AppModel: ObservableObject {
     }
 
     private func wireCore() {
+        sources.tokenProvider = { [weak self] in await self?.account.token() }
+        accountSink = account.$user.receive(on: DispatchQueue.main).sink { [weak self] u in
+            guard u != nil else { return }
+            Task { await self?.sources.pullFromAccount() }
+        }
         coreSink = core.$state.receive(on: DispatchQueue.main).sink { [weak self] s in
             self?.noteLocation(s)
             guard let self else { return }
