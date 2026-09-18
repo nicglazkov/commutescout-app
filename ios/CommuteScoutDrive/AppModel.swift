@@ -323,6 +323,16 @@ final class AppModel: ObservableObject {
     }
 
     func routes(to place: Place) async {
+        // After time in the background the last fix can be minutes old; a
+        // route from there starts with an immediate reroute. Wait briefly
+        // for a fresh one.
+        if origin == nil, let ts = location.lastLocation?.clLocation.timestamp, Date().timeIntervalSince(ts) > 20 {
+            DriveLog.note("routes: last fix \(Int(Date().timeIntervalSince(ts))) s old, waiting for a fresh one")
+            for _ in 0 ..< 12 {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                if let t2 = location.lastLocation?.clLocation.timestamp, Date().timeIntervalSince(t2) <= 20 { break }
+            }
+        }
         guard let from = origin?.coordinate ?? here else {
             DriveLog.note("routes: no position yet (denied=\(location.denied))")
             errorMessage = location.denied
