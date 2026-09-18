@@ -76,6 +76,8 @@ object Engine {
     lateinit var sources: SourcesStore
     lateinit var push: PushRegistrar
     val markers = MarkerStore()
+    /** True between Start and Stop: a reroute that lands after Stop is dropped. */
+    @Volatile var tripActive = false
 
     val location: NavigationLocationProvider by lazy {
         NavigationLocationProvider(
@@ -146,6 +148,9 @@ object Engine {
         // Rerouting: when the driver leaves the route, ask for a new one and take it.
         core.deviationHandler = RouteDeviationHandler { _, _, remaining -> CorrectiveAction.GetNewRoutes(remaining) }
         core.alternativeRouteProcessor = AlternativeRouteProcessor { c, routes ->
+            // A route fetched for a deviation can land after the driver
+            // stopped; replacing the route then would restart the trip.
+            if (!tripActive) return@AlternativeRouteProcessor
             routes.firstOrNull()?.let { r ->
                 c.replaceRoute(r)
                 // The alerts engine must follow the new geometry.
@@ -327,6 +332,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         Log.i("DriveViewModel", "start navigation to ${place.shortName}")
         try {
             if (simulating.value) Engine.location.enableSimulationOn(route)
+            Engine.tripActive = true
             Engine.core.startNavigation(route)
             setDestination(place.shortName)
             Engine.places.noteRecent(place.name, place.lat, place.lon)
@@ -340,8 +346,11 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     }
 
     override fun stopNavigation() {
-        Engine.location.disableSimulation()
+        // The core stops first: switching the location provider while the
+        // trip runs looks like a deviation and starts a reroute.
+        Engine.tripActive = false
         Engine.core.stopNavigation()
+        Engine.location.disableSimulation()
         Engine.alerts.stop()
         _state.value = DriveState.Browsing
     }
