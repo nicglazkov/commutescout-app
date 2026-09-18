@@ -33,12 +33,7 @@ struct ContentView: View {
             )
             .navigationSpeedLimit(speedLimit: model.prefs.showSpeedLimit ? model.core.annotation?.speedLimit : nil,
                                   speedLimitStyle: .mutcdStyle)
-            .navigationViewInnerGrid(topCenter: {
-                VStack(spacing: 8) {
-                    reroutingBanner
-                    alertStripOrPill
-                }
-            })
+            .navigationViewInnerGrid(topCenter: { reroutingBanner })
 
             MapHook(
                 layerIds: Set(MarkerIcons.kinds.map { "cs-m-\($0)" }),
@@ -109,6 +104,13 @@ struct ContentView: View {
                 }
             }
 
+            // The next alert sits above the trip bar, left of the side
+            // buttons: clear of the instruction card whatever its height.
+            VStack {
+                Spacer()
+                alertStripOrPill
+                    .padding(.leading, 12).padding(.trailing, 76).padding(.bottom, 124)
+            }
             VStack {
                 Spacer()
                 bottomCard

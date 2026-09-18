@@ -139,6 +139,33 @@ final class SourcesStore: ObservableObject {
         if on { hidden.remove(id) } else { hidden.insert(id) }
         UserDefaults.standard.set(Array(hidden), forKey: hiddenKey)
         rebuild()
+        pushToAccount()
+    }
+
+    // MARK: account sync (Install on one device follows the account)
+
+    /// Set by the app model: the signed-in account's ID token, or nil.
+    var tokenProvider: (() async -> String?)?
+    private struct MePlugins: Decodable { struct P: Decodable { let off: [String]? }; let plugins: P }
+
+    /// On sign-in: the account's choices replace this phone's.
+    func pullFromAccount() async {
+        guard let token = await tokenProvider?() else { return }
+        guard let (status, data) = try? await Backend.send("GET", "api/me/plugins", token: token, body: nil),
+              status == 200, let me = try? JSONDecoder().decode(MePlugins.self, from: data) else { return }
+        hidden = Set(me.plugins.off ?? [])
+        UserDefaults.standard.set(Array(hidden), forKey: hiddenKey)
+        rebuild()
+        DriveLog.note("plugins: account has \(hidden.count) switched off")
+    }
+
+    /// After a change: the account learns this phone's choices.
+    private func pushToAccount() {
+        let off = Array(hidden).sorted()
+        Task {
+            guard let token = await tokenProvider?() else { return }
+            _ = try? await Backend.send("PUT", "api/me/plugins", token: token, body: ["off": off])
+        }
     }
 
     func loadCatalog() async {
