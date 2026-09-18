@@ -10,9 +10,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/../ios"
 export PATH="/opt/homebrew/bin:$PATH" LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
-ASC_KEY_ID="${ASC_KEY_ID:-N9LBMSST5A}"
-ASC_ISSUER_ID="${ASC_ISSUER_ID:-ff12bb27-b0e6-4510-a862-0e199730f09e}"
-ASC_KEY_PATH="${ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8}"
 DD="$HOME/src/csdrive-dd"
 SIM="${SIM:-iPhone 17}"
 
@@ -31,6 +28,9 @@ case "${1:-sim}" in
   testflight)
     # Manual signing with the build keychain that scripts/ios_signing.sh set
     # up: the login keychain is not reachable from a remote shell.
+    # The upload needs the App Store Connect API key from the environment.
+    : "${ASC_KEY_ID:?set ASC_KEY_ID to the App Store Connect API key id}"
+    : "${ASC_ISSUER_ID:?set ASC_ISSUER_ID to the App Store Connect API issuer id}"
     BUILD="${BUILD:-$(date +%Y%m%d%H%M)}"
     KC="$HOME/Library/Keychains/cs-build.keychain-db"
     PROFILE="CommuteScout Drive AppStore"

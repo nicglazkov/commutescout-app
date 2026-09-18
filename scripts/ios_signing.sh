@@ -5,8 +5,10 @@
 # profile for com.commutescout.drive. Idempotent; safe to rerun.
 set -euo pipefail
 export PATH="/opt/homebrew/bin:$PATH"
-ASC_KEY_ID="${ASC_KEY_ID:-N9LBMSST5A}"
-ASC_ISSUER_ID="${ASC_ISSUER_ID:-ff12bb27-b0e6-4510-a862-0e199730f09e}"
+# The App Store Connect API key comes from the environment only; there
+# are no defaults in the repository.
+: "${ASC_KEY_ID:?set ASC_KEY_ID to the App Store Connect API key id}"
+: "${ASC_ISSUER_ID:?set ASC_ISSUER_ID to the App Store Connect API issuer id}"
 ASC_KEY_PATH="${ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8}"
 DIR="$HOME/.appstoreconnect/cs-build"
 KC="$HOME/Library/Keychains/cs-build.keychain-db"
@@ -31,7 +33,7 @@ fi
 
 if [ ! -f "$DIR/dist.key" ]; then
   openssl genrsa -out "$DIR/dist.key" 2048 2>/dev/null
-  openssl req -new -key "$DIR/dist.key" -out "$DIR/dist.csr" -subj "/CN=CommuteScout Build/O=Nicholas Glazkov/C=US"
+  openssl req -new -key "$DIR/dist.key" -out "$DIR/dist.csr" -subj "/CN=CommuteScout Build/O=CommuteScout/C=US"
 fi
 
 python3 - "$DIR" "$ASC_KEY_ID" "$ASC_ISSUER_ID" "$ASC_KEY_PATH" "$PROFILE_NAME" "$BUNDLE_ID" <<'PY'
@@ -77,11 +79,15 @@ PY
 [ -f "$DIR/AppleWWDRCAG3.cer" ] || curl -sS -o "$DIR/AppleWWDRCAG3.cer" https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
 security import "$DIR/AppleWWDRCAG3.cer" -k "$KC" -T /usr/bin/codesign >/dev/null 2>&1 || true
 # security(1) only takes the key as PKCS#12, so bundle key and certificate.
-if [ ! -f "$DIR/dist.p12" ]; then
+# The bundle is protected with the keychain's own random password; a
+# .p12 made by an earlier version with a fixed password is replaced.
+if [ ! -f "$DIR/dist.p12" ] || ! openssl pkcs12 -in "$DIR/dist.p12" -passin "pass:$PW" -noout >/dev/null 2>&1; then
+  rm -f "$DIR/dist.p12"
   openssl x509 -in "$DIR/dist.cer" -inform DER -out "$DIR/dist.pem"
-  openssl pkcs12 -export -inkey "$DIR/dist.key" -in "$DIR/dist.pem" -out "$DIR/dist.p12" -passout pass:cs -name "CommuteScout Build"
+  openssl pkcs12 -export -inkey "$DIR/dist.key" -in "$DIR/dist.pem" -out "$DIR/dist.p12" -passout "pass:$PW" -name "CommuteScout Build"
+  chmod 600 "$DIR/dist.p12"
 fi
-security import "$DIR/dist.p12" -k "$KC" -P cs -A -T /usr/bin/codesign -T /usr/bin/security >/dev/null 2>&1 || true
+security import "$DIR/dist.p12" -k "$KC" -P "$PW" -A -T /usr/bin/codesign -T /usr/bin/security >/dev/null 2>&1 || true
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$PW" "$KC" >/dev/null
 security find-identity -v -p codesigning "$KC"
 
