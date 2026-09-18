@@ -350,7 +350,8 @@ struct AskView: View {
         running = true; answer = ""; status = ""
         defer { running = false }
         var body: [String: Any] = ["question": q, "tz": TimeZone.current.identifier]
-        if let here = model.here { body["location"] = ["lat": here.latitude, "lon": here.longitude] }
+        // Three decimals (about 100 m), the same as every other request.
+        if let here = model.here { body["location"] = ["lat": (here.latitude * 1000).rounded() / 1000, "lon": (here.longitude * 1000).rounded() / 1000] }
         if let prior { body["prior"] = ["question": prior.q, "answer": prior.a] }
         var req = URLRequest(url: Backend.base.appendingPathComponent("api/ask"))
         req.httpMethod = "POST"

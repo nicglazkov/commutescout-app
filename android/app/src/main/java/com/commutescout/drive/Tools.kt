@@ -322,7 +322,8 @@ fun AskSheet(model: DriveViewModel, onClose: () -> Unit) {
                 withContext(Dispatchers.IO) {
                     val body = buildString {
                         append("""{"question":${JsonPrimitive(q)},"tz":${JsonPrimitive(java.util.TimeZone.getDefault().id)}""")
-                        here?.let { append(""","location":{"lat":${it.lat},"lon":${it.lon}}""") }
+                        // Three decimals (about 100 m), the same as every other request.
+                        here?.let { append(""","location":{"lat":%.3f,"lon":%.3f}""".format(java.util.Locale.US, it.lat, it.lon)) }
                         prior?.let { append(""","prior":{"question":${JsonPrimitive(it.first)},"answer":${JsonPrimitive(it.second)}}""") }
                         append("}")
                     }
