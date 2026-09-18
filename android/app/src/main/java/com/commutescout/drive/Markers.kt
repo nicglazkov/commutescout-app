@@ -9,6 +9,8 @@ import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Place
+import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -35,9 +37,13 @@ class MarkerStore {
     private var fetchedAt = 0L
     private var job: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    // After a failed fetch, a 429 or a 5xx the timed refresh waits: two
+    // minutes, then double each time up to ten; a success resets it.
+    private var backoffMs = 0L
+    private var holdUntil = 0L
 
     init {
-        scope.launch { while (isActive) { delay(60_000); refresh(force = true) } }
+        scope.launch { while (isActive) { delay(60_000); if (System.currentTimeMillis() >= holdUntil) refresh(force = true) } }
     }
 
     fun marker(key: String): RoadMarker? = byKey[key]
@@ -66,10 +72,19 @@ class MarkerStore {
             if (!force) delay(350)   // let the pan settle
             _loading.value = true
             try {
-                val found = runCatching { LiveData.markers(b[0], b[1], b[2], b[3], k) }.getOrNull() ?: return@launch
+                val found = runCatching { LiveData.markers(b[0], b[1], b[2], b[3], k) }.getOrElse { e ->
+                    if (e is CancellationException) throw e
+                    val code = (e as? BackendError)?.code ?: 0
+                    if (e is BackendError && code != 429 && code < 500) return@launch   // not a server problem
+                    backoffMs = minOf(600_000L, if (backoffMs == 0L) 120_000L else backoffMs * 2)
+                    holdUntil = System.currentTimeMillis() + backoffMs
+                    Log.i("Markers", "fetch failed (${e.message}), next timed refresh in ${backoffMs / 1000} s")
+                    return@launch
+                }
                 _markers.value = found
                 byKey = found.associateBy { it.key }
                 fetchedAt = System.currentTimeMillis()
+                backoffMs = 0L; holdUntil = 0L
             } finally {
                 _loading.value = false
             }

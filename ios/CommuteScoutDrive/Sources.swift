@@ -137,6 +137,9 @@ final class SourcesStore: ObservableObject {
     // prefix plus the plugin id; the rest of the record stays in defaults.
     private let tokenPrefix = "plugin-token:"
     private var timers: [String: Timer] = [:]
+    // Seconds to wait before the next poll of a source that failed, answered
+    // 429 or 5xx: doubles each time up to ten minutes; absent after a success.
+    private var backoff: [String: Double] = [:]
     private var lastCenter: CLLocationCoordinate2D?
     private var perSource: [String: [RoadMarker]] = [:]
 
@@ -284,6 +287,7 @@ final class SourcesStore: ObservableObject {
         mine.removeAll { $0.id == src.id }
         KeychainStore.remove(tokenPrefix + src.id)
         timers[src.id]?.invalidate(); timers[src.id] = nil
+        backoff[src.id] = nil
         perSource[src.id] = nil
         persist()
         rebuild()
@@ -319,12 +323,34 @@ final class SourcesStore: ObservableObject {
         guard code == 201 || code == 202 else { throw ReportError.refused(code, "\(src.name) refused the report.") }
     }
 
+    /// Polls now, then keeps polling: every refreshS while the plugin
+    /// answers, at the backed-off interval while it does not.
     private func schedule(_ src: FlareSource) {
-        timers[src.id]?.invalidate()
-        timers[src.id] = Timer.scheduledTimer(withTimeInterval: Double(src.refreshS), repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.poll(src) }
+        timers[src.id]?.invalidate(); timers[src.id] = nil
+        Task { @MainActor in
+            await poll(src)
+            scheduleNext(src)
         }
-        Task { await poll(src) }
+    }
+
+    private func scheduleNext(_ src: FlareSource) {
+        // Removed, or replaced by a fresh catalog, while a poll was in flight.
+        guard mine.contains(where: { $0.id == src.id }) || own.contains(where: { $0.id == src.id }) else { return }
+        timers[src.id]?.invalidate()
+        timers[src.id] = Timer.scheduledTimer(withTimeInterval: backoff[src.id] ?? Double(src.refreshS), repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                await self.poll(src)
+                self.scheduleNext(src)
+            }
+        }
+    }
+
+    /// The plugin failed to answer: the next poll waits twice as long, up to ten minutes.
+    private func failed(_ src: FlareSource, _ why: String) {
+        let next = min(600, (backoff[src.id] ?? Double(src.refreshS)) * 2)
+        backoff[src.id] = next
+        DriveLog.note("\(src.id): \(why), next poll in \(Int(next)) s")
     }
 
     private func poll(_ src: FlareSource) async {
@@ -344,8 +370,18 @@ final class SourcesStore: ObservableObject {
         var req = URLRequest(url: url)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let t = bearer { req.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization") }
-        guard let (data, _) = try? await Backend.session.data(for: req),
-              let res = try? JSONDecoder().decode(FlareAlerts.self, from: data) else { return }
+        let data: Data
+        do {
+            let (d, resp) = try await Backend.session.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if code == 429 || code >= 500 { failed(src, "answered \(code)"); return }
+            data = d
+        } catch {
+            failed(src, error.localizedDescription)
+            return
+        }
+        backoff[src.id] = nil
+        guard let res = try? JSONDecoder().decode(FlareAlerts.self, from: data) else { return }
         perSource[src.id] = res.alerts.map { $0.marker(source: src) }
         if src.ownSessionPath != nil { DriveLog.note("\(src.id): \(res.alerts.count) alerts, session=\(res.session ?? "?")") }
         rebuild()

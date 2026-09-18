@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -134,6 +135,9 @@ class SourcesStore(context: Context) {
     val error = _error.asStateFlow()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val jobs = HashMap<String, Job>()
+    // Milliseconds to wait before the next poll of a source that failed,
+    // answered 429 or 5xx: doubles each time up to ten minutes; absent after a success.
+    private val backoff = HashMap<String, Long>()
     private val perSource = HashMap<String, List<RoadMarker>>()
     private var lastCenter: LatLon? = null
 
@@ -251,7 +255,7 @@ class SourcesStore(context: Context) {
     fun remove(src: FlareSource) {
         _mine.value = _mine.value.filter { it.id != src.id }
         secure.edit().remove(src.id).apply()
-        jobs.remove(src.id)?.cancel(); perSource.remove(src.id)
+        jobs.remove(src.id)?.cancel(); perSource.remove(src.id); backoff.remove(src.id)
         persist(); rebuild()
     }
 
@@ -286,9 +290,17 @@ class SourcesStore(context: Context) {
         }
     }
 
+    /** Polls now, then every refreshS while the plugin answers, at the backed-off interval while it does not. */
     private fun schedule(src: FlareSource) {
         jobs[src.id]?.cancel()
-        jobs[src.id] = scope.launch { while (isActive) { poll(src); delay(src.refreshS * 1000L) } }
+        jobs[src.id] = scope.launch { while (isActive) { poll(src); delay(backoff[src.id] ?: src.refreshS * 1000L) } }
+    }
+
+    /** The plugin failed to answer: the next poll waits twice as long, up to ten minutes. */
+    private fun failed(src: FlareSource, why: String) {
+        val next = minOf(600_000L, (backoff[src.id] ?: src.refreshS * 1000L) * 2)
+        backoff[src.id] = next
+        Log.i("Sources", "${src.id}: $why, next poll in ${next / 1000} s")
     }
 
     private suspend fun poll(src: FlareSource) {
@@ -300,13 +312,18 @@ class SourcesStore(context: Context) {
         val own = src.ownSessionPath
         val bearer = if (own != null) (tokenProvider?.invoke() ?: run { perSource.remove(src.id); rebuild(); return }) else src.token
         val path = own ?: "/flare/v1/alerts"
-        val text = runCatching {
+        val text = try {
             withContext(Dispatchers.IO) {
-                val b = Request.Builder().url("$base$path?lat=%.3f&lon=%.3f&r=50000".format(c.lat, c.lon)).header("Accept", "application/json")
+                val b = Request.Builder().url("$base$path?lat=%.3f&lon=%.3f&r=50000".format(java.util.Locale.US, c.lat, c.lon)).header("Accept", "application/json")
                 bearer?.let { b.header("Authorization", "Bearer $it") }
-                Backend.http.newCall(b.build()).execute().use { r -> if (r.isSuccessful) r.body.string() else null }
+                Backend.http.newCall(b.build()).execute().use { r ->
+                    if (r.code == 429 || r.code >= 500) throw BackendError("answered ${r.code}", r.code)
+                    if (r.isSuccessful) r.body.string() else null
+                }
             }
-        }.getOrNull() ?: return
+        } catch (e: CancellationException) { throw e } catch (e: Exception) { failed(src, e.message ?: "no answer"); return }
+        backoff.remove(src.id)
+        if (text == null) return
         val res = runCatching { Backend.json.decodeFromString<FlareAlerts>(text) }.getOrNull() ?: return
         perSource[src.id] = res.alerts.map { it.marker(src) }
         if (own != null) Log.i("Sources", "${src.id}: ${res.alerts.size} alerts, session=${res.session ?: "?"}")

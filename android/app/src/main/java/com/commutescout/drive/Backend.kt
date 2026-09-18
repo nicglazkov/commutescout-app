@@ -33,13 +33,14 @@ object Backend {
         val q = query.entries.joinToString("&") { (k, v) -> "$k=" + URLEncoder.encode(v, "UTF-8") }
         val req = Request.Builder().url("$BASE$path?$q").header("Accept", "application/json").build()
         http.newCall(req).execute().use { r ->
-            if (!r.isSuccessful) throw BackendError("HTTP ${r.code} for $path")
+            if (!r.isSuccessful) throw BackendError("HTTP ${r.code} for $path", r.code)
             json.decodeFromString<T>(r.body.string())
         }
     }
 }
 
-class BackendError(message: String) : Exception(message)
+/** A refused request; [code] is the HTTP status when there was one, else 0. */
+class BackendError(message: String, val code: Int = 0) : Exception(message)
 
 @Serializable
 data class Suggestion(val name: String, val lat: Double, val lon: Double)

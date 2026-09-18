@@ -17,10 +17,17 @@ final class MarkerStore: ObservableObject {
     private var fetchedAt = Date.distantPast
     private var task: Task<Void, Never>?
     private var timer: Timer?
+    // After a failed fetch, a 429 or a 5xx the timed refresh waits: two
+    // minutes, then double each time up to ten; a success resets it.
+    private var backoff: TimeInterval = 0
+    private var holdUntil = Date.distantPast
 
     init() {
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh(force: true) }
+            Task { @MainActor in
+                guard let self, Date() >= self.holdUntil else { return }
+                self.refresh(force: true)
+            }
         }
     }
 
@@ -54,12 +61,20 @@ final class MarkerStore: ObservableObject {
             loading = true
             defer { loading = false }
             let result = await Task { try await LiveData.markers(in: (b.s, b.w, b.n, b.e), kinds: kinds) }.result
-            if case let .failure(e) = result { NSLog("CS markers fetch failed: %@", String(describing: e)) }
+            if case let .failure(e) = result {
+                NSLog("CS markers fetch failed: %@", String(describing: e))
+                if case let BackendError.status(code) = e, code != 429, code < 500 { return }   // not a server problem
+                backoff = min(600, backoff == 0 ? 120 : backoff * 2)
+                holdUntil = Date().addingTimeInterval(backoff)
+                DriveLog.note("markers: fetch failed, next timed refresh in \(Int(backoff)) s")
+            }
             if case let .success(found) = result, !Task.isCancelled {
                 DriveLog.note("markers: \(found.count) in box")
                 markers = found
                 byKey = Dictionary(found.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
                 fetchedAt = Date()
+                backoff = 0
+                holdUntil = .distantPast
             }
         }
     }
