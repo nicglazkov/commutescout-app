@@ -72,7 +72,11 @@ EOF
   device)
     # A Release archive like TestFlight's, compiled with CS_TEST_HOOKS so
     # the -csNavigateTo and -csVia launch arguments stay available on the
-    # test phone, re-signed on export with the Ad Hoc profile
+    # test phone. OTHER_SWIFT_FLAGS keeps its inherited value: a build
+    # setting given on the command line applies to every target,
+    # packages included, and replacing their flags outright fails the
+    # MapLibre macro target. Same hazard as PROVISIONING_PROFILE_SPECIFIER.
+    # Re-signed on export with the Ad Hoc profile
     # (distribution certificate plus the phone's UDID), then installed
     # over USB or Wi-Fi with devicectl. Minutes, not an hour.
     BUILD="${BUILD:-$(date +%Y%m%d%H%M)}"
@@ -82,7 +86,8 @@ EOF
     xcodebuild -project CommuteScoutDrive.xcodeproj -scheme CommuteScoutDrive \
       -destination "generic/platform=iOS" -derivedDataPath "$DD" -skipMacroValidation \
       -archivePath "$DD/CommuteScoutDrive.xcarchive" \
-      OTHER_CODE_SIGN_FLAGS="--keychain $KC" OTHER_SWIFT_FLAGS="-DCS_TEST_HOOKS" \
+      OTHER_CODE_SIGN_FLAGS="--keychain $KC" \
+      OTHER_SWIFT_FLAGS='$(inherited) -DCS_TEST_HOOKS' \
       CURRENT_PROJECT_VERSION="$BUILD" archive 2>&1 | tail -15
     cat > "$DD/export-adhoc.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
