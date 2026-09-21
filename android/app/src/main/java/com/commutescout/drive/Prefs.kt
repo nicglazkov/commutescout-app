@@ -72,7 +72,7 @@ class Prefs(context: Context) {
     var mapStyle by state(MapStyle.valueOf(p.getString("mapstyle", "AUTO")!!)) { p.edit().putString("mapstyle", it.name).apply() }
     var is3D by state(p.getBoolean("3d", true)) { p.edit().putBoolean("3d", it).apply() }
     var traffic by state(p.getBoolean("traffic", false)) { p.edit().putBoolean("traffic", it).apply() }
-    var hiddenKinds by state(p.getStringSet("layers.off", null)?.toSet() ?: offByDefault) { p.edit().putStringSet("layers.off", it).apply() }
+    var hiddenKinds by state(savedHiddenKinds()) { p.edit().putStringSet("layers.off", it).apply() }
     var spokenAlerts by state(p.getBoolean("spokenalerts", true)) { p.edit().putBoolean("spokenalerts", it).apply() }
     var alertAheadMeters by state(p.getFloat("alertahead", 1500f).toDouble()) { p.edit().putFloat("alertahead", it.toFloat()).apply() }
     var showSpeedLimit by state(p.getBoolean("speedlimit", true)) { p.edit().putBoolean("speedlimit", it).apply() }
@@ -102,6 +102,21 @@ class Prefs(context: Context) {
             if (v == null) p.edit().remove("last.lat").remove("last.lon").apply()
             else p.edit().putFloat("last.lat", v.lat.toFloat()).putFloat("last.lon", v.lon.toFloat()).apply()
         }
+
+    /**
+     * Which layers start switched off.
+     *
+     * A layer added after a release cannot appear in a set saved by an
+     * older one, so someone upgrading would find every new layer on,
+     * cameras included. The ones the website starts off are added to
+     * what is hidden, once, and never again after that.
+     */
+    private fun savedHiddenKinds(): Set<String> {
+        val saved = p.getStringSet("layers.off", null)?.toSet() ?: return offByDefault
+        if (p.getBoolean("layers.roadside", false)) return saved
+        p.edit().putBoolean("layers.roadside", true).apply()
+        return saved + offByDefault
+    }
 
     fun isShown(kind: String) = kind !in hiddenKinds
     fun setShown(kind: String, on: Boolean) { hiddenKinds = if (on) hiddenKinds - kind else hiddenKinds + kind }
