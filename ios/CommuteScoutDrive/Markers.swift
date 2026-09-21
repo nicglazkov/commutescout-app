@@ -407,12 +407,13 @@ struct WeatherReadings: View {
     }
 
     var body: some View {
+        let readings = facts
         VStack(alignment: .leading, spacing: 4) {
-            if facts.isEmpty {
+            if readings.isEmpty {
                 Text("This station is online. It has no readings right now.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            ForEach(Array(facts.enumerated()), id: \.offset) { _, fact in
+            ForEach(Array(readings.enumerated()), id: \.offset) { _, fact in
                 HStack {
                     Text(fact.0).font(.caption).foregroundStyle(.secondary)
                     Spacer()
@@ -437,30 +438,40 @@ struct TollRates: View {
         (marker.entries ?? []).filter { !($0.rows ?? []).isEmpty }
     }
 
+    /// Whether the number moves with demand, is a published schedule,
+    /// or is simply what the road costs.
+    private var freshness: String {
+        if marker.pricing == "live" { return "LIVE" }
+        return marker.asOf == nil ? "FIXED RATE" : "POSTED RATE"
+    }
+
+    private var required: Bool { marker.tollType == "required" }
+
+    /// Where a rate takes you. A bridge charges per crossing and has no
+    /// destination to name; an express lane prices each exit.
+    private func destinationText(_ row: TollRow) -> String {
+        if row.destination.isEmpty { return "Per pass" }
+        return required ? row.destination : "to " + row.destination
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text(marker.priceRange).font(.title3.weight(.semibold))
-                Text(marker.pricing == "live" ? "LIVE" : marker.asOf == nil ? "FIXED RATE" : "POSTED RATE")
-                    .font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                Text(freshness).font(.caption2.weight(.bold)).foregroundStyle(.secondary)
             }
-            Text(marker.tollType == "required"
-                 ? "Every vehicle pays here."
-                 : "Optional. The regular lanes are free.")
+            Text(required ? "Every vehicle pays here." : "Optional. The regular lanes are free.")
                 .font(.caption).foregroundStyle(.secondary)
             if !entries.isEmpty {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
                             if let label = entry.label, !label.isEmpty {
-                                Text(marker.tollType == "required" ? label : "From " + label)
-                                    .font(.caption.weight(.semibold))
+                                Text(required ? label : "From " + label).font(.caption.weight(.semibold))
                             }
                             ForEach(Array((entry.rows ?? []).enumerated()), id: \.offset) { _, row in
                                 HStack {
-                                    Text(row.destination.isEmpty ? "Per pass"
-                                         : marker.tollType == "required" ? row.destination : "to " + row.destination)
-                                        .font(.caption).foregroundStyle(.secondary)
+                                    Text(destinationText(row)).font(.caption).foregroundStyle(.secondary)
                                     Spacer()
                                     Text(row.price.map { RoadMarker.money($0) } ?? "")
                                         .font(.caption.weight(.semibold))

@@ -112,12 +112,16 @@ struct TollRow: Decodable, Hashable {
 
     init(from decoder: Decoder) throws {
         var row = try decoder.unkeyedContainer()
-        if try row.decodeNil() {
-            destination = ""
-        } else {
-            destination = (try? row.decode(String.self)) ?? ""
+        // Nothing past the container is allowed to throw: one odd row
+        // must not cost the map the whole payload it arrived in.
+        var name = ""
+        if !row.isAtEnd, (try? row.decodeNil()) == false {
+            name = (try? row.decode(String.self)) ?? ""
         }
-        price = try? row.decode(Double.self)
+        destination = name
+        var amount: Double?
+        if !row.isAtEnd { amount = try? row.decode(Double.self) }
+        price = amount
     }
 }
 

@@ -31,6 +31,30 @@ extension CodingUserInfoKey {
     static let snapshotBox = CodingUserInfoKey(rawValue: "cs.snapshot.box")!
 }
 
+/// One marker from a published object, read in two steps: its position
+/// first, and the rest of it only when that position is inside the box.
+/// The country publishes tens of thousands of markers and the phone
+/// wants hundreds, so the ones it is throwing away are never built.
+private struct BoxedMarker: Decodable {
+    let marker: RoadMarker?
+
+    private enum Position: String, CodingKey { case lat, lon }
+
+    init(from decoder: Decoder) throws {
+        let position = try decoder.container(keyedBy: Position.self)
+        guard let lat = try position.decodeIfPresent(Double.self, forKey: .lat),
+              let lon = try position.decodeIfPresent(Double.self, forKey: .lon) else {
+            marker = nil
+            return
+        }
+        if let box = decoder.userInfo[.snapshotBox] as? GeoBox, !box.contains(lat: lat, lon: lon) {
+            marker = nil
+            return
+        }
+        marker = try RoadMarker(from: decoder)
+    }
+}
+
 /// What the publisher uploads: the markers, plus enough about the build
 /// to say how fresh they are.
 struct SnapshotPayload: Decodable {
@@ -48,13 +72,14 @@ struct SnapshotPayload: Decodable {
         build = try top.decodeIfPresent(String.self, forKey: .build)
         degraded = try top.decodeIfPresent(Bool.self, forKey: .degraded) ?? false
         published = try top.decodeIfPresent(String.self, forKey: .published).flatMap(Snapshot.date)
-        let box = decoder.userInfo[.snapshotBox] as? GeoBox
         var list = try top.nestedUnkeyedContainer(forKey: .markers)
         var kept: [RoadMarker] = []
-        kept.reserveCapacity(list.count.map { min($0, 2048) } ?? 512)
+        kept.reserveCapacity(512)
         while !list.isAtEnd {
-            let marker = try list.decode(RoadMarker.self)
-            if box == nil || box!.contains(lat: marker.lat, lon: marker.lon) { kept.append(marker) }
+            // A record the app cannot read stops the list rather than
+            // losing it: some of the map beats none of it.
+            guard let boxed = try? list.decode(BoxedMarker.self) else { break }
+            if let marker = boxed.marker { kept.append(marker) }
         }
         markers = kept
     }
@@ -98,37 +123,38 @@ enum Snapshot {
     /// URLSession asks for gzip and unwraps `Content-Encoding: gzip`
     /// itself, so what arrives here is already JSON.
     static func fetch(_ feed: Feed, box: GeoBox?) async throws -> SnapshotPayload {
+        var data: Data
         do {
-            let url = base.appendingPathComponent(feed.rawValue)
-            let (data, response) = try await Backend.session.data(from: url)
-            guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
-                throw BackendError.status((response as? HTTPURLResponse)?.statusCode ?? 0)
-            }
-            return try decode(data, box: box)
+            data = try await get(base.appendingPathComponent(feed.rawValue))
         } catch {
             // A bad day for the snapshot host degrades to the old
-            // behaviour, not to a blank map: the same payload is built
-            // on demand by the API, slowly.
+            // behaviour, not to a blank map: the API builds the same
+            // payload on demand, slowly.
             DriveLog.note("snapshot: \(feed.rawValue) unavailable (\(error)), asking the API instead")
-            return try await fromAPI(feed, box: box)
+            data = try await get(apiURL(feed, box: box))
         }
+        return try decode(data, box: box)
     }
 
-    private static func fromAPI(_ feed: Feed, box: GeoBox?) async throws -> SnapshotPayload {
+    private static func get(_ url: URL) async throws -> Data {
+        let (data, response) = try await Backend.session.data(from: url)
+        guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
+            throw BackendError.status((response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+        return data
+    }
+
+    private static func apiURL(_ feed: Feed, box: GeoBox?) -> URL {
         let area = box ?? GeoBox(south: -85, west: -180, north: 85, east: 180)
         var comps = URLComponents(url: Backend.base.appendingPathComponent("api/mapdata"),
                                   resolvingAgainstBaseURL: false)!
         comps.queryItems = [
             URLQueryItem(name: "bbox", value: String(format: "%.3f,%.3f,%.3f,%.3f",
-                                                    area.south, area.west, area.north, area.east)),
+                                                     area.south, area.west, area.north, area.east)),
             URLQueryItem(name: "kinds", value: feed.kinds),
             URLQueryItem(name: "slim", value: "1"),
         ]
-        let (data, response) = try await Backend.session.data(from: comps.url!)
-        guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
-            throw BackendError.status((response as? HTTPURLResponse)?.statusCode ?? 0)
-        }
-        return try decode(data, box: box)
+        return comps.url!
     }
 
     static func decode(_ data: Data, box: GeoBox?) throws -> SnapshotPayload {
