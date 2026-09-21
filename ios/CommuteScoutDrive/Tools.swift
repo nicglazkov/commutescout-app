@@ -75,7 +75,9 @@ struct AlertsListView: View {
 
     private var sorted: [RoadMarker] {
         let here = model.here ?? model.viewCenter
-        return model.allMarkers.filter { model.prefs.isShown($0.kind) }.sorted {
+        // Cameras and weather stations are on the map to look at, not
+        // things that happened, so they stay out of this list.
+        return model.allMarkers.filter { model.prefs.isShown($0.kind) && $0.isEvent }.sorted {
             guard let here else { return false }
             return AlertsEngine.meters(here, $0.coordinate) < AlertsEngine.meters(here, $1.coordinate)
         }

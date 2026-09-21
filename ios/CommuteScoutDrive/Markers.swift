@@ -243,6 +243,9 @@ struct MarkerCard: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: MarkerIcons.name(marker.kind)).font(.title2).foregroundStyle(MarkerIcons.tint(marker.kind))
                 VStack(alignment: .leading, spacing: 2) {
+                    if let heading = MarkerIcons.heading[marker.kind] {
+                        Text(heading).font(.caption2.weight(.bold)).foregroundStyle(MarkerIcons.tint(marker.kind))
+                    }
                     Text(marker.displayTitle).font(.headline).lineLimit(3)
                     ForEach(marker.detailLines, id: \.self) { line in
                         Text(line).font(.caption).foregroundStyle(.secondary)
@@ -256,6 +259,7 @@ struct MarkerCard: View {
                 Button { model.clearMarker() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                     .accessibilityIdentifier("marker-close")
             }
+            details
             HStack(spacing: 8) {
                 Button {
                     model.show(Place(name: marker.displayTitle, coordinate: marker.coordinate, kind: .recent))
@@ -276,6 +280,202 @@ struct MarkerCard: View {
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .padding(12)
+    }
+
+    /// What this kind of marker shows beyond its title: a picture for a
+    /// camera, a board for a sign, readings for a weather station, rates
+    /// for a toll. Every other kind says everything in its detail lines.
+    @ViewBuilder private var details: some View {
+        switch marker.kind {
+        case "camera": CameraView(marker: marker)
+        case "sign": SignBoard(marker: marker)
+        case "rwis": WeatherReadings(marker: marker)
+        case "toll": TollRates(marker: marker)
+        default: EmptyView()
+        }
+    }
+}
+
+/// A roadside camera's picture. Most agencies publish a still that is
+/// replaced every minute or so, which is why a fresh one is asked for
+/// each time the card opens; a few also run live video, on their own
+/// page.
+struct CameraView: View {
+    let marker: RoadMarker
+    @State private var still: URL?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let url = still {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case let .success(image):
+                        image.resizable().aspectRatio(contentMode: .fit)
+                    case .failure:
+                        Text("This camera has no picture right now.")
+                            .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 60)
+                    default:
+                        ProgressView().frame(maxWidth: .infinity, minHeight: 60)
+                    }
+                }
+                .frame(maxHeight: 170)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .accessibilityIdentifier("camera-image")
+            }
+            HStack(spacing: 10) {
+                if let stream = marker.stream, let url = URL(string: stream) {
+                    Link("Watch the live video", destination: url).font(.caption)
+                }
+                if let image = marker.image, let url = URL(string: image) {
+                    Link("Open the full picture", destination: url).font(.caption)
+                }
+            }
+            if let src = marker.src {
+                Text("Source: \(src)").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .task(id: marker.key) { still = Self.fresh(marker.image) }
+    }
+
+    /// The agency's own URL with the time appended, so opening a camera
+    /// shows the picture as it is now rather than the cached one.
+    private static func fresh(_ image: String?) -> URL? {
+        guard let image, var comps = URLComponents(string: image) else { return nil }
+        comps.queryItems = (comps.queryItems ?? [])
+            + [URLQueryItem(name: "t", value: String(Int(Date().timeIntervalSince1970)))]
+        return comps.url
+    }
+}
+
+/// What a changeable message sign is displaying, laid out the way the
+/// board itself is: one line per line, centered, fixed width.
+struct SignBoard: View {
+    let marker: RoadMarker
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if marker.signLines.isEmpty {
+                Text("This sign is blank right now.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 2) {
+                    ForEach(Array(marker.signLines.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                            .foregroundStyle(Color(red: 1, green: 0.79, blue: 0.29))
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(.vertical, 8).padding(.horizontal, 10)
+                .frame(maxWidth: .infinity)
+                .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityIdentifier("sign-board")
+            }
+            if let src = marker.src {
+                Text("Source: \(src)").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// A roadside weather station's readings. Temperatures and wind arrive
+/// in Celsius and miles per hour; they are shown in whatever the driver
+/// has chosen. A station with nothing to report says so rather than
+/// showing an empty box.
+struct WeatherReadings: View {
+    let marker: RoadMarker
+
+    private var facts: [(String, String)] {
+        var out: [(String, String)] = []
+        if let air = marker.airC { out.append(("Air", Units.temperature(celsius: air))) }
+        if let pave = marker.paveC { out.append(("Pavement", Units.temperature(celsius: pave))) }
+        if let wind = marker.wind {
+            // A direction on a calm wind reads as noise, so it is left off.
+            var from = ""
+            if let dir = marker.windDir, wind >= 1 { from = " from the " + Units.windDirection(dir) }
+            let gust = marker.gust.map { ", gusts \(Units.speed(mph: $0))" } ?? ""
+            out.append(("Wind", Units.speed(mph: wind) + from + gust))
+        } else if let gust = marker.gust {
+            out.append(("Wind", "gusts " + Units.speed(mph: gust)))
+        }
+        if let rh = marker.rh { out.append(("Humidity", "\(Int(rh.rounded()))%")) }
+        if let precip = marker.precip, !precip.isEmpty { out.append(("Precipitation", precip.capitalized)) }
+        if let surface = marker.surface, !surface.isEmpty { out.append(("Surface", surface.capitalized)) }
+        // Visibility only matters when it is short. Anything past five
+        // kilometres is a clear day and says nothing useful.
+        if let vis = marker.visM, vis < 5_000 { out.append(("Visibility", Units.distance(vis))) }
+        return out
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if facts.isEmpty {
+                Text("This station is online. It has no readings right now.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(Array(facts.enumerated()), id: \.offset) { _, fact in
+                HStack {
+                    Text(fact.0).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(fact.1).font(.caption.weight(.semibold))
+                }
+            }
+            if let src = marker.src {
+                Text("Source: \(src)").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityIdentifier("weather-readings")
+    }
+}
+
+/// What a toll corridor costs. The price range comes first because it
+/// is the question being asked, then whether paying is a choice, then
+/// the rate from each entry point.
+struct TollRates: View {
+    let marker: RoadMarker
+
+    private var entries: [TollEntry] {
+        (marker.entries ?? []).filter { !($0.rows ?? []).isEmpty }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(marker.priceRange).font(.title3.weight(.semibold))
+                Text(marker.pricing == "live" ? "LIVE" : marker.asOf == nil ? "FIXED RATE" : "POSTED RATE")
+                    .font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+            }
+            Text(marker.tollType == "required"
+                 ? "Every vehicle pays here."
+                 : "Optional. The regular lanes are free.")
+                .font(.caption).foregroundStyle(.secondary)
+            if !entries.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                            if let label = entry.label, !label.isEmpty {
+                                Text(marker.tollType == "required" ? label : "From " + label)
+                                    .font(.caption.weight(.semibold))
+                            }
+                            ForEach(Array((entry.rows ?? []).enumerated()), id: \.offset) { _, row in
+                                HStack {
+                                    Text(row.destination.isEmpty ? "Per pass"
+                                         : marker.tollType == "required" ? row.destination : "to " + row.destination)
+                                        .font(.caption).foregroundStyle(.secondary)
+                                    Spacer()
+                                    Text(row.price.map { RoadMarker.money($0) } ?? "")
+                                        .font(.caption.weight(.semibold))
+                                }
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 130)
+                .accessibilityIdentifier("toll-rates")
+            }
+            if let src = marker.src {
+                Text("Source: \(src)").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
     }
 }
 
