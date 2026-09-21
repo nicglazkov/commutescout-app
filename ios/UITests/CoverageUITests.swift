@@ -187,7 +187,9 @@ final class CoverageUITests: XCTestCase {
         let header = app.staticTexts["Layers"]
         XCTAssertTrue(reveal(header))
         // Every switch after Traffic in the Layers section is a marker kind.
-        let names = ["Incidents", "Closures and lane work", "Chain controls", "Wildfires", "Community reports"]
+        // All nine kinds the server emits, the same nine the website draws.
+        let names = ["Incidents", "Closures and lane work", "Chain controls", "Weather stations",
+                     "Wildfires", "Toll prices", "Community reports", "Cameras", "Message signs"]
         var found = 0
         for n in names where app.switches[n].exists || reveal(app.switches[n], tries: 4) {
             flip(n); flip(n); found += 1

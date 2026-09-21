@@ -118,7 +118,13 @@ final class AppModel: ObservableObject {
         alerts.announceAheadMeters = prefs.alertAheadMeters
         alerts.rules = { [prefs] m in prefs.rule(for: Prefs.ruleKind(for: m)) }
         location.startUpdating()
-        camera = .center(CLLocationCoordinate2D(latitude: 37.5, longitude: -121.9), zoom: 8)
+        camera = .center(Self.defaultCenter, zoom: 8)
+        // Every dot has to be on the map by the time the camera finishes
+        // its zoom to the driver, which takes a second or two. So the
+        // launch snapshot is asked for here, while the map is still
+        // loading its style and the camera is still moving, instead of
+        // waiting for the map's view callback to ask for a viewport.
+        markers.boot(near: Self.bootCenter(), cameras: prefs.isShown("camera"))
         prefs.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.prefsChanged() }
         }.store(in: &cancellables)
@@ -129,6 +135,20 @@ final class AppModel: ObservableObject {
             child.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         }
         Task { await followOnceAllowed() }
+    }
+
+    /// Where the map opens before the first fix arrives.
+    static let defaultCenter = CLLocationCoordinate2D(latitude: 37.5, longitude: -121.9)
+
+    /// The best guess at where the phone is at the moment the app
+    /// starts. Core Location keeps the last fix and hands it over
+    /// without waiting for a new one; reading it does not ask for
+    /// permission, and it is nil when permission was never given.
+    private static func bootCenter() -> CLLocationCoordinate2D {
+        if let fix = CLLocationManager().location?.coordinate, CLLocationCoordinate2DIsValid(fix) {
+            return fix
+        }
+        return defaultCenter
     }
 
     // MARK: core
@@ -188,6 +208,9 @@ final class AppModel: ObservableObject {
     private func prefsChanged() {
         alerts.spoken = prefs.spokenAlerts
         alerts.announceAheadMeters = prefs.alertAheadMeters
+        // Cameras are published as an object of their own and are only
+        // worth fetching while the snapshot is still what the map shows.
+        if prefs.isShown("camera") { markers.load(.cameras) }
         if prefs.routingKey != builtFor, !state.isNavigating, coreState?.isNavigating != true {
             core = Self.makeCore(location: location, prefs: prefs)
             core.delegate = delegate
@@ -340,6 +363,52 @@ final class AppModel: ObservableObject {
 
     func marker(for key: String) -> RoadMarker? {
         markers.marker(for: key) ?? sources.directMarkers.first { $0.key == key }
+    }
+
+    /// The shapes the map draws besides the dots: closure stretches,
+    /// toll corridors and burn footprints, each following the ground
+    /// rather than a straight line between two points.
+    struct MapShapes {
+        var closures: [MLNShape] = []
+        var tolls: [MLNShape] = []
+        var fires: [MLNShape] = []
+    }
+
+    private var shapeCache: (key: String, shapes: MapShapes)?
+
+    /// Built once per marker refresh, not once per frame. The map
+    /// content is rebuilt on every model change, and a single burn
+    /// footprint can run to a thousand points across seven rings.
+    func mapShapes() -> MapShapes {
+        let key = "\(markers.stamp)|\(prefs.layersOff)|\(sources.directMarkers.count)"
+        if let cached = shapeCache, cached.key == key { return cached.shapes }
+        var out = MapShapes()
+        for m in allMarkers where prefs.isShown(m.kind) {
+            switch m.kind {
+            case "lane_closure":
+                out.closures.append(contentsOf: m.polylines.map { Self.line($0, for: m) })
+            case "toll":
+                out.tolls.append(contentsOf: m.polylines.map { Self.line($0, for: m) })
+            case "wildfire":
+                out.fires.append(contentsOf: m.polygonRings.map { Self.ring($0, for: m) })
+            default:
+                break
+            }
+        }
+        shapeCache = (key, out)
+        return out
+    }
+
+    private static func line(_ points: [CLLocationCoordinate2D], for m: RoadMarker) -> MLNShape {
+        let feature = MLNPolylineFeature(coordinates: points, count: UInt(points.count))
+        feature.attributes = ["key": m.key, "kind": m.kind, "geo": "line"]
+        return feature
+    }
+
+    private static func ring(_ points: [CLLocationCoordinate2D], for m: RoadMarker) -> MLNShape {
+        let feature = MLNPolygonFeature(coordinates: points, count: UInt(points.count))
+        feature.attributes = ["key": m.key, "kind": m.kind, "geo": "area"]
+        return feature
     }
 
     func routes(to place: Place) async {

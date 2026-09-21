@@ -191,4 +191,23 @@ enum Units {
         if m < 60 { return "\(m) min" }
         return "\(m / 60) h \(m % 60) min"
     }
+
+    /// A roadside weather reading. The feeds publish Celsius; the same
+    /// choice that picks miles picks Fahrenheit.
+    static func temperature(celsius: Double) -> String {
+        useMiles ? "\(Int((celsius * 9 / 5 + 32).rounded()))\u{00B0}F" : "\(Int(celsius.rounded()))\u{00B0}C"
+    }
+
+    /// Wind speed. The feeds publish miles per hour.
+    static func speed(mph: Double) -> String {
+        useMiles ? "\(Int(mph.rounded())) mph" : "\(Int((mph * 1.609344).rounded())) km/h"
+    }
+
+    /// The compass point a wind blows from, from its bearing in degrees.
+    static func windDirection(_ degrees: Double) -> String {
+        let points = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                      "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+        let i = Int((degrees / 22.5).rounded()) % points.count
+        return points[i < 0 ? i + points.count : i]
+    }
 }

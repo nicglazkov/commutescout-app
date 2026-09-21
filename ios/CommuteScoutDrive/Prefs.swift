@@ -28,20 +28,34 @@ final class Prefs: ObservableObject {
         }
     }
 
-    /// The marker kinds the map can show, in the order of the Layers sheet.
+    /// The marker kinds the map can show, in the order of the Layers
+    /// sheet, with the name /api/mapdata knows each by. Query name and
+    /// emitted kind differ for three of them: `closure` comes back as
+    /// `lane_closure`, `chain` as `chain_control` and `fire` as
+    /// `wildfire`. The other six use one name on both sides.
     static let layerKinds: [(key: String, label: String, api: String)] = [
         ("incident", "Incidents", "incident"),
         ("lane_closure", "Closures and lane work", "closure"),
         ("chain_control", "Chain controls", "chain"),
+        ("rwis", "Weather stations", "rwis"),
         ("wildfire", "Wildfires", "fire"),
+        ("toll", "Toll prices", "toll"),
         ("plugin", "Community reports", "plugin"),
+        ("camera", "Cameras", "camera"),
+        ("sign", "Message signs", "sign"),
     ]
+
+    /// The layers a new install starts with switched off, the same two
+    /// the website leaves unchecked. Cameras are the densest layer by
+    /// far, and toll lines run along the road where most driving
+    /// happens. Everything else starts on.
+    static let layersOffByDefault = "camera,toll"
 
     @AppStorage("cs.theme") var themeRaw: String = Theme.system.rawValue
     @AppStorage("cs.mapstyle") var mapStyleRaw: String = MapStyle.auto.rawValue
     @AppStorage("cs.3d") var is3D: Bool = true
     @AppStorage("cs.traffic") var traffic: Bool = false
-    @AppStorage("cs.layers.off") var layersOff: String = ""      // comma-separated kinds hidden
+    @AppStorage("cs.layers.off") var layersOff: String = Prefs.layersOffByDefault   // comma-separated kinds hidden
     @AppStorage("cs.spokenalerts") var spokenAlerts: Bool = true
     @AppStorage("cs.alertahead") var alertAheadMeters: Double = 1500
     @AppStorage("cs.speedlimit") var showSpeedLimit: Bool = true

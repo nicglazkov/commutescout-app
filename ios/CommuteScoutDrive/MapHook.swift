@@ -99,7 +99,12 @@ struct MapHook: UIViewRepresentable {
                 feats = mv.visibleFeatures(in: CGRect(x: pt.x - 22, y: pt.y - 22, width: 44, height: 44),
                                            styleLayerIdentifiers: layerIds)
             }
-            let keys = feats.compactMap { $0.attribute(forKey: "key") as? String }
+            // A dot beats a line. A toll corridor can run straight past
+            // an incident, and the thing with an icon on it is the thing
+            // the driver aimed at.
+            let isLine = { (f: MLNFeature) in (f.attribute(forKey: "geo") as? String) == "line" }
+            let keys = (feats.filter { !isLine($0) } + feats.filter(isLine))
+                .compactMap { $0.attribute(forKey: "key") as? String }
             NSLog("CS tap at %@: %d features, layers %@", NSCoder.string(for: pt), feats.count,
                   (mv.style?.layers.map(\.identifier).filter { $0.hasPrefix("cs-") } ?? []).joined(separator: ","))
             onTap?(mv.convert(pt, toCoordinateFrom: mv), keys)
