@@ -87,6 +87,10 @@ class MarkerKindsTest {
                            "rows":[["Monument Blvd",0.75],["South Main St",1.5]]}]}"""
         )
         assertEquals("${'$'}0.75 to ${'$'}2.25", m.tollRange)
+        // The list gets the one-line summary, the card the corridor,
+        // because the card states the price on its own line.
+        assertEquals("I-680 SB express lane (optional) ${'$'}0.75-${'$'}2.25 now", m.displayTitle)
+        assertEquals("I-680 SB", m.cardTitle)
         assertEquals(1, m.entries!!.size)
         assertEquals(listOf("Monument Blvd" to 0.75, "South Main St" to 1.5), m.entries[0].prices)
         // The corridor repeats the name here, so the card does not say it twice.

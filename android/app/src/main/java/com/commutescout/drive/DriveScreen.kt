@@ -687,7 +687,7 @@ private fun MarkerCard(marker: RoadMarker, here: LatLon?, model: DriveViewModel)
                 Column(Modifier.weight(1f)) {
                     Text(MarkerIcons.label(marker.kind), style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold, color = MarkerIcons.color(marker.kind))
-                    Text(marker.displayTitle, style = MaterialTheme.typography.titleMedium, maxLines = 3)
+                    Text(marker.cardTitle, style = MaterialTheme.typography.titleMedium, maxLines = 3)
                     marker.detailLines.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     here?.let { Text(Units.distance(AlertsEngine.meters(it, LatLon(marker.lat, marker.lon))) + " from you",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }

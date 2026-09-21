@@ -311,6 +311,14 @@ data class RoadMarker(
             else -> label ?: kind
         }
 
+    /**
+     * The heading on a marker card. A toll's one-line summary carries
+     * its price, which the card then states in full underneath, so the
+     * card takes the corridor name and leaves the price to the line
+     * that exists to say it.
+     */
+    val cardTitle: String get() = if (kind == "toll") name ?: corridor ?: displayTitle else displayTitle
+
     val spokenTitle: String get() = displayTitle.replace("@", "at").replace("(", "").replace(")", "")
 
     /** How far from the route a marker still counts as being on it. */
