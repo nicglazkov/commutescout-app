@@ -100,7 +100,12 @@ object Snapshot {
         if (center != null && !wellInside(center)) {
             box = doubleArrayOf(center.lat - LAT_PAD, center.lon - LON_PAD, center.lat + LAT_PAD, center.lon + LON_PAD)
             // The held markers were cut to the old area, so every
-            // bundle is read again against the new one.
+            // bundle is read again against the new one. A load already
+            // running is for the area just left: its answer would be
+            // thrown away on arrival, and leaving it running would make
+            // the reload below look unnecessary and skip itself.
+            jobs.values.forEach { it.cancel() }
+            jobs.clear()
             loadedAt.clear()
             // Remembered so the next launch can start loading before it
             // has a fix, rather than waiting for one.
