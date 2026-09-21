@@ -1,0 +1,36 @@
+# Android has had a build check since the audit; iOS had none, so half
+# the product could only be verified on a Mac that happened to be awake.
+# A hosted macOS runner has Xcode and the simulators already, and this
+# repository is public, so the minutes are free.
+#
+# Signing is off: this proves the code compiles and the tests pass, not
+# that it can be shipped. Shipping still goes through scripts/ios_build.sh
+# on the maintainer's Mac, which has the certificates.
+name: iOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Build
+        working-directory: ios
+        run: |
+          xcodebuild -project CommuteScoutDrive.xcodeproj \
+            -scheme CommuteScoutDrive \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build \
+            -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tail -40
+          exit ${PIPESTATUS[0]}
