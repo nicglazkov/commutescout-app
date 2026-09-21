@@ -29,19 +29,40 @@ class Prefs(context: Context) {
     data class LayerKind(val key: String, val label: String, val api: String)
 
     companion object {
+        /**
+         * Every layer the website offers. The api name is what
+         * /api/mapdata's kinds parameter takes, which is not always the
+         * kind the server sends back: closure returns lane_closure,
+         * chain returns chain_control and fire returns wildfire.
+         */
         val layerKinds = listOf(
             LayerKind("incident", "Incidents", "incident"),
             LayerKind("lane_closure", "Closures and lane work", "closure"),
             LayerKind("chain_control", "Chain controls", "chain"),
             LayerKind("wildfire", "Wildfires", "fire"),
+            LayerKind("toll", "Toll prices", "toll"),
             LayerKind("plugin", "Community reports", "plugin"),
+            LayerKind("rwis", "Weather stations", "rwis"),
+            LayerKind("sign", "Message signs", "sign"),
+            LayerKind("camera", "Cameras", "camera"),
         )
+
+        /** The two the website starts with switched off, being large and noisy. */
+        val offByDefault = setOf("toll", "camera")
+
+        /**
+         * Kinds the app never asks for per viewport. Nationwide they
+         * are tens of thousands of points and they carry no line
+         * geometry, so the session snapshot is the whole story, as on
+         * the website.
+         */
+        val snapshotOnlyKinds = setOf("camera", "sign", "rwis")
     }
 
     /** Back to defaults, for UI tests that must start the same way every run. */
     fun resetForTests() {
         p.edit().clear().apply()
-        theme = Theme.SYSTEM; mapStyle = MapStyle.AUTO; is3D = true; traffic = false; hiddenKinds = emptySet()
+        theme = Theme.SYSTEM; mapStyle = MapStyle.AUTO; is3D = true; traffic = false; hiddenKinds = offByDefault
         spokenAlerts = true; alertAheadMeters = 1500.0; showSpeedLimit = true; keepAwake = true
         avoidTolls = false; avoidHighways = false; avoidFerries = false; stripAheadMeters = 16093.0
         advancedAlerts = false; alertRulesRaw = ""; useMiles = true
@@ -51,7 +72,7 @@ class Prefs(context: Context) {
     var mapStyle by state(MapStyle.valueOf(p.getString("mapstyle", "AUTO")!!)) { p.edit().putString("mapstyle", it.name).apply() }
     var is3D by state(p.getBoolean("3d", true)) { p.edit().putBoolean("3d", it).apply() }
     var traffic by state(p.getBoolean("traffic", false)) { p.edit().putBoolean("traffic", it).apply() }
-    var hiddenKinds by state(p.getStringSet("layers.off", emptySet())!!.toSet()) { p.edit().putStringSet("layers.off", it).apply() }
+    var hiddenKinds by state(p.getStringSet("layers.off", null)?.toSet() ?: offByDefault) { p.edit().putStringSet("layers.off", it).apply() }
     var spokenAlerts by state(p.getBoolean("spokenalerts", true)) { p.edit().putBoolean("spokenalerts", it).apply() }
     var alertAheadMeters by state(p.getFloat("alertahead", 1500f).toDouble()) { p.edit().putFloat("alertahead", it.toFloat()).apply() }
     var showSpeedLimit by state(p.getBoolean("speedlimit", true)) { p.edit().putBoolean("speedlimit", it).apply() }
@@ -99,8 +120,15 @@ class Prefs(context: Context) {
         }
     }
 
-    /** The kinds parameter for /api/mapdata for what is switched on. */
-    val apiKinds: String get() = layerKinds.filter { isShown(it.key) }.joinToString(",") { it.api }
+    /**
+     * The kinds parameter for /api/mapdata for what is switched on.
+     * The snapshot-only kinds stay out of it: asking for them per
+     * viewport would triple the size of a call whose real job is to
+     * bring back the closure and toll lines the snapshot drops.
+     */
+    val apiKinds: String get() = layerKinds
+        .filter { it.key !in snapshotOnlyKinds && isShown(it.key) }
+        .joinToString(",") { it.api }
 
     /** Valhalla costing options from the route settings; empty when defaults. */
     val costingOptions: Map<String, Any>
