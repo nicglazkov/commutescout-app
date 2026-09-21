@@ -125,6 +125,24 @@ struct TollRow: Decodable, Hashable {
     }
 }
 
+/// Which way the wind blows from. The roadside stations disagree about
+/// how to say it: most send a compass point like "NNE", some send
+/// degrees. Both arrive in the same field, so reading it as a number
+/// alone threw on every station that sent text, and with a synthesized
+/// decoder that costs the whole station.
+struct WindDirection: Decodable, Hashable {
+    let text: String
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if let degrees = try? value.decode(Double.self) {
+            text = Units.windDirection(degrees)
+        } else {
+            text = ((try? value.decode(String.self)) ?? "").uppercased()
+        }
+    }
+}
+
 /// One marker from /api/mapdata, the same records the web map draws.
 /// The launch snapshot publishes the same shape, minus the road-following
 /// geometry and the null fields.
@@ -174,7 +192,7 @@ struct RoadMarker: Decodable, Identifiable, Hashable {
     var paveC: Double? = nil
     var wind: Double? = nil
     var gust: Double? = nil
-    var windDir: Double? = nil       // degrees the wind blows from
+    var windDir: WindDirection? = nil   // degrees on some feeds, a compass point on others
     var rh: Double? = nil            // relative humidity, percent
     var precip: String? = nil
     var surface: String? = nil

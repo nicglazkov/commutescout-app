@@ -391,7 +391,7 @@ struct WeatherReadings: View {
         if let wind = marker.wind {
             // A direction on a calm wind reads as noise, so it is left off.
             var from = ""
-            if let dir = marker.windDir, wind >= 1 { from = " from the " + Units.windDirection(dir) }
+            if let dir = marker.windDir, !dir.text.isEmpty, wind >= 1 { from = " from the " + dir.text }
             let gust = marker.gust.map { ", gusts \(Units.speed(mph: $0))" } ?? ""
             out.append(("Wind", Units.speed(mph: wind) + from + gust))
         } else if let gust = marker.gust {
