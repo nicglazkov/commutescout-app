@@ -725,7 +725,10 @@ private fun MarkerExtras(marker: RoadMarker) {
             else "The outline is the mapped burn footprint."
         )
     }
-    marker.src?.takeIf { it.isNotBlank() && marker.kind in Prefs.snapshotOnlyKinds }?.let { Note("Source: $it") }
+    // Roadside markers name the agency behind them, as the website does.
+    // The older kinds already say where they came from in their own lines.
+    val roadside = marker.kind in Prefs.snapshotOnlyKinds || marker.kind == "toll"
+    marker.src?.takeIf { it.isNotBlank() && roadside }?.let { Note("Source: $it") }
 }
 
 @Composable
