@@ -429,13 +429,20 @@ struct LayersSheet: View {
                 }
                 Section("On the road") {
                     ForEach(Prefs.layerKinds, id: \.key) { k in
-                        Toggle(isOn: Binding(get: { model.prefs.isShown(k.key) },
-                                             set: { model.prefs.setShown(k.key, $0); model.markers.refresh(force: true) })) {
+                        Toggle(isOn: Binding(get: { model.prefs.isShown(k.key) }, set: { on in
+                            model.prefs.setShown(k.key, on)
+                            // Cameras are published as their own object
+                            // and fetched only when the layer is on.
+                            if k.key == "camera", on { model.markers.load(.cameras) }
+                            model.markers.refresh(force: true)
+                        })) {
                             Label { Text(k.label) } icon: {
                                 Image(systemName: MarkerIcons.name(k.key)).foregroundStyle(MarkerIcons.tint(k.key))
                             }
                         }
                     }
+                    Text("Cameras and toll prices start off, the same as the website. Cameras are the densest layer.")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section {
                     NavigationLink("Community sources (Flare plugins)") { SourcesView() }

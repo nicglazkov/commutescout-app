@@ -118,7 +118,13 @@ final class AppModel: ObservableObject {
         alerts.announceAheadMeters = prefs.alertAheadMeters
         alerts.rules = { [prefs] m in prefs.rule(for: Prefs.ruleKind(for: m)) }
         location.startUpdating()
-        camera = .center(CLLocationCoordinate2D(latitude: 37.5, longitude: -121.9), zoom: 8)
+        camera = .center(Self.defaultCenter, zoom: 8)
+        // Every dot has to be on the map by the time the camera finishes
+        // its zoom to the driver, which takes a second or two. So the
+        // launch snapshot is asked for here, while the map is still
+        // loading its style and the camera is still moving, instead of
+        // waiting for the map's view callback to ask for a viewport.
+        markers.boot(near: Self.bootCenter(), cameras: prefs.isShown("camera"))
         prefs.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.prefsChanged() }
         }.store(in: &cancellables)
@@ -129,6 +135,20 @@ final class AppModel: ObservableObject {
             child.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         }
         Task { await followOnceAllowed() }
+    }
+
+    /// Where the map opens before the first fix arrives.
+    static let defaultCenter = CLLocationCoordinate2D(latitude: 37.5, longitude: -121.9)
+
+    /// The best guess at where the phone is at the moment the app
+    /// starts. Core Location keeps the last fix and hands it over
+    /// without waiting for a new one; reading it does not ask for
+    /// permission, and it is nil when permission was never given.
+    private static func bootCenter() -> CLLocationCoordinate2D {
+        if let fix = CLLocationManager().location?.coordinate, CLLocationCoordinate2DIsValid(fix) {
+            return fix
+        }
+        return defaultCenter
     }
 
     // MARK: core
