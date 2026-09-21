@@ -263,7 +263,10 @@ data class RoadMarker(
                     (reported ?: discovered)?.let { out.add("Updated " + whenText(it)) }
                 }
                 "camera", "sign" -> {
-                    roadLine?.let { out.add(it) }
+                    // Some agencies name a camera after its road, and a
+                    // sign has no name but its road, so the line is
+                    // dropped when the title already says it.
+                    roadLine?.takeIf { it != displayTitle }?.let { out.add(it) }
                     near?.takeIf { it.isNotBlank() }?.let { out.add(it) }
                 }
                 "rwis" -> route?.takeIf { it.isNotBlank() }?.let { out.add(it) }

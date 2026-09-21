@@ -30,6 +30,21 @@ class MarkerKindsTest {
         assertEquals(listOf("SR-12", "Rio Vista"), m.detailLines)
     }
 
+    /**
+     * Some agencies name a camera after the road it watches, and a sign
+     * has no name but its road. Printing the road under a title that
+     * already is the road says the same thing twice.
+     */
+    @Test fun theRoadIsNotRepeatedUnderATitleThatAlreadySaysIt() {
+        val camera = parse("""{"kind":"camera","lat":41.76,"lon":-86.73,"name":"I-94 @ Wilson","route":"I-94 @ Wilson","near":"New Buffalo"}""")
+        assertEquals("I-94 @ Wilson", camera.displayTitle)
+        assertEquals(listOf("New Buffalo"), camera.detailLines)
+
+        val sign = parse("""{"kind":"sign","lat":37.3,"lon":-121.9,"route":"I-880","direction":"South","near":"San Jose","message":"SLOW"}""")
+        assertEquals("I-880 South", sign.displayTitle)
+        assertEquals(listOf("San Jose"), sign.detailLines)
+    }
+
     @Test fun signSplitsItsBoardAndKnowsWhenItIsBlank() {
         val showing = parse(
             """{"kind":"sign","lat":38.07,"lon":-121.73,"route":"SR-160","direction":"North","near":"Rio Vista",
