@@ -51,7 +51,10 @@ private struct BoxedMarker: Decodable {
             marker = nil
             return
         }
-        marker = try RoadMarker(from: decoder)
+        // A record this build cannot read costs one marker, never the
+        // rest of the file. Letting it throw ends the list at that
+        // point and leaves a nearly empty map with nothing to say why.
+        marker = try? RoadMarker(from: decoder)
     }
 }
 
@@ -76,8 +79,8 @@ struct SnapshotPayload: Decodable {
         var kept: [RoadMarker] = []
         kept.reserveCapacity(512)
         while !list.isAtEnd {
-            // A record the app cannot read stops the list rather than
-            // losing it: some of the map beats none of it.
+            // BoxedMarker never throws, so the loop always advances and
+            // always reaches the end of the list.
             guard let boxed = try? list.decode(BoxedMarker.self) else { break }
             if let marker = boxed.marker { kept.append(marker) }
         }
