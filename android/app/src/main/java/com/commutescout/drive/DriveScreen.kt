@@ -219,6 +219,10 @@ fun DriveScreen(model: DriveViewModel) {
                 val lats = listOf(a, b, c, d).map { it.latitude }; val lons = listOf(a, b, c, d).map { it.longitude }
                 model.markers.view(lats.min(), lons.min(), lats.max(), lons.max(), pos.zoom, prefs.apiKinds)
                 model.viewCenter = LatLon(pos.target.latitude, pos.target.longitude)
+                // A driver who never granted the location permission,
+                // or who panned away from home, still gets the dots for
+                // wherever the map is looking.
+                Snapshot.prime(LatLon(pos.target.latitude, pos.target.longitude))
                 model.sources.view(LatLon(pos.target.latitude, pos.target.longitude))
             }
         }
@@ -718,7 +722,7 @@ private fun LayersSheet(model: DriveViewModel, onClose: () -> Unit) {
             ToggleRow("Traffic", prefs.traffic) { prefs.traffic = it }
             ToggleRow("3D perspective", prefs.is3D) { model.toggle3D() }
             Heading("On the road")
-            Prefs.layerKinds.forEach { k -> ToggleRow(k.label, prefs.isShown(k.key)) { prefs.setShown(k.key, it); model.markers.refresh(true) } }
+            Prefs.layerKinds.forEach { k -> ToggleRow(k.label, prefs.isShown(k.key)) { prefs.setShown(k.key, it); model.layersChanged() } }
             LinkRow("Where this data comes from") { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://commutescout.com/data-sources"))) }
         }
     }
