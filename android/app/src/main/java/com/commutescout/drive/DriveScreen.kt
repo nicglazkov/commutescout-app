@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -76,10 +77,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -105,6 +109,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import org.maplibre.compose.camera.CameraPosition
@@ -112,6 +118,7 @@ import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.expressions.value.LineCap
 import org.maplibre.compose.expressions.value.LineJoin
 import org.maplibre.compose.layers.CircleLayer
+import org.maplibre.compose.layers.FillLayer
 import org.maplibre.compose.layers.LineLayer
 import org.maplibre.compose.layers.RasterLayer
 import org.maplibre.compose.map.GestureOptions
@@ -127,7 +134,9 @@ import org.maplibre.compose.util.MaplibreComposable
 import org.maplibre.spatialk.geojson.Feature
 import org.maplibre.spatialk.geojson.FeatureCollection
 import org.maplibre.spatialk.geojson.LineString
+import org.maplibre.spatialk.geojson.MultiLineString
 import org.maplibre.spatialk.geojson.Point
+import org.maplibre.spatialk.geojson.Polygon
 import org.maplibre.spatialk.geojson.Position
 import uniffi.ferrostar.Route
 import kotlin.math.abs
@@ -219,6 +228,13 @@ fun DriveScreen(model: DriveViewModel) {
                 val lats = listOf(a, b, c, d).map { it.latitude }; val lons = listOf(a, b, c, d).map { it.longitude }
                 model.markers.view(lats.min(), lons.min(), lats.max(), lons.max(), pos.zoom, prefs.apiKinds)
                 model.viewCenter = LatLon(pos.target.latitude, pos.target.longitude)
+                // A driver who never granted the location permission,
+                // or who panned away from home, still gets the dots for
+                // wherever the map is looking. Not while the map is
+                // still on its opening camera though: that is the whole
+                // world, centred nowhere, and aiming a snapshot at it
+                // throws away the one already loaded.
+                if (pos.zoom >= 5.5) Snapshot.prime(LatLon(pos.target.latitude, pos.target.longitude))
                 model.sources.view(LatLon(pos.target.latitude, pos.target.longitude))
             }
         }
@@ -246,7 +262,7 @@ fun DriveScreen(model: DriveViewModel) {
             ),
         ) {
             if (prefs.traffic) TrafficLayer()
-            MarkerLayers(allMarkers.filter { prefs.isShown(it.kind) }) { key -> model.showMarker(key) }
+            MarkerLayers(allMarkers.filter { prefs.isShown(it.kind) && !it.blankSign }) { key -> model.showMarker(key) }
             (state as? DriveState.Found)?.let { PinLayer(it.place) }
             if (state is DriveState.Choosing) chosenRoute?.let { RouteLine(it) }
         }
@@ -358,10 +374,19 @@ private fun TrafficLayer() {
     RasterLayer(id = "cs-traffic", source = source, opacity = const(0.75f))
 }
 
+/** A tap on a dot or a shape opens the card for the marker behind it. */
+private fun tapped(properties: JsonObject?, onTap: (String) -> Unit): ClickResult {
+    val key = (properties?.get("key") as? JsonPrimitive)?.content ?: return ClickResult.Pass
+    onTap(key)
+    return ClickResult.Consume
+}
+
 /** Live road markers: one source and layer per kind, colored like the website. */
 @Composable
 @MaplibreComposable
 private fun MarkerLayers(markers: List<RoadMarker>, onTap: (String) -> Unit) {
+    // Shapes first so a dot is never hidden under the line it belongs to.
+    ShapeLayers(markers, onTap)
     for (kind in MarkerIcons.kinds) {
         val ofKind = markers.filter { it.kind == kind }
         val source = rememberGeoJsonSource(GeoJsonData.Features(FeatureCollection(ofKind.map { m ->
@@ -370,12 +395,65 @@ private fun MarkerLayers(markers: List<RoadMarker>, onTap: (String) -> Unit) {
         CircleLayer(
             id = "cs-m-$kind", source = source, color = const(MarkerIcons.color(kind)), radius = const(8.dp),
             strokeColor = const(Color.White), strokeWidth = const(2.dp),
-            onClick = { features ->
-                val key = features.firstOrNull()?.properties?.get("key")?.let { (it as? JsonPrimitive)?.content }
-                if (key != null) { onTap(key); ClickResult.Consume } else ClickResult.Pass
-            },
+            onClick = { features -> tapped(features.firstOrNull()?.properties, onTap) },
         )
     }
+}
+
+/**
+ * The shapes behind the dots: burn footprints, the stretch of road a
+ * closure covers, and the carriageway a toll corridor runs along.
+ *
+ * A wildfire's footprint is the reason the dot alone is not enough: the
+ * dot marks where the fire was reported, the outline is where it is.
+ * Each lobe of a multi-lobed fire is drawn as its own shape, because
+ * joining them would fill in the untouched ground between them.
+ *
+ * Closure and toll geometry reaches the app only through /api/mapdata;
+ * the snapshot drops it. A marker with no geometry is simply a dot.
+ */
+@Composable
+@MaplibreComposable
+private fun ShapeLayers(markers: List<RoadMarker>, onTap: (String) -> Unit) {
+    fun keyed(m: RoadMarker) = buildJsonObject { put("key", JsonPrimitive(m.key)) }
+
+    val fires = remember(markers) {
+        FeatureCollection(markers.filter { it.kind == "wildfire" }.flatMap { m ->
+            m.perimeter.map { ring ->
+                // A handful of perimeters arrive without their closing
+                // point. A polygon ring has to end where it started.
+                val closed = if (ring.first() == ring.last()) ring else ring + ring.first()
+                Feature(geometry = Polygon(listOf(closed.map { Position(it.lon, it.lat) })), properties = keyed(m))
+            }
+        })
+    }
+    val strips = remember(markers) {
+        FeatureCollection(markers.filter { it.kind == "lane_closure" }.mapNotNull { m ->
+            m.stretch.takeIf { it.size >= 2 }?.let { Feature(geometry = LineString(it.map { p -> Position(p.lon, p.lat) }), properties = keyed(m)) }
+        })
+    }
+    val corridors = remember(markers) {
+        FeatureCollection(markers.filter { it.kind == "toll" }.mapNotNull { m ->
+            m.corridorLines.takeIf { it.isNotEmpty() }?.let { segs ->
+                Feature(geometry = MultiLineString(segs.map { seg -> seg.map { p -> Position(p.lon, p.lat) } }), properties = keyed(m))
+            }
+        })
+    }
+
+    // A shape is filled through the colour's alpha rather than a layer
+    // opacity, so the outline stays solid over it.
+    val fireSource = rememberGeoJsonSource(GeoJsonData.Features(fires))
+    FillLayer(id = "cs-fire-poly", source = fireSource, color = const(MarkerIcons.color("wildfire").copy(alpha = 0.28f)),
+        onClick = { f -> tapped(f.firstOrNull()?.properties, onTap) })
+    LineLayer(id = "cs-fire-edge", source = fireSource, color = const(MarkerIcons.color("wildfire")), width = const(2.dp))
+
+    val tollSource = rememberGeoJsonSource(GeoJsonData.Features(corridors))
+    LineLayer(id = "cs-toll-line", source = tollSource, color = const(MarkerIcons.color("toll").copy(alpha = 0.85f)), width = const(4.dp),
+        cap = const(LineCap.Round), join = const(LineJoin.Round), onClick = { f -> tapped(f.firstOrNull()?.properties, onTap) })
+
+    val stripSource = rememberGeoJsonSource(GeoJsonData.Features(strips))
+    LineLayer(id = "cs-closure-line", source = stripSource, color = const(MarkerIcons.color("lane_closure").copy(alpha = 0.9f)), width = const(5.dp),
+        cap = const(LineCap.Round), join = const(LineJoin.Round), onClick = { f -> tapped(f.firstOrNull()?.properties, onTap) })
 }
 
 @Composable
@@ -607,12 +685,18 @@ private fun MarkerCard(marker: RoadMarker, here: LatLon?, model: DriveViewModel)
                 Icon(MarkerIcons.icon(marker.kind), null, tint = MarkerIcons.color(marker.kind))
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(marker.displayTitle, style = MaterialTheme.typography.titleMedium, maxLines = 3)
+                    Text(MarkerIcons.label(marker.kind), style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold, color = MarkerIcons.color(marker.kind))
+                    Text(marker.cardTitle, style = MaterialTheme.typography.titleMedium, maxLines = 3)
                     marker.detailLines.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     here?.let { Text(Units.distance(AlertsEngine.meters(it, LatLon(marker.lat, marker.lon))) + " from you",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
                 IconButton({ model.clearMarker() }) { Icon(Icons.Default.Close, "Close") }
+            }
+            Column(Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MarkerExtras(marker)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button({ model.show(Place(name = marker.displayTitle, lat = marker.lat, lon = marker.lon, kind = PlaceKind.recent)) }, Modifier.weight(1f)) {
@@ -622,6 +706,157 @@ private fun MarkerCard(marker: RoadMarker, here: LatLon?, model: DriveViewModel)
             }
             if (marker.kind == "plugin") marker.id?.let { ConfirmRow(it, model) }
         }
+    }
+}
+
+/** What a marker card shows beyond its title, one body per kind. */
+@Composable
+private fun MarkerExtras(marker: RoadMarker) {
+    when (marker.kind) {
+        "camera" -> CameraShot(marker)
+        "sign" -> SignBoard(marker)
+        "rwis" -> WeatherReadings(marker)
+        "toll" -> TollPrices(marker)
+        // A fire's dot is where it was reported; its outline is where
+        // it is. Saying which one is on screen is the difference
+        // between a fire being near a road and being on it.
+        "wildfire" -> Note(
+            if (marker.perimeter.isEmpty()) "No mapped perimeter yet. The dot marks the reported origin."
+            else "The outline is the mapped burn footprint."
+        )
+    }
+    // Roadside markers name the agency behind them, as the website does.
+    // The older kinds already say where they came from in their own lines.
+    val roadside = marker.kind in Prefs.snapshotOnlyKinds || marker.kind == "toll"
+    marker.src?.takeIf { it.isNotBlank() && roadside }?.let { Note("Source: $it") }
+}
+
+@Composable
+private fun Note(text: String) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun Reading(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+    }
+}
+
+/**
+ * The camera's latest still.
+ *
+ * The image is fetched straight from the agency, as the website does.
+ * OkHttp sends no Referer, which matters because some state camera
+ * hosts refuse a request that carries a foreign one. A timestamp is
+ * added to the address so a reopened camera shows a new picture rather
+ * than a cached one, and the app loads the bitmap itself instead of
+ * taking on an image library for one screen.
+ */
+@Composable
+private fun CameraShot(marker: RoadMarker) {
+    val url = marker.image
+    var shot by remember(url) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var failed by remember(url) { mutableStateOf(false) }
+    LaunchedEffect(url) {
+        if (url.isNullOrBlank()) { failed = true; return@LaunchedEffect }
+        val bitmap = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val fresh = url + (if ('?' in url) "&" else "?") + "t=" + System.currentTimeMillis()
+                val request = okhttp3.Request.Builder().url(fresh).build()
+                Backend.http.newCall(request).execute().use { r ->
+                    if (r.isSuccessful) android.graphics.BitmapFactory.decodeStream(r.body.byteStream()) else null
+                }
+            }.getOrNull()
+        }
+        if (bitmap == null) failed = true else shot = bitmap.asImageBitmap()
+    }
+    when {
+        shot != null -> Image(shot!!, null, Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.FillWidth)
+        failed -> Note("The snapshot is not available right now.")
+        else -> Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(8.dp)); Note("Loading the snapshot")
+        }
+    }
+    Note(if (marker.stream.isNullOrBlank()) "Still image, not video. A new image loads each time you open this camera."
+         else "This camera also carries live video on the website.")
+}
+
+/** The sign's board, read the way a driver reads it. */
+@Composable
+private fun SignBoard(marker: RoadMarker) {
+    val lines = marker.signLines
+    if (lines.isEmpty()) { Note("This sign is blank right now."); return }
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(Color(0xFF14110B)).padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        lines.forEach {
+            Text(it, color = Color(0xFFF2B01A), fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+/**
+ * What the roadside station is reading. Temperatures arrive in Celsius,
+ * wind in miles per hour and visibility in metres whatever the driver
+ * has chosen, so each one is converted on the way to the screen.
+ */
+@Composable
+private fun WeatherReadings(marker: RoadMarker) {
+    val miles = Units.useMiles
+    fun temperature(c: Double) = if (miles) "${Math.round(c * 9 / 5 + 32)} F" else "${Math.round(c)} C"
+    fun speed(mph: Double) = if (miles) "${Math.round(mph)} mph" else "${Math.round(mph * 1.609344)} km/h"
+
+    val readings = buildList {
+        marker.air_c?.let { add("Air" to temperature(it)) }
+        marker.pave_c?.let { add("Pavement" to temperature(it)) }
+        val wind = marker.wind
+        val gust = marker.gust
+        if (wind != null || gust != null) {
+            val head = wind?.let { speed(it) } ?: "calm"
+            // A direction on calm wind is noise, so it is left off.
+            val from = marker.windFrom?.takeIf { (wind ?: 0.0) >= 1.0 }?.let { " from the $it" } ?: ""
+            val gusting = gust?.let { ", gusting ${speed(it)}" } ?: ""
+            add("Wind" to head + from + gusting)
+        }
+        marker.rh?.let { add("Humidity" to "${Math.round(it)}%") }
+        marker.precip?.takeIf { it.isNotBlank() }?.let { add("Precipitation" to it.replace('_', ' ')) }
+        marker.surface?.takeIf { it.isNotBlank() }?.let { add("Surface" to it) }
+        // Visibility is worth the line only when it is short enough to matter.
+        marker.vis_m?.takeIf { it < 5000 }?.let { add("Visibility" to Units.distance(it)) }
+    }
+    if (readings.isEmpty()) { Note("This station is online. It has no readings right now."); return }
+    readings.forEach { (label, value) -> Reading(label, value) }
+}
+
+/** What the corridor costs now, and where each price applies. */
+@Composable
+private fun TollPrices(marker: RoadMarker) {
+    marker.tollRange?.let {
+        Text(it + if (marker.pricing == "live") " right now" else "", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+    }
+    val bridge = marker.src == "BATA" || marker.src == "GGB"
+    Note(when {
+        marker.toll_type == "required" && bridge -> "Toll bridge: every vehicle pays."
+        marker.toll_type == "required" -> "All lanes are tolled."
+        else -> "Optional express lane. The regular lanes are free."
+    })
+    if (marker.pricing != "live") marker.as_of?.takeIf { it.isNotBlank() }?.let { Note("Posted rate as of $it") }
+    // Where an agency publishes lane against lane travel times, the
+    // driver gets the honest answer to whether the toll is worth it.
+    val regular = marker.gp_min
+    val express = marker.lane_min
+    if (regular != null && express != null) {
+        val saved = Math.round(regular - express).toInt()
+        Note(if (saved >= 2) "Express lanes ${Math.round(express)} min against ${Math.round(regular)} min in the regular lanes, saving about $saved min now."
+             else "The regular lanes are moving freely right now, ${Math.round(regular)} min.")
+    }
+    marker.entries.orEmpty().flatMap { entry -> entry.prices }.take(8).forEach { (name, price) ->
+        Reading(name, if (price == Math.floor(price)) "$%.0f".format(price) else "$%.2f".format(price))
     }
 }
 
@@ -718,7 +953,7 @@ private fun LayersSheet(model: DriveViewModel, onClose: () -> Unit) {
             ToggleRow("Traffic", prefs.traffic) { prefs.traffic = it }
             ToggleRow("3D perspective", prefs.is3D) { model.toggle3D() }
             Heading("On the road")
-            Prefs.layerKinds.forEach { k -> ToggleRow(k.label, prefs.isShown(k.key)) { prefs.setShown(k.key, it); model.markers.refresh(true) } }
+            Prefs.layerKinds.forEach { k -> ToggleRow(k.label, prefs.isShown(k.key)) { prefs.setShown(k.key, it); model.layersChanged() } }
             LinkRow("Where this data comes from") { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://commutescout.com/data-sources"))) }
         }
     }

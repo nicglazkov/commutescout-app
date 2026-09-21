@@ -4,6 +4,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.URLEncoder
@@ -63,7 +66,37 @@ object Search {
         Backend.get<GeocodeResponse>("/api/geocode", mapOf("q" to q, "limit" to "5")).candidates
 }
 
-/** One thing on the road: an incident, closure, chain control, fire or a community report. */
+/** The sixteen points a wind direction is reported as. */
+private val COMPASS = listOf(
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+)
+
+/** One price band on a toll corridor: what an entry point costs to use. */
+@Serializable
+data class TollEntry(
+    val label: String? = null,
+    /** Each row is [entry name, price]; the server sends a mixed array. */
+    val rows: List<JsonArray> = emptyList(),
+) {
+    /** The rows as text and dollars, skipping anything malformed. */
+    val prices: List<Pair<String, Double>>
+        get() = rows.mapNotNull { r ->
+            if (r.size < 2) null else {
+                val name = (r[0] as? JsonPrimitive)?.content ?: return@mapNotNull null
+                val price = (r[1] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@mapNotNull null
+                name to price
+            }
+        }
+}
+
+/**
+ * One thing on the road. The website's nine marker kinds all arrive in
+ * this one shape, because the server builds the map endpoint and the
+ * snapshot publisher from the same function: incidents, closures, chain
+ * controls, wildfires, community reports, toll prices, cameras, message
+ * signs and roadside weather stations.
+ */
 @Serializable
 data class RoadMarker(
     val kind: String,
@@ -93,11 +126,118 @@ data class RoadMarker(
     val tier: String? = null,          // approved, unreviewed or private, for plugin markers
     val acres: Double? = null,         // wildfires
     val contained: Double? = null,     // wildfires, percent
+    val discovered: String? = null,    // wildfires, ISO time
+    val updated: String? = null,
+    val src: String? = null,           // the agency behind a roadside marker
+    // Closure and toll geometry. The endpoint sends it; the snapshot
+    // drops it, so a marker can arrive with a dot and no line.
+    val path: List<List<Double>>? = null,             // closure stretch, [lat, lon] pairs
+    val segs: List<List<List<Double>>>? = null,       // toll corridor, one list per segment
+    // A burn footprint ships either as one ring of [lat, lon] pairs or
+    // as a list of rings, so it is read loosely and normalised below.
+    val poly: JsonElement? = null,
+    // Cameras.
+    val direction: String? = null,
+    val near: String? = null,
+    val image: String? = null,
+    val stream: String? = null,
+    // Message signs.
+    val message: String? = null,
+    val lines: List<String>? = null,
+    val blank: Boolean? = null,
+    // Roadside weather stations. Temperatures Celsius, wind mph,
+    // visibility metres, humidity percent.
+    val station: String? = null,
+    val air_c: Double? = null,
+    val pave_c: Double? = null,
+    val wind: Double? = null,
+    val gust: Double? = null,
+    // Stations report the direction either in degrees or as a compass
+    // abbreviation, so it is read loosely and normalised below.
+    val wind_dir: JsonElement? = null,
+    val vis_m: Double? = null,
+    val rh: Double? = null,
+    val precip: String? = null,
+    val surface: String? = null,
+    // Toll prices.
+    val corridor: String? = null,
+    val min: Double? = null,
+    val max: Double? = null,
+    val n: Int? = null,
+    val pricing: String? = null,        // live or fixed
+    val toll_type: String? = null,      // express or required
+    val toll_dir: String? = null,
+    val toll_note: String? = null,
+    val as_of: String? = null,
+    val gp_min: Double? = null,         // minutes in the regular lanes
+    val lane_min: Double? = null,       // minutes in the express lanes
+    val entries: List<TollEntry>? = null,
 ) {
     val key: String get() = "$kind:${id ?: "%.4f,%.4f".format(lat, lon)}"
 
     /** Fires too small or too contained to announce on a drive. */
     val tooMinorToAnnounce: Boolean get() = kind == "wildfire" && ((contained ?: 0.0) >= 90 || (acres != null && acres < 10))
+
+    /**
+     * The mapped burn footprint, one list of points per lobe. A fire
+     * with several lobes keeps them apart: joining them would draw a
+     * line across the untouched ground between them.
+     */
+    val perimeter: List<List<LatLon>>
+        get() {
+            val rings = poly as? JsonArray ?: return emptyList()
+            val first = rings.firstOrNull() as? JsonArray ?: return emptyList()
+            // One ring of [lat, lon] pairs, or a list of such rings.
+            val many = if (first.firstOrNull() is JsonArray) rings.mapNotNull { it as? JsonArray } else listOf(rings)
+            return many.map { ring -> ring.mapNotNull { point(it) } }.filter { it.size >= 3 }
+        }
+
+    /** The stretch of road a closure covers, empty when only a dot arrived. */
+    val stretch: List<LatLon> get() = path.orEmpty().mapNotNull { pair(it) }
+
+    /** A toll corridor, one list of points per segment of carriageway. */
+    val corridorLines: List<List<LatLon>>
+        get() = segs.orEmpty().map { seg -> seg.mapNotNull { pair(it) } }.filter { it.size >= 2 }
+
+    /**
+     * A sign displaying nothing. Most message signs are blank most of
+     * the time, and the website leaves them off the map unless they are
+     * asked for, so the app does the same rather than covering every
+     * highway in dots that say nothing.
+     */
+    val blankSign: Boolean get() = kind == "sign" && signLines.isEmpty()
+
+    /** The sign's board, split out of the message when the server did not. */
+    val signLines: List<String>
+        get() = lines?.takeIf { it.isNotEmpty() }
+            ?: message?.takeIf { it.isNotBlank() }?.split(" / ")?.map { it.trim() }?.filter { it.isNotEmpty() }
+            ?: emptyList()
+
+    /** Where the wind comes from, as a compass point, or null when unknown. */
+    val windFrom: String?
+        get() {
+            val reported = (wind_dir as? JsonPrimitive)?.content ?: return null
+            reported.toDoubleOrNull()?.let { return COMPASS[((Math.round(it / 22.5).toInt() % 16) + 16) % 16] }
+            return reported.uppercase().takeIf { it in COMPASS }
+        }
+
+    /** Route and direction as one phrase, for roadside markers. */
+    val roadLine: String?
+        get() = listOfNotNull(route, direction).filter { it.isNotBlank() }.joinToString(" ").takeIf { it.isNotEmpty() }
+
+    /** The toll now, as a range when the price varies by entry point. */
+    val tollRange: String?
+        get() {
+            val low = min ?: return null
+            val high = max ?: low
+            return if (low == high) money(low) else "${money(low)} to ${money(high)}"
+        }
+
+    private fun money(v: Double): String = if (v == Math.floor(v)) "$%.0f".format(v) else "$%.2f".format(v)
+
+    private fun point(e: JsonElement): LatLon? = (e as? JsonArray)?.let { pair(it.mapNotNull { v -> (v as? JsonPrimitive)?.content?.toDoubleOrNull() }) }
+
+    private fun pair(v: List<Double>): LatLon? = if (v.size >= 2) LatLon(v[0], v[1]) else null
 
     /** The lines under the title in the marker card. */
     val detailLines: List<String>
@@ -120,7 +260,21 @@ data class RoadMarker(
                 "chain_control" -> location?.takeIf { it.isNotBlank() }?.let { out.add(it) }
                 "wildfire" -> {
                     county?.takeIf { it.isNotBlank() }?.let { out.add("$it County") }
-                    reported?.let { out.add("Updated " + whenText(it)) }
+                    (reported ?: discovered)?.let { out.add("Updated " + whenText(it)) }
+                }
+                "camera", "sign" -> {
+                    // Some agencies name a camera after its road, and a
+                    // sign has no name but its road, so the line is
+                    // dropped when the title already says it.
+                    roadLine?.takeIf { it != displayTitle }?.let { out.add(it) }
+                    near?.takeIf { it.isNotBlank() }?.let { out.add(it) }
+                }
+                "rwis" -> route?.takeIf { it.isNotBlank() }?.let { out.add(it) }
+                "toll" -> {
+                    corridor?.takeIf { it.isNotBlank() && it != name }?.let { out.add(it) }
+                    toll_dir?.takeIf { it.isNotBlank() }?.let {
+                        out.add(listOfNotNull(it.replaceFirstChar { c -> c.uppercase() }, toll_note?.takeIf { n -> n.isNotBlank() }).joinToString(", "))
+                    }
                 }
                 "plugin" -> {
                     source?.takeIf { it.isNotBlank() }?.let {
@@ -153,8 +307,20 @@ data class RoadMarker(
             "chain_control" -> "Chain control ${status ?: ""} on ${route ?: ""}".trim()
             "wildfire" -> "${name ?: "Wildfire"} Fire"
             "plugin" -> description ?: (flare_kind ?: "Report").replace('_', ' ').replaceFirstChar { it.uppercase() }
+            "camera" -> name ?: "Roadside camera"
+            "sign" -> roadLine ?: "Message sign"
+            "rwis" -> station ?: name ?: "Weather station"
+            "toll" -> label ?: name ?: corridor ?: "Toll"
             else -> label ?: kind
         }
+
+    /**
+     * The heading on a marker card. A toll's one-line summary carries
+     * its price, which the card then states in full underneath, so the
+     * card takes the corridor name and leaves the price to the line
+     * that exists to say it.
+     */
+    val cardTitle: String get() = if (kind == "toll") name ?: corridor ?: displayTitle else displayTitle
 
     val spokenTitle: String get() = displayTitle.replace("@", "at").replace("(", "").replace(")", "")
 
@@ -172,7 +338,20 @@ data class RoadMarker(
 private data class MapData(val markers: List<RoadMarker> = emptyList())
 
 object LiveData {
+    /**
+     * The kinds a driver is warned about on a trip. Roadside
+     * information is not an alert: a camera or a message sign is
+     * something to look at, not something to announce.
+     */
     const val KINDS = "incident,closure,chain,fire,plugin"
+
+    /**
+     * Every kind the map draws, in the query names /api/mapdata takes.
+     * Three of them do not match the kind the server emits: closure
+     * returns lane_closure, chain returns chain_control and fire
+     * returns wildfire. The other six are the same word on both sides.
+     */
+    const val MAP_KINDS = "incident,closure,chain,fire,plugin,toll,camera,sign,rwis"
 
     suspend fun markers(south: Double, west: Double, north: Double, east: Double, kinds: String = KINDS): List<RoadMarker> =
         Backend.get<MapData>(

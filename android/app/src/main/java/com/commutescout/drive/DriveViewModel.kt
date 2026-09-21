@@ -162,6 +162,20 @@ object Engine {
         return core
     }
 
+    /**
+     * Where the phone last was, without waiting for a fix. Used only to
+     * aim the launch snapshot; it is null before the location
+     * permission is granted, and the snapshot then waits for the first
+     * real fix instead.
+     */
+    private fun lastKnownPosition(application: Application): LatLon? = runCatching {
+        val manager = application.getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager
+        manager.getProviders(true)
+            .mapNotNull { @Suppress("MissingPermission") manager.getLastKnownLocation(it) }
+            .maxByOrNull { it.time }
+            ?.let { LatLon(it.latitude, it.longitude) }
+    }.getOrNull()
+
     fun init(application: Application) {
         app = application
         prefs = Prefs(application)
@@ -178,6 +192,15 @@ object Engine {
         push = PushRegistrar(app, account)
         PushRegistrar.ensureChannel(app)
         account.beforeSignOut = { push.forget() }
+        // The dots start loading here, not from the map's first camera
+        // callback. This fetch runs beside map setup and the camera
+        // animation rather than after both of them, which is the whole
+        // difference between markers landing with the camera and
+        // several seconds behind it.
+        Snapshot.sync(Snapshot.wantedFor(prefs))
+        val from = lastKnownPosition(application) ?: prefs.lastCenter
+        Log.i(TAG, if (from == null) "no position yet; the snapshot waits for the first fix" else "snapshot aimed at $from")
+        Snapshot.prime(from)
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
             account.user.collect { u ->
                 if (u != null) { sources.pullFromAccount(); places.syncWithAccount(); push.register() }
@@ -245,6 +268,10 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
                 s.location?.let { loc ->
                     val p = LatLon(loc.coordinates.lat, loc.coordinates.lng)
                     _here.value = p
+                    // On a first run there was no last known position to
+                    // aim the snapshot at, and on a long drive the
+                    // driver leaves the area it holds.
+                    Snapshot.prime(p)
                     if (s.isNavigating()) Engine.alerts.update(p)
                 }
             }
@@ -266,6 +293,17 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     }
 
     fun toggle3D() { prefs.is3D = !prefs.is3D }
+
+    /**
+     * A layer was switched. The viewport is asked again for the kinds
+     * it serves, and the snapshot behind the roadside layers is loaded
+     * or released to match.
+     */
+    fun layersChanged() {
+        Engine.markers.refresh(true)
+        Snapshot.sync(Snapshot.wantedFor(prefs))
+        Snapshot.prime(_here.value ?: viewCenter)
+    }
 
     // browsing
 

@@ -126,7 +126,7 @@ fun SettingsSheet(model: DriveViewModel, onClose: () -> Unit) {
 
             Heading("Layers")
             ToggleRow("Traffic", prefs.traffic) { prefs.traffic = it }
-            Prefs.layerKinds.forEach { k -> ToggleRow(k.label, prefs.isShown(k.key)) { prefs.setShown(k.key, it); model.markers.refresh(true) } }
+            Prefs.layerKinds.forEach { k -> ToggleRow(k.label, prefs.isShown(k.key)) { prefs.setShown(k.key, it); model.layersChanged() } }
 
             Heading("Places")
             if (places.isEmpty()) Text("Search a place, then save it as Home, Work or a favorite.", color = MaterialTheme.colorScheme.onSurfaceVariant)
