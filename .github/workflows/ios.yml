@@ -16,10 +16,24 @@ on:
 jobs:
   build:
     runs-on: macos-15
+    # Read only, stated rather than inherited. This job needs nothing
+    # else: it holds no secrets, signs nothing, and produces nothing
+    # installable, so there is no reason for it to be able to write.
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
       - name: Install XcodeGen
-        run: brew install xcodegen
+        # A pinned release rather than "brew install xcodegen". Homebrew
+        # has no versioned formula for it, so brew is whatever shipped
+        # today: third-party code running in the build. This runner
+        # holds no secrets and cannot write to the repository, so the
+        # worst case is a green tick it did not earn, which is still
+        # worth preventing. Bump the version deliberately.
+        run: |
+          curl -fsSL -o xcodegen.zip             https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          unzip -q xcodegen.zip -d xcodegen-dist
+          echo "$PWD/xcodegen-dist/bin" >> "$GITHUB_PATH"
       - name: Generate the project
         working-directory: ios
         run: xcodegen generate
