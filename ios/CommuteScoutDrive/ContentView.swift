@@ -36,7 +36,10 @@ struct ContentView: View {
             .navigationViewInnerGrid(topCenter: { reroutingBanner })
 
             MapHook(
-                layerIds: Set(MarkerIcons.kinds.map { "cs-m-\($0)" }),
+                // A closure stretch and a toll corridor answer a tap the
+                // same way their dot does, which is what the website does.
+                layerIds: Set(MarkerIcons.kinds.map { "cs-m-\($0)" })
+                    .union(["cs-closure-line", "cs-toll-line"]),
                 trafficTiles: model.prefs.traffic ? Backend.trafficTiles : nil,
                 onTap: { _, keys in
                     if let k = keys.first { model.showMarker(key: k) } else if model.selectedMarker != nil { model.clearMarker() }
@@ -141,7 +144,16 @@ struct ContentView: View {
 
     /// Roughly how tall the bottom card is, so the map buttons sit above it.
     private var bottomCardHeight: CGFloat {
-        if model.selectedMarker != nil { return 170 }
+        if let m = model.selectedMarker {
+            // A camera shows a picture and a toll shows its rates, so
+            // both cards are taller than the rest.
+            switch m.kind {
+            case "camera": return 350
+            case "toll": return 330
+            case "sign", "rwis": return 260
+            default: return 170
+            }
+        }
         switch model.state {
         case .browsing: return 0
         case .found: return 150
@@ -181,11 +193,33 @@ struct ContentView: View {
     }
 
     @MapViewContentBuilder private var mapContent: [StyleLayerDefinition] {
+        let shapes = model.mapShapes()
+        // Burn footprints, underneath everything else. The fire dot
+        // marks where the fire was reported; the shape is where it has
+        // been. Each ring is its own polygon, because joining the lobes
+        // of a multi-lobed fire draws lines across open country.
+        let fires = ShapeSource(identifier: "cs-fire-area") { shapes.fires }
+        FillStyleLayer(identifier: "cs-fire-area", source: fires)
+            .fillColor(UIColor(red: 0.85, green: 0.47, blue: 0.02, alpha: 1))
+            .fillOpacity(0.25)
+        LineStyleLayer(identifier: "cs-fire-edge", source: fires)
+            .lineColor(UIColor(red: 0.85, green: 0.47, blue: 0.02, alpha: 1)).lineWidth(1.5)
+        // Closure stretches and toll corridors, both following the
+        // carriageway. These come from /api/mapdata only: the launch
+        // snapshot drops them, so they appear a moment after the dots.
+        let closures = ShapeSource(identifier: "cs-closure-line") { shapes.closures }
+        LineStyleLayer(identifier: "cs-closure-line", source: closures)
+            .lineColor(UIColor(red: 0.84, green: 0.19, blue: 0.19, alpha: 1)).lineWidth(5)
+            .lineOpacity(0.85).lineCap(.round).lineJoin(.round)
+        let tolls = ShapeSource(identifier: "cs-toll-line") { shapes.tolls }
+        LineStyleLayer(identifier: "cs-toll-line", source: tolls)
+            .lineColor(UIColor(red: 0.49, green: 0.23, blue: 0.93, alpha: 1)).lineWidth(4)
+            .lineDashPattern([2, 1.5]).lineCap(.butt).lineJoin(.round)
         // Live road markers, one layer per kind so each has its icon.
         let markers = ShapeSource(identifier: "cs-markers") {
             for m in model.allMarkers where model.prefs.isShown(m.kind) && model.sources.isOn(m.source ?? "") {
                 let f = MLNPointFeature(coordinate: m.coordinate)
-                f.attributes = ["key": m.key, "kind": m.kind]
+                f.attributes = ["key": m.key, "kind": m.kind, "geo": "dot"]
                 f
             }
         }
@@ -429,13 +463,8 @@ struct LayersSheet: View {
                 }
                 Section("On the road") {
                     ForEach(Prefs.layerKinds, id: \.key) { k in
-                        Toggle(isOn: Binding(get: { model.prefs.isShown(k.key) }, set: { on in
-                            model.prefs.setShown(k.key, on)
-                            // Cameras are published as their own object
-                            // and fetched only when the layer is on.
-                            if k.key == "camera", on { model.markers.load(.cameras) }
-                            model.markers.refresh(force: true)
-                        })) {
+                        Toggle(isOn: Binding(get: { model.prefs.isShown(k.key) },
+                                             set: { model.prefs.setShown(k.key, $0); model.markers.refresh(force: true) })) {
                             Label { Text(k.label) } icon: {
                                 Image(systemName: MarkerIcons.name(k.key)).foregroundStyle(MarkerIcons.tint(k.key))
                             }
