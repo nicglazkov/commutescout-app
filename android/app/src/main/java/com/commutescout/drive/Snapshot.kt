@@ -173,7 +173,7 @@ object Snapshot {
  * each marker is instead decoded from the stream, measured and dropped
  * on the spot. What survives is what the driver can see.
  */
-private class NearbyMarkers(private val box: DoubleArray) : DeserializationStrategy<List<RoadMarker>> {
+internal class NearbyMarkers(private val box: DoubleArray) : DeserializationStrategy<List<RoadMarker>> {
     private val nearby = Nearby(box)
 
     override val descriptor: SerialDescriptor = buildClassSerialDescriptor("Snapshot") {
