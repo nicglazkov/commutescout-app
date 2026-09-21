@@ -419,7 +419,12 @@ private fun ShapeLayers(markers: List<RoadMarker>, onTap: (String) -> Unit) {
 
     val fires = remember(markers) {
         FeatureCollection(markers.filter { it.kind == "wildfire" }.flatMap { m ->
-            m.perimeter.map { ring -> Feature(geometry = Polygon(listOf(ring.map { Position(it.lon, it.lat) })), properties = keyed(m)) }
+            m.perimeter.map { ring ->
+                // A handful of perimeters arrive without their closing
+                // point. A polygon ring has to end where it started.
+                val closed = if (ring.first() == ring.last()) ring else ring + ring.first()
+                Feature(geometry = Polygon(listOf(closed.map { Position(it.lon, it.lat) })), properties = keyed(m))
+            }
         })
     }
     val strips = remember(markers) {
