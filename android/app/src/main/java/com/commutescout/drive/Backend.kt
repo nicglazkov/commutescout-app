@@ -353,9 +353,33 @@ object LiveData {
      */
     const val MAP_KINDS = "incident,closure,chain,fire,plugin,toll,camera,sign,rwis"
 
-    suspend fun markers(south: Double, west: Double, north: Double, east: Double, kinds: String = KINDS): List<RoadMarker> =
-        Backend.get<MapData>(
-            "/api/mapdata",
-            mapOf("bbox" to "%.4f,%.4f,%.4f,%.4f".format(south, west, north, east), "kinds" to kinds),
-        ).markers
+    /**
+     * Where this phone is, when it knows. [DriveViewModel] sets it on
+     * every fix.
+     *
+     * Community plugin alerts are the reason it exists. The server
+     * serves those in a small circle around the person asking and to
+     * nobody else, because an alert only exists because somebody was
+     * standing somewhere: handing it to a second person would tell them
+     * where the first one is. A request that does not say where it is
+     * gets none of them, which is also why they are absent from the
+     * launch snapshot, a single published file every visitor reads.
+     *
+     * Asking is also what makes a plugin cover a place at all. Nothing
+     * sweeps the country on a schedule, so a phone that never says
+     * where it is gets community reports nowhere.
+     */
+    @Volatile
+    var here: LatLon? = null
+
+    suspend fun markers(south: Double, west: Double, north: Double, east: Double, kinds: String = KINDS): List<RoadMarker> {
+        val query = mutableMapOf(
+            "bbox" to "%.4f,%.4f,%.4f,%.4f".format(south, west, north, east),
+            "kinds" to kinds,
+        )
+        // Four places is about ten metres, and the server rounds it to a
+        // tenth of a degree before it stores or forwards it.
+        here?.let { query["at"] = "%.4f,%.4f".format(it.lat, it.lon) }
+        return Backend.get<MapData>("/api/mapdata", query).markers
+    }
 }

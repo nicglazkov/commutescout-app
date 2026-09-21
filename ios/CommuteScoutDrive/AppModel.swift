@@ -118,6 +118,11 @@ final class AppModel: ObservableObject {
         alerts.announceAheadMeters = prefs.alertAheadMeters
         alerts.rules = { [prefs] m in prefs.rule(for: Prefs.ruleKind(for: m)) }
         location.startUpdating()
+        // The live map asks the server for community plugin alerts
+        // around where this phone actually is, and gets none at all
+        // without saying. Reading it through a closure keeps Backend
+        // free of the model and follows a simulated drive too.
+        LiveData.position = { [weak self] in self?.here }
         camera = .center(Self.defaultCenter, zoom: 8)
         // Every dot has to be on the map by the time the camera finishes
         // its zoom to the driver, which takes a second or two. So the

@@ -268,6 +268,10 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
                 s.location?.let { loc ->
                     val p = LatLon(loc.coordinates.lat, loc.coordinates.lng)
                     _here.value = p
+                    // The live map asks the server for community plugin
+                    // alerts around where this phone actually is, and
+                    // gets none at all without saying.
+                    LiveData.here = p
                     // On a first run there was no last known position to
                     // aim the snapshot at, and on a long drive the
                     // driver leaves the area it holds.

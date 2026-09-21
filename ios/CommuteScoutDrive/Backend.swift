@@ -460,10 +460,35 @@ enum LiveData {
     /// layers use the same name on both sides.
     static let kinds = "incident,closure,chain,fire,plugin"
 
+    /// Where this device is, when it knows. `AppModel` installs it at
+    /// startup, so it follows a simulated drive as readily as a real one.
+    ///
+    /// Community plugin alerts are the reason it exists. The server
+    /// serves those in a small circle around the person asking and to
+    /// nobody else, because an alert only exists because somebody was
+    /// standing somewhere: handing it to a second person would tell them
+    /// where the first one is. A request that does not say where it is
+    /// gets none of them, which is also why they are absent from the
+    /// launch snapshot, a single published file every visitor reads.
+    ///
+    /// Asking is also what makes a plugin cover a place at all. Nothing
+    /// sweeps the country on a schedule, so a phone that never says
+    /// where it is gets community reports nowhere.
+    static var position: (() -> CLLocationCoordinate2D?)?
+
+    private static var at: String? {
+        guard let here = position?(), CLLocationCoordinate2DIsValid(here) else { return nil }
+        // Four places is about ten metres, and the server rounds it to a
+        // tenth of a degree before it stores or forwards it.
+        return String(format: "%.4f,%.4f", here.latitude, here.longitude)
+    }
+
     static func markers(in box: (south: Double, west: Double, north: Double, east: Double),
                         kinds: String = kinds) async throws -> [RoadMarker] {
         let bbox = String(format: "%.3f,%.3f,%.3f,%.3f", box.south, box.west, box.north, box.east)
-        return try await Backend.get("api/mapdata", query: ["bbox": bbox, "kinds": kinds],
+        var query = ["bbox": bbox, "kinds": kinds]
+        if let at { query["at"] = at }
+        return try await Backend.get("api/mapdata", query: query,
                                      as: MapDataResponse.self).markers
     }
 }
