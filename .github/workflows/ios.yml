@@ -33,7 +33,12 @@ jobs:
         run: |
           curl -fsSL -o xcodegen.zip             https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
           unzip -q xcodegen.zip -d xcodegen-dist
-          echo "$PWD/xcodegen-dist/bin" >> "$GITHUB_PATH"
+          # The archive's internal layout is the release's business, not
+          # ours: find the binary rather than assuming where it sits.
+          bin=$(find xcodegen-dist -type f -name xcodegen -perm +111 | head -1)
+          test -n "$bin" || { echo "xcodegen not found in the release"; exit 1; }
+          chmod +x "$bin"
+          echo "$PWD/$(dirname "$bin")" >> "$GITHUB_PATH"
       - name: Generate the project
         working-directory: ios
         run: xcodegen generate
