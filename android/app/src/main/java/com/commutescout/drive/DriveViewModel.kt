@@ -198,7 +198,9 @@ object Engine {
         // difference between markers landing with the camera and
         // several seconds behind it.
         Snapshot.sync(Snapshot.wantedFor(prefs))
-        Snapshot.prime(lastKnownPosition(application))
+        val from = lastKnownPosition(application) ?: prefs.lastCenter
+        Log.i(TAG, if (from == null) "no position yet; the snapshot waits for the first fix" else "snapshot aimed at $from")
+        Snapshot.prime(from)
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
             account.user.collect { u ->
                 if (u != null) { sources.pullFromAccount(); places.syncWithAccount(); push.register() }

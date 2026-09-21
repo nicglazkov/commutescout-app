@@ -68,7 +68,15 @@ object Snapshot {
     private val jobs = HashMap<Bundle, Job>()
     private var wanted = setOf(Bundle.LIVE)
     private var box: DoubleArray? = null
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    // One thread of its own, never the main one. Launch is the busiest
+    // the main thread ever is, between starting the map and drawing the
+    // first frame, and work posted to it there waits for all of that to
+    // finish. Measured on an emulator, that wait was twelve seconds:
+    // longer than the fetch it was delaying. Everything here runs on
+    // this one thread instead, which also keeps the bookkeeping below
+    // free of locks.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private var ticker: Job? = null
 
     /**
@@ -77,17 +85,7 @@ object Snapshot {
      * again whenever the driver leaves the middle of the held area.
      */
     fun prime(center: LatLon?) {
-        if (center != null && !wellInside(center)) {
-            box = doubleArrayOf(center.lat - LAT_PAD, center.lon - LON_PAD, center.lat + LAT_PAD, center.lon + LON_PAD)
-            // The held markers were cut to the old area, so every
-            // bundle is read again against the new one.
-            loadedAt.clear()
-        }
-        if (box == null) return
-        sync(wanted)
-        if (ticker == null) ticker = scope.launch {
-            while (isActive) { delay(MAX_AGE_MS); sync(wanted) }
-        }
+        scope.launch { primeNow(center) }
     }
 
     /**
@@ -95,6 +93,27 @@ object Snapshot {
      * switched off frees its markers; one switched back on loads again.
      */
     fun sync(bundles: Set<Bundle>) {
+        scope.launch { syncNow(bundles) }
+    }
+
+    private fun primeNow(center: LatLon?) {
+        if (center != null && !wellInside(center)) {
+            box = doubleArrayOf(center.lat - LAT_PAD, center.lon - LON_PAD, center.lat + LAT_PAD, center.lon + LON_PAD)
+            // The held markers were cut to the old area, so every
+            // bundle is read again against the new one.
+            loadedAt.clear()
+            // Remembered so the next launch can start loading before it
+            // has a fix, rather than waiting for one.
+            runCatching { Engine.prefs.lastCenter = center }
+        }
+        if (box == null) return
+        syncNow(wanted)
+        if (ticker == null) ticker = scope.launch {
+            while (isActive) { delay(MAX_AGE_MS); syncNow(wanted) }
+        }
+    }
+
+    private fun syncNow(bundles: Set<Bundle>) {
         wanted = bundles
         for (b in Bundle.entries) {
             if (b !in bundles) {

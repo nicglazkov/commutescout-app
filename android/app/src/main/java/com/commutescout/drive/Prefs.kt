@@ -85,6 +85,24 @@ class Prefs(context: Context) {
     var alertRulesRaw by state(p.getString("alerts.rules", "")!!) { p.edit().putString("alerts.rules", it).apply() }
     var useMiles by state(if (p.contains("miles")) p.getBoolean("miles", true) else localeMiles()) { p.edit().putBoolean("miles", it).apply() }
 
+    /**
+     * Roughly where the driver was when the app last held a snapshot.
+     *
+     * It is read at launch to aim the next one, so the dots start
+     * loading immediately rather than waiting for a location fix. It
+     * moves only when the driver leaves the area a snapshot covers,
+     * which is hundreds of kilometres wide, so this is not a trail.
+     */
+    var lastCenter: LatLon?
+        get() {
+            if (!p.contains("last.lat")) return null
+            return LatLon(p.getFloat("last.lat", 0f).toDouble(), p.getFloat("last.lon", 0f).toDouble())
+        }
+        set(v) {
+            if (v == null) p.edit().remove("last.lat").remove("last.lon").apply()
+            else p.edit().putFloat("last.lat", v.lat.toFloat()).putFloat("last.lon", v.lon.toFloat()).apply()
+        }
+
     fun isShown(kind: String) = kind !in hiddenKinds
     fun setShown(kind: String, on: Boolean) { hiddenKinds = if (on) hiddenKinds - kind else hiddenKinds + kind }
 

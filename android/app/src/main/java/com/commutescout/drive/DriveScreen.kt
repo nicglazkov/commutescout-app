@@ -230,8 +230,11 @@ fun DriveScreen(model: DriveViewModel) {
                 model.viewCenter = LatLon(pos.target.latitude, pos.target.longitude)
                 // A driver who never granted the location permission,
                 // or who panned away from home, still gets the dots for
-                // wherever the map is looking.
-                Snapshot.prime(LatLon(pos.target.latitude, pos.target.longitude))
+                // wherever the map is looking. Not while the map is
+                // still on its opening camera though: that is the whole
+                // world, centred nowhere, and aiming a snapshot at it
+                // throws away the one already loaded.
+                if (pos.zoom >= 5.5) Snapshot.prime(LatLon(pos.target.latitude, pos.target.longitude))
                 model.sources.view(LatLon(pos.target.latitude, pos.target.longitude))
             }
         }
@@ -259,7 +262,7 @@ fun DriveScreen(model: DriveViewModel) {
             ),
         ) {
             if (prefs.traffic) TrafficLayer()
-            MarkerLayers(allMarkers.filter { prefs.isShown(it.kind) }) { key -> model.showMarker(key) }
+            MarkerLayers(allMarkers.filter { prefs.isShown(it.kind) && !it.blankSign }) { key -> model.showMarker(key) }
             (state as? DriveState.Found)?.let { PinLayer(it.place) }
             if (state is DriveState.Choosing) chosenRoute?.let { RouteLine(it) }
         }
@@ -808,7 +811,7 @@ private fun WeatherReadings(marker: RoadMarker) {
         if (wind != null || gust != null) {
             val head = wind?.let { speed(it) } ?: "calm"
             // A direction on calm wind is noise, so it is left off.
-            val from = marker.wind_dir?.takeIf { (wind ?: 0.0) >= 1.0 }?.let { " from the " + compass(it) } ?: ""
+            val from = marker.windFrom?.takeIf { (wind ?: 0.0) >= 1.0 }?.let { " from the $it" } ?: ""
             val gusting = gust?.let { ", gusting ${speed(it)}" } ?: ""
             add("Wind" to head + from + gusting)
         }
@@ -820,12 +823,6 @@ private fun WeatherReadings(marker: RoadMarker) {
     }
     if (readings.isEmpty()) { Note("This station is online. It has no readings right now."); return }
     readings.forEach { (label, value) -> Reading(label, value) }
-}
-
-/** The eight points of the compass a wind direction falls into. */
-private fun compass(degrees: Double): String {
-    val points = listOf("north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest")
-    return points[(Math.round(degrees / 45.0).toInt() % 8 + 8) % 8]
 }
 
 /** What the corridor costs now, and where each price applies. */

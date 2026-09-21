@@ -66,6 +66,12 @@ object Search {
         Backend.get<GeocodeResponse>("/api/geocode", mapOf("q" to q, "limit" to "5")).candidates
 }
 
+/** The sixteen points a wind direction is reported as. */
+private val COMPASS = listOf(
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+)
+
 /** One price band on a toll corridor: what an entry point costs to use. */
 @Serializable
 data class TollEntry(
@@ -146,7 +152,9 @@ data class RoadMarker(
     val pave_c: Double? = null,
     val wind: Double? = null,
     val gust: Double? = null,
-    val wind_dir: Double? = null,
+    // Stations report the direction either in degrees or as a compass
+    // abbreviation, so it is read loosely and normalised below.
+    val wind_dir: JsonElement? = null,
     val vis_m: Double? = null,
     val rh: Double? = null,
     val precip: String? = null,
@@ -191,11 +199,27 @@ data class RoadMarker(
     val corridorLines: List<List<LatLon>>
         get() = segs.orEmpty().map { seg -> seg.mapNotNull { pair(it) } }.filter { it.size >= 2 }
 
+    /**
+     * A sign displaying nothing. Most message signs are blank most of
+     * the time, and the website leaves them off the map unless they are
+     * asked for, so the app does the same rather than covering every
+     * highway in dots that say nothing.
+     */
+    val blankSign: Boolean get() = kind == "sign" && signLines.isEmpty()
+
     /** The sign's board, split out of the message when the server did not. */
     val signLines: List<String>
         get() = lines?.takeIf { it.isNotEmpty() }
             ?: message?.takeIf { it.isNotBlank() }?.split(" / ")?.map { it.trim() }?.filter { it.isNotEmpty() }
             ?: emptyList()
+
+    /** Where the wind comes from, as a compass point, or null when unknown. */
+    val windFrom: String?
+        get() {
+            val reported = (wind_dir as? JsonPrimitive)?.content ?: return null
+            reported.toDoubleOrNull()?.let { return COMPASS[((Math.round(it / 22.5).toInt() % 16) + 16) % 16] }
+            return reported.uppercase().takeIf { it in COMPASS }
+        }
 
     /** Route and direction as one phrase, for roadside markers. */
     val roadLine: String?

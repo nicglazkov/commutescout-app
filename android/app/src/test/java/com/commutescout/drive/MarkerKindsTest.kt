@@ -62,6 +62,22 @@ class MarkerKindsTest {
         assertEquals(listOf("I-80"), m.detailLines)
     }
 
+    /**
+     * Some stations report the wind direction in degrees and others as
+     * a compass abbreviation, in the same file. Reading it as a number
+     * threw on the first station that sent "N" and lost the whole
+     * bundle with it.
+     */
+    @Test fun windDirectionArrivesAsDegreesOrAsCompassPoints() {
+        assertEquals("N", parse("""{"kind":"rwis","lat":37.0,"lon":-122.0,"wind_dir":10.0}""").windFrom)
+        assertEquals("ENE", parse("""{"kind":"rwis","lat":37.0,"lon":-122.0,"wind_dir":70}""").windFrom)
+        assertEquals("N", parse("""{"kind":"rwis","lat":37.0,"lon":-122.0,"wind_dir":355.0}""").windFrom)
+        assertEquals("SSW", parse("""{"kind":"rwis","lat":37.0,"lon":-122.0,"wind_dir":"SSW"}""").windFrom)
+        assertEquals("NW", parse("""{"kind":"rwis","lat":37.0,"lon":-122.0,"wind_dir":"nw"}""").windFrom)
+        assertNull(parse("""{"kind":"rwis","lat":37.0,"lon":-122.0,"wind_dir":"VRB"}""").windFrom)
+        assertNull(parse("""{"kind":"rwis","lat":37.0,"lon":-122.0}""").windFrom)
+    }
+
     @Test fun tollReadsItsPriceRangeAndEntries() {
         val m = parse(
             """{"kind":"toll","corridor":"I-680 SB","src":"511.org","lat":37.88,"lon":-122.05,"pricing":"live",
