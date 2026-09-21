@@ -216,11 +216,15 @@ struct RoadMarker: Decodable, Identifiable, Hashable {
         case asOf = "as_of"
     }
 
-    /// "I-80 East, Vacaville": the road, the direction it faces and the
-    /// place it is near. Cameras and message signs are located this way.
+    /// "I-80 East, Vacaville": the road a camera watches, the direction
+    /// it faces and the place it is near. Agencies routinely name a
+    /// camera after the place it is near, so the place is left off when
+    /// the title already says it.
     var whereLine: String {
         let road = [route, direction].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
-        return [road, near].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        let title = displayTitle.lowercased()
+        let place = near.flatMap { $0.isEmpty || title.contains($0.lowercased()) ? nil : $0 }
+        return [road, place].compactMap { $0 }.joined(separator: ", ")
     }
 
     /// What a toll costs right now: one price, or the span across the
@@ -270,7 +274,8 @@ struct RoadMarker: Decodable, Identifiable, Hashable {
             if !whereLine.isEmpty { out.append(whereLine) }
             out.append(stream == nil ? "Still image, not video" : "Live video available")
         } else if kind == "sign" {
-            if !whereLine.isEmpty { out.append(whereLine) }
+            // The title already carries the road and the direction.
+            if let near, !near.isEmpty { out.append(near) }
             if blank == true || signLines.isEmpty { out.append("Blank right now") }
         } else if kind == "rwis" {
             if let route, !route.isEmpty { out.append(route) }
