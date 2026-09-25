@@ -476,6 +476,12 @@ enum LiveData {
     /// where it is gets community reports nowhere.
     static var position: (() -> CLLocationCoordinate2D?)?
 
+    /// The stretch of route ahead of a navigating phone, installed by
+    /// `AppModel` beside `position`. The server serves community alerts
+    /// along it to this phone only, and keeps it warm for the relay so
+    /// they are there before the driver is. Empty when not navigating.
+    static var routeAhead: (() -> [CLLocationCoordinate2D])?
+
     private static var at: String? {
         guard let here = position?(), CLLocationCoordinate2DIsValid(here) else { return nil }
         // Four places is about ten metres, and the server rounds it to a
@@ -488,6 +494,13 @@ enum LiveData {
         let bbox = String(format: "%.3f,%.3f,%.3f,%.3f", box.south, box.west, box.north, box.east)
         var query = ["bbox": bbox, "kinds": kinds]
         if let at { query["at"] = at }
+        if let ahead = routeAhead?(), ahead.count >= 2 {
+            // Three places is about a hundred metres; the server snaps it
+            // further before anything leaves for a plugin.
+            query["ahead"] = ahead.prefix(40)
+                .map { String(format: "%.3f,%.3f", $0.latitude, $0.longitude) }
+                .joined(separator: ";")
+        }
         return try await Backend.get("api/mapdata", query: query,
                                      as: MapDataResponse.self).markers
     }

@@ -123,6 +123,7 @@ final class AppModel: ObservableObject {
         // without saying. Reading it through a closure keeps Backend
         // free of the model and follows a simulated drive too.
         LiveData.position = { [weak self] in self?.here }
+        LiveData.routeAhead = { [weak self] in self?.alerts.stretchAhead() ?? [] }
         camera = .center(Self.defaultCenter, zoom: 8)
         // Every dot has to be on the map by the time the camera finishes
         // its zoom to the driver, which takes a second or two. So the

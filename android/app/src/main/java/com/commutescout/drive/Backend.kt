@@ -372,6 +372,15 @@ object LiveData {
     @Volatile
     var here: LatLon? = null
 
+    /**
+     * The stretch of route ahead of a navigating phone, set by
+     * [DriveViewModel] on every fix. The server serves community alerts
+     * along it to this phone only, and keeps it warm for the relay so
+     * they are there before the driver is. Null when not navigating.
+     */
+    @Volatile
+    var ahead: List<LatLon>? = null
+
     suspend fun markers(south: Double, west: Double, north: Double, east: Double, kinds: String = KINDS): List<RoadMarker> {
         val query = mutableMapOf(
             "bbox" to "%.4f,%.4f,%.4f,%.4f".format(south, west, north, east),
@@ -380,6 +389,13 @@ object LiveData {
         // Four places is about ten metres, and the server rounds it to a
         // tenth of a degree before it stores or forwards it.
         here?.let { query["at"] = "%.4f,%.4f".format(it.lat, it.lon) }
+        ahead?.takeIf { it.size >= 2 }?.let { pts ->
+            // Three places is about a hundred metres; the server snaps it
+            // further before anything leaves for a plugin.
+            query["ahead"] = pts.take(40).joinToString(";") { p ->
+                String.format(java.util.Locale.US, "%.3f,%.3f", p.lat, p.lon)
+            }
+        }
         return Backend.get<MapData>("/api/mapdata", query).markers
     }
 }

@@ -168,6 +168,32 @@ class AlertsEngine(context: Context) {
         _hereAlong.value = 0.0
     }
 
+    /**
+     * The route ahead of the driver as a sparse line: a vertex every
+     * [every] metres for the next [limit] metres, starting just behind
+     * where the driver is. Empty when no route is running.
+     *
+     * The server keeps this stretch warm for the community plugins and
+     * serves alerts along it to this phone alone. It never includes the
+     * destination: an hour of road ahead is all anyone needs to know.
+     */
+    fun stretchAhead(limit: Double = 60_000.0, every: Double = 5_000.0): List<LatLon> {
+        if (route.size < 2 || cumulative.size != route.size) return emptyList()
+        val here = _hereAlong.value
+        val out = ArrayList<LatLon>()
+        var lastAt = -every
+        for (i in lastSegment until route.size) {
+            val d = cumulative[i]
+            if (d < here - 500) continue
+            if (d - here > limit) break
+            if (d - lastAt >= every) {
+                out.add(route[i])
+                lastAt = d
+            }
+        }
+        return out
+    }
+
     fun update(position: LatLon) {
         if (route.isEmpty()) return
         val hit = along(route, cumulative, position, lastSegment)

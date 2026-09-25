@@ -60,6 +60,29 @@ final class AlertsEngine: ObservableObject {
         }
     }
 
+    /// The route ahead of the driver as a sparse line: a vertex every
+    /// `every` metres for the next `limit` metres, starting just behind
+    /// where the driver is. Empty when no route is running.
+    ///
+    /// The server keeps this stretch warm for the community plugins and
+    /// serves alerts along it to this phone alone. It never includes the
+    /// destination: an hour of road ahead is all anyone needs to know.
+    func stretchAhead(limit: Double = 60_000, every: Double = 5_000) -> [CLLocationCoordinate2D] {
+        guard route.count > 1, cumulative.count == route.count else { return [] }
+        var out: [CLLocationCoordinate2D] = []
+        var lastAt = -every
+        for i in lastSegment ..< route.count {
+            let d = cumulative[i]
+            if d < hereAlong - 500 { continue }
+            if d - hereAlong > limit { break }
+            if d - lastAt >= every {
+                out.append(route[i])
+                lastAt = d
+            }
+        }
+        return out
+    }
+
     func stop() {
         timer?.invalidate()
         timer = nil
