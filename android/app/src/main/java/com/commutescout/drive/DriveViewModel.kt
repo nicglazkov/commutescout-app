@@ -277,6 +277,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
                     // driver leaves the area it holds.
                     Snapshot.prime(p)
                     if (s.isNavigating()) Engine.alerts.update(p)
+                    LiveData.ahead = if (s.isNavigating()) Engine.alerts.stretchAhead() else null
                 }
             }
         }
