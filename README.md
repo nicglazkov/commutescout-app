@@ -6,7 +6,7 @@ Both apps talk only to [commutescout.com](https://commutescout.com). Routing, ma
 
 ## Install
 
-- **iOS**: TestFlight. Testers get an invitation by email from App Store Connect.
+- **iOS**: the public TestFlight beta at https://testflight.apple.com/join/1CbutYdy. Open the link on the phone and tap Install.
   For a quick check on a paired phone, `DEVICE=<id> scripts/ios_build.sh device` installs an Ad Hoc build over USB or Wi-Fi in a few minutes (`xcrun devicectl list devices` shows the id).
 - **Android**: download the APK from the latest [release](https://github.com/nicglazkov/commutescout-app/releases), open it on the phone, and allow installing from that source when asked.
 
@@ -27,6 +27,19 @@ Both apps talk only to [commutescout.com](https://commutescout.com). Routing, ma
 | Alerts nearby, Watch areas, Ask about the roads | yes | yes |
 | Community sources: public Flare plugins and your own private ones by URL | yes | yes |
 | Light and dark mode, miles or kilometers | yes | yes |
+| Without a signal: guidance continues, saved road reports by age, resume a trip after a restart, reports sent later | yes | yes |
+
+## Without a signal
+
+A drive does not stop at a dead zone. What each part does with no network:
+
+- **Guidance**: turn-by-turn, the voice and the speed limit run on the phone from the route already loaded, so they carry on. A reroute needs the server: the app says so ("No signal to reroute") instead of promising one, and reroutes as soon as the signal is back.
+- **Road reports**: every download of the live snapshot is also saved on the phone. With no signal the map and the spoken alerts use the saved copy, and a banner says how old it is. Each kind expires on its own clock: a community report after 30 minutes, an incident after an hour, a chain control after 6 hours, a roadwork closure after 12, and nothing saved is used after 24 hours.
+- **A restart mid-drive**: the running trip is saved when it starts and removed when it ends. Opening the app again offers to resume it, and resuming works offline.
+- **Reports**: one made with no signal is queued and sent when the signal returns, if that is within 15 minutes. The server stamps a report with the time it arrives, so an older one is dropped rather than shown as new.
+- **Search and new routes** need a signal. Saved and recent places still match, and the error says why a search or route failed rather than "nothing found".
+
+The base map uses whatever tiles the map library already cached. Downloading map areas ahead of a drive is a separate, later step.
 
 ## Layout
 

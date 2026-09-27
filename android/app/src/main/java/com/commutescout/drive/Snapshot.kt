@@ -1,6 +1,7 @@
 package com.commutescout.drive
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,6 +22,12 @@ import kotlinx.serialization.encoding.CompositeDecoder
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.json.decodeFromStream
 import okhttp3.Request
+import java.io.FilterInputStream
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.zip.Deflater
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 
 /**
  * The nationwide marker snapshots the website boots from.
@@ -47,6 +54,12 @@ object Snapshot {
     /** A held bundle is re-read at this age, so signs and prices stay live. */
     private const val MAX_AGE_MS = 300_000L
 
+    /**
+     * A bundle that failed, or that came from the copy saved on the
+     * phone, is tried again this soon rather than on every location fix.
+     */
+    private const val RETRY_MS = 30_000L
+
     enum class Bundle(val file: String) {
         /** Incidents, closures, chain controls, wildfires, tolls and community reports. */
         LIVE("live.json.gz"),
@@ -65,6 +78,13 @@ object Snapshot {
 
     private val held = HashMap<Bundle, List<RoadMarker>>()
     private val loadedAt = HashMap<Bundle, Long>()
+    /** When each held bundle was current, and which ones came from the saved copy. */
+    private val asOfMs = HashMap<Bundle, Long>()
+    private val fromDisk = HashSet<Bundle>()
+    private val _asOf = MutableStateFlow<Long?>(null)
+
+    /** How new the live bundle is: shown in the offline banner, and what expiry is measured from. */
+    val asOf = _asOf.asStateFlow()
     private val jobs = HashMap<Bundle, Job>()
     private var wanted = setOf(Bundle.LIVE)
     private var box: DoubleArray? = null
@@ -148,24 +168,43 @@ object Snapshot {
     private fun start(b: Bundle) {
         val target = box ?: return
         loadedAt[b] = System.currentTimeMillis()
+        // The saved copy stands in only when nothing better is held: a
+        // bundle already fetched this session is newer than any file.
+        val allowSaved = held[b] == null
         jobs[b] = scope.launch {
             val began = System.currentTimeMillis()
-            val found = runCatching { load(b, target) }.getOrElse { e ->
+            val found = runCatching { load(b, target, allowSaved) }.getOrElse { e ->
+                if (e is CancellationException) throw e
                 Log.w(TAG, "${b.file} did not load (${e.message})")
-                loadedAt.remove(b)
+                loadedAt[b] = System.currentTimeMillis() - MAX_AGE_MS + RETRY_MS
                 return@launch
             }
             // The area can move while a bundle is in flight; a reply for
             // an area the driver already left is not published.
             if (box !== target) return@launch
-            held[b] = found
+            held[b] = found.markers
+            asOfMs[b] = found.asOf
+            if (found.saved) {
+                fromDisk.add(b)
+                loadedAt[b] = System.currentTimeMillis() - MAX_AGE_MS + RETRY_MS
+            } else fromDisk.remove(b)
             publish()
-            Log.i(TAG, "${b.file}: ${found.size} markers nearby in ${System.currentTimeMillis() - began} ms")
+            Log.i(TAG, "${b.file}: ${found.markers.size} markers nearby in ${System.currentTimeMillis() - began} ms" +
+                if (found.saved) ", from the copy saved at ${OfflineText.time(found.asOf)}" else "")
+        }
+    }
+
+    /** The signal is back: anything that failed or came from the saved copy is fetched now. */
+    fun reconnected() {
+        scope.launch {
+            for (b in wanted) if (b in fromDisk || held[b] == null) { jobs.remove(b)?.cancel(); loadedAt.remove(b) }
+            syncNow(wanted)
         }
     }
 
     private fun publish() {
         _markers.value = held.values.flatten()
+        _asOf.value = asOfMs[Bundle.LIVE] ?: asOfMs.values.maxOrNull()
     }
 
     /** True when the area held still has room around [center] to pan into. */
@@ -175,16 +214,65 @@ object Snapshot {
             center.lon - b[1] > LON_PAD / 2 && b[3] - center.lon > LON_PAD / 2
     }
 
+    private class Loaded(val markers: List<RoadMarker>, val asOf: Long, val saved: Boolean)
+
     // OkHttp asks for gzip and unwraps it, so a plain GET of a .gz
     // object hands back JSON. Reading it as a stream means the file is
     // never a 4 MB string in memory.
+    //
+    // The same bytes are written to the phone as they are read, gzipped
+    // at the fastest level, so the next launch without a signal has the
+    // last good copy. Only a complete download replaces the saved one.
     @OptIn(ExperimentalSerializationApi::class)
-    private suspend fun load(b: Bundle, box: DoubleArray): List<RoadMarker> = withContext(Dispatchers.IO) {
-        val req = Request.Builder().url("$BASE/${b.file}").header("Accept", "application/json").build()
-        Backend.http.newCall(req).execute().use { r ->
-            if (!r.isSuccessful) throw BackendError("HTTP ${r.code} for ${b.file}", r.code)
-            Backend.json.decodeFromStream(NearbyMarkers(box), r.body.byteStream())
+    private suspend fun load(b: Bundle, box: DoubleArray, allowSaved: Boolean): Loaded = withContext(Dispatchers.IO) {
+        val file = OfflineStore.cache("snapshot-${b.name.lowercase()}.json.gz")
+        try {
+            val req = Request.Builder().url("$BASE/${b.file}").header("Accept", "application/json").build()
+            Backend.http.newCall(req).execute().use { r ->
+                if (!r.isSuccessful) throw BackendError("HTTP ${r.code} for ${b.file}", r.code)
+                var found: List<RoadMarker> = emptyList()
+                OfflineStore.write(file) { raw ->
+                    object : GZIPOutputStream(raw) { init { def.setLevel(Deflater.BEST_SPEED) } }.use { gz ->
+                        val tee = TeeInputStream(r.body.byteStream(), gz)
+                        found = Backend.json.decodeFromStream(NearbyMarkers(box), tee)
+                        tee.drain()
+                    }
+                }
+                Loaded(found, System.currentTimeMillis(), false)
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException || !allowSaved) throw e
+            val age = System.currentTimeMillis() - file.lastModified()
+            if (!file.exists() || age > ShelfLife.MAX_AGE_MS) throw e
+            val saved = GZIPInputStream(file.inputStream().buffered()).use { Backend.json.decodeFromStream(NearbyMarkers(box), it) }
+            Log.i(TAG, "${b.file}: no answer (${e.message}), using the copy saved ${age / 1000} s ago")
+            Loaded(ShelfLife.prune(saved, file.lastModified()), file.lastModified(), true)
         }
+    }
+}
+
+/** Copies everything read through it to [copy]: the download and the saved file in one pass. */
+private class TeeInputStream(source: InputStream, private val copy: OutputStream) : FilterInputStream(source) {
+    override fun read(): Int = super.read().also { if (it >= 0) copy.write(it) }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int =
+        super.read(b, off, len).also { if (it > 0) copy.write(b, off, it) }
+
+    override fun skip(n: Long): Long {
+        val buf = ByteArray(8192)
+        var left = n
+        while (left > 0) {
+            val r = read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+            if (r < 0) break
+            left -= r
+        }
+        return n - left
+    }
+
+    /** Whatever the reader left unread still belongs in the copy. */
+    fun drain() {
+        val buf = ByteArray(8192)
+        while (read(buf, 0, buf.size) >= 0) Unit
     }
 }
 

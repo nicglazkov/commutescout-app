@@ -54,18 +54,52 @@ class MarkerStore {
     // minutes, then double each time up to ten; a success resets it.
     private var backoffMs = 0L
     private var holdUntil = 0L
+    /** When the viewport answer was fetched, and a minute tick so expiry is re-checked without a signal. */
+    private val _liveAt = MutableStateFlow<Long?>(null)
+    private val _tick = MutableStateFlow(0L)
 
-    /** Everything to draw: the viewport answer, topped up from the snapshot. */
+    /** How new the markers on screen are: shown in the offline banner. */
+    val asOf: StateFlow<Long?> = combine(_liveAt, Snapshot.asOf) { a, b -> listOfNotNull(a, b).maxOrNull() }
+        .stateIn(scope, SharingStarted.Eagerly, null)
+
+    /**
+     * Everything to draw: the viewport answer, topped up from the
+     * snapshot. Without a signal nothing gets newer, so each source is
+     * cut by age for its kind: a police report goes after half an hour,
+     * a roadwork closure lasts the day. Online, both are minutes old and
+     * nothing is cut.
+     */
     val markers: StateFlow<List<RoadMarker>> =
-        combine(_live, Snapshot.markers, _view) { live, snap, view -> merge(live, snap, view) }
-            .stateIn(scope, SharingStarted.Eagerly, emptyList())
+        combine(_live, Snapshot.markers, _view, _tick, Snapshot.asOf) { live, snap, view, _, snapAt ->
+            merge(ShelfLife.prune(live, _liveAt.value), ShelfLife.prune(snap, snapAt), view)
+        }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     init {
-        scope.launch { while (isActive) { delay(60_000); if (System.currentTimeMillis() >= holdUntil) refresh(force = true) } }
+        scope.launch {
+            while (isActive) {
+                delay(60_000)
+                _tick.value += 1
+                if (Connectivity.online.value && System.currentTimeMillis() >= holdUntil) refresh(force = true)
+            }
+        }
         scope.launch { markers.collect { byKey = it.associateBy { m -> m.key } } }
+        // The signal is back: catch up at once rather than at the next tick.
+        Connectivity.onReconnect { backoffMs = 0L; holdUntil = 0L; refresh(force = true) }
     }
 
     fun marker(key: String): RoadMarker? = byKey[key]
+
+    /**
+     * Everything held, not cut to the view: the last viewport answer and
+     * the whole snapshot area, each less what has gone stale. What the
+     * spoken alerts fall back on when their own fetch gets no answer; the
+     * route runs well past the edge of the screen.
+     */
+    fun held(): List<RoadMarker> {
+        val live = ShelfLife.prune(_live.value, _liveAt.value)
+        val seen = live.mapTo(HashSet()) { it.key }
+        return live + ShelfLife.prune(Snapshot.markers.value, Snapshot.asOf.value).filter { it.key !in seen }
+    }
 
     /**
      * Merge the two sources.
@@ -122,6 +156,7 @@ class MarkerStore {
                 }
                 _live.value = found
                 fetchedAt = System.currentTimeMillis()
+                _liveAt.value = fetchedAt
                 backoffMs = 0L; holdUntil = 0L
             } finally {
                 _loading.value = false

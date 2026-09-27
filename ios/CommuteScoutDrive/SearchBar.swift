@@ -173,10 +173,16 @@ struct SearchBar: View {
         }
         searching = true
         defer { searching = false }
-        if let found = try? await Search.geocode(trimmed), let first = found.first {
-            pick(Place(name: first.name, coordinate: first.coordinate, kind: .recent))
-        } else {
-            model.errorMessage = "Nothing found for \"\(trimmed)\". Try adding a city."
+        do {
+            if let first = try await Search.geocode(trimmed).first {
+                pick(Place(name: first.name, coordinate: first.coordinate, kind: .recent))
+            } else {
+                model.errorMessage = "Nothing found for \"\(trimmed)\". Try adding a city."
+            }
+        } catch {
+            // No answer is not the same as no match.
+            model.errorMessage = !model.online || Connectivity.isOffline(error) ? OfflineText.search
+                : "Search is not answering right now. Try again in a moment."
         }
     }
 

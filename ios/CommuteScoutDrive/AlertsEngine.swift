@@ -31,6 +31,12 @@ final class AlertsEngine: ObservableObject {
     var announceAheadMeters = 1500.0
     /// Per-kind rules from Settings; nil means the one distance above.
     var rules: ((RoadMarker) -> Prefs.AlertRule)?
+    /// What the map is showing and how new it is. Used when the route's
+    /// own fetch cannot reach the server, so a trip started without a
+    /// signal still announces what the phone already knows.
+    var fallback: (() -> (markers: [RoadMarker], asOf: Date?))?
+    /// When the list in `all` was current.
+    private var allAsOf: Date?
 
     private var route: [CLLocationCoordinate2D] = []
     private var cumulative: [Double] = []
@@ -54,6 +60,7 @@ final class AlertsEngine: ObservableObject {
         box = (s - 0.05, w - 0.05, n + 0.05, e + 0.05)
         announced = []
         repeated = []
+        allAsOf = nil
         Task { await refresh() }
         timer = Timer.scheduledTimer(withTimeInterval: Self.refreshSeconds, repeats: true) { [weak self] _ in
             Task { await self?.refresh() }
@@ -135,9 +142,38 @@ final class AlertsEngine: ObservableObject {
         synth.speak(utterance)
     }
 
+    /// Fetch again now: the signal came back.
+    func refreshNow() {
+        guard box != nil else { return }
+        Task { await refresh() }
+    }
+
     private func refresh() async {
         guard let box else { return }
-        guard let markers = try? await LiveData.markers(in: box, kinds: LiveData.kinds) else { return }
+        let markers: [RoadMarker]
+        let asOf: Date
+        do {
+            markers = try await LiveData.markers(in: box, kinds: LiveData.kinds)
+            asOf = Date()
+        } catch {
+            // No answer. A list fetched earlier on this trip covers the
+            // whole route, so it is kept, less whatever has gone stale
+            // for its kind since. With none, because the trip began
+            // without a signal, the map's own markers stand in.
+            if let was = allAsOf, !all.isEmpty {
+                let age = Date().timeIntervalSince(was)
+                let kept = age > 15 * 60 ? all.filter { ShelfLife.keep($0.marker.kind, age: age) } : all
+                if kept.count != all.count {
+                    DriveLog.note("alerts: offline, \(all.count - kept.count) gone stale on the route")
+                    all = kept
+                }
+                return
+            }
+            guard let saved = fallback?(), !saved.markers.isEmpty else { return }
+            markers = ShelfLife.prune(saved.markers, asOf: saved.asOf)
+            asOf = saved.asOf ?? Date()
+            DriveLog.note("alerts: no answer from the server, using \(markers.count) markers the map already had")
+        }
         let pts = route, cum = cumulative
         let found: [Upcoming] = await Task.detached(priority: .utility) {
             markers.compactMap { m in
@@ -153,6 +189,7 @@ final class AlertsEngine: ObservableObject {
             }.sorted { $0.alongMeters < $1.alongMeters }
         }.value
         all = found
+        allAsOf = asOf
     }
 
     // MARK: geometry (plain functions, safe off the main actor)

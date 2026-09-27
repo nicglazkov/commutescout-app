@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.util.Locale
@@ -78,6 +79,11 @@ object Engine {
     val markers = MarkerStore()
     /** True between Start and Stop: a reroute that lands after Stop is dropped. */
     @Volatile var tripActive = false
+    /** Where the running trip goes, so a reroute can be saved with it. */
+    @Volatile var tripPlace: Place? = null
+    /** A line for the screen to show as a toast, from work that ran with no screen attached. */
+    val notice = MutableStateFlow<String?>(null)
+    private val flushLock = kotlinx.coroutines.sync.Mutex()
 
     val location: NavigationLocationProvider by lazy {
         NavigationLocationProvider(
@@ -121,7 +127,7 @@ object Engine {
                     is RouteRequest.HttpGet -> { b.url(req.url); req.headers.forEach { (k, v) -> b.header(k, v) } }
                 }
                 Backend.http.newCall(b.build()).execute().use { r ->
-                    if (!r.isSuccessful) throw BackendError("Routing answered HTTP ${r.code}.")
+                    if (!r.isSuccessful) throw BackendError("Routing answered HTTP ${r.code}.", r.code)
                     r.body.bytes()
                 }
             }
@@ -156,6 +162,7 @@ object Engine {
                 c.replaceRoute(r)
                 // The alerts engine must follow the new geometry.
                 alerts.start(r.geometry.map { LatLon(it.lat, it.lng) })
+                tripPlace?.let { TripStore.save(r, it) }
             }
         }
         core.spokenInstructionObserver = tts
@@ -178,6 +185,7 @@ object Engine {
 
     fun init(application: Application) {
         app = application
+        Connectivity.start(application)
         prefs = Prefs(application)
         places = PlaceStore(application)
         alerts = AlertsEngine(application)
@@ -186,6 +194,14 @@ object Engine {
         alerts.spoken = prefs.spokenAlerts
         alerts.announceAheadMeters = prefs.alertAheadMeters
         alerts.rules = { m -> prefs.rule(prefs.ruleKind(m)) }
+        alerts.fallback = { markers.held() to markers.asOf.value }
+        // The signal is back: the snapshot, spoken alerts and any report
+        // made meanwhile all catch up. The marker store does its own.
+        Connectivity.onReconnect {
+            Snapshot.reconnected()
+            alerts.refreshNow()
+            kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch { flushReports()?.let { notice.value = it } }
+        }
         // Account sync: plugin choices and places follow the account.
         sources.tokenProvider = { account.token() }
         places.tokenProvider = { account.token() }
@@ -208,6 +224,38 @@ object Engine {
         }
         Log.i(TAG, "engine ready")
     }
+
+    /**
+     * Reports made without a signal, sent now. One that waited past
+     * [PendingReport.MAX_AGE_MS] is dropped instead, because the server
+     * would stamp it as new. Returns what to tell the driver, if anything.
+     */
+    suspend fun flushReports(): String? = flushLock.withLock {
+        val pending = PendingReport.all()
+        if (pending.isEmpty() || !Connectivity.online.value) return@withLock null
+        val token = account.token() ?: return@withLock null
+        val sent = ArrayList<PendingReport>(); val waiting = ArrayList<PendingReport>(); var dropped = 0
+        for (r in pending) {
+            if (System.currentTimeMillis() - r.createdAt > PendingReport.MAX_AGE_MS) {
+                dropped++; Log.i(TAG, "report ${r.kind} from ${OfflineText.time(r.createdAt)} dropped: too old to send"); continue
+            }
+            try {
+                Reporter.send(r.kind, r.lat, r.lon, r.heading, r.note, token)
+                sent.add(r)
+            } catch (e: Exception) {
+                if (Connectivity.isOffline(e)) waiting.add(r) else Log.w(TAG, "queued report refused: ${e.message}")
+            }
+        }
+        PendingReport.store(waiting)
+        if (sent.isNotEmpty()) markers.refresh(true)
+        when {
+            sent.size == 1 -> "Your report from ${OfflineText.time(sent[0].createdAt)} was sent."
+            sent.size > 1 -> "${sent.size} reports you made offline were sent."
+            dropped == 1 -> "A report made offline was too old to send."
+            dropped > 1 -> "$dropped reports made offline were too old to send."
+            else -> null
+        }
+    }
 }
 
 class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedOSRMAnnotationPublisher()) {
@@ -222,6 +270,9 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     val simulating = MutableStateFlow(false)
     private val _selectedMarker = MutableStateFlow<RoadMarker?>(null)
     val selectedMarker = _selectedMarker.asStateFlow()
+    /** A trip that was running when the app last closed, offered back. */
+    private val _resumable = MutableStateFlow(TripStore.load())
+    val resumable = _resumable.asStateFlow()
     var isDark by mutableStateOf(false)
     val places get() = Engine.places
     val alerts get() = Engine.alerts
@@ -263,8 +314,13 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), NavigationUiState.empty())
 
     init {
+        _resumable.value?.let { Log.i("DriveViewModel", "trip to ${it.place.shortName} was running when the app closed; offering it back") }
+        viewModelScope.launch { Engine.notice.collect { n -> if (n != null) { toast(n); Engine.notice.value = null } } }
+        viewModelScope.launch { Engine.flushReports()?.let { toast(it) } }
         viewModelScope.launch {
             navigationUiState.collect { s ->
+                // Arrived: nothing left to resume.
+                if (s.tripState is uniffi.ferrostar.TripState.Complete) TripStore.clear()
                 s.location?.let { loc ->
                     val p = LatLon(loc.coordinates.lat, loc.coordinates.lng)
                     _here.value = p
@@ -291,6 +347,22 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     }
 
     fun clearError() { _error.value = null }
+
+    fun showError(text: String) { _error.value = text }
+
+    /** Take the saved trip back up; guidance needs only the saved route, not a signal. */
+    fun resume() {
+        val trip = _resumable.value ?: return
+        if (_here.value == null && !simulating.value) { _error.value = "Waiting for your location. Try again in a moment."; return }
+        _resumable.value = null
+        Log.i("DriveViewModel", "resume trip to ${trip.place.shortName}, saved ${(System.currentTimeMillis() - trip.startedAt) / 1000} s ago")
+        start(trip.route, trip.place)
+    }
+
+    fun dismissResume() {
+        _resumable.value = null
+        TripStore.clear()
+    }
 
     fun applyPrefs() {
         Engine.alerts.spoken = prefs.spokenAlerts
@@ -352,7 +424,11 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
 
     fun routes(place: Place) {
         val from = origin?.let { LatLon(it.lat, it.lon) } ?: if (simulating.value) LatLon(37.3382, -121.8863) else _here.value
-        if (from == null) { _error.value = "Waiting for your location."; return }
+        if (from == null) {
+            _error.value = if (!_hasPermission.value) "Location is off for CommuteScout Drive. Turn it on in Settings to navigate."
+                else "Waiting for your location."
+            return
+        }
         _state.value = DriveState.Routing
         _selectedMarker.value = null
         viewModelScope.launch {
@@ -366,7 +442,13 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
                 if (found.isEmpty()) throw BackendError("No route found. Try a different destination.")
                 _state.value = DriveState.Choosing(found, place)
             } catch (e: Exception) {
-                _error.value = e.message?.takeIf { it.isNotBlank() } ?: "Could not get a route. Check your connection and try again."
+                Log.w("DriveViewModel", "routes failed: $e")
+                // The raw exception ("Unable to resolve host ...") is for the log, not the driver.
+                _error.value = when {
+                    e is BackendError && e.code == 0 && !e.message.isNullOrBlank() -> e.message
+                    !Connectivity.online.value || Connectivity.isOffline(e) -> OfflineText.ROUTES
+                    else -> "Could not get a route. Try again in a moment."
+                }
                 _state.value = DriveState.Found(place)
             }
         }
@@ -378,6 +460,8 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             if (simulating.value) Engine.location.enableSimulationOn(route)
             Engine.tripActive = true
             Engine.core.startNavigation(route)
+            Engine.tripPlace = place
+            TripStore.save(route, place)
             setDestination(place.shortName)
             Engine.places.noteRecent(place.name, place.lat, place.lon)
             Engine.alerts.start(route.geometry.map { LatLon(it.lat, it.lng) })
@@ -385,7 +469,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             _state.value = DriveState.Navigating(place)
         } catch (e: Exception) {
             Log.e("DriveViewModel", "start failed", e)
-            _error.value = e.message ?: "Could not start navigation."
+            _error.value = if (_here.value == null) "Waiting for your location. Try again in a moment." else "Could not start navigation. Try again."
         }
     }
 
@@ -393,6 +477,8 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         // The core stops first: switching the location provider while the
         // trip runs looks like a deviation and starts a reroute.
         Engine.tripActive = false
+        Engine.tripPlace = null
+        TripStore.clear()
         Engine.core.stopNavigation()
         Engine.location.disableSimulation()
         // A location update already in flight can write a Navigating state

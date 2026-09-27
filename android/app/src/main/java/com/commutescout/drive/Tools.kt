@@ -270,7 +270,16 @@ fun WatchesSheet(model: DriveViewModel, onClose: () -> Unit) {
                             Text(listOfNotNull(w.type, w.radius_km?.let { Units.distance(it * 1000) + " radius" }, w.kinds?.joinToString(", ")).joinToString(" · "),
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        IconButton({ scope.launch { model.account.token()?.let { Backend.send("DELETE", "/api/watch/${w.id}", it) }; load() } }) { Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
+                        IconButton({
+                            scope.launch {
+                                // Without a signal this used to throw out of the
+                                // coroutine and take the app down with it.
+                                val token = model.account.token() ?: run { error = OfflineText.RETRY; return@launch }
+                                runCatching { Backend.send("DELETE", "/api/watch/${w.id}", token) }
+                                    .onFailure { error = if (Connectivity.isOffline(it)) OfflineText.RETRY else "Could not delete that watch area. Try again." }
+                                load()
+                            }
+                        }) { Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
                     }
                 }
                 Heading("New watch around $anchorName")
@@ -292,7 +301,8 @@ fun WatchesSheet(model: DriveViewModel, onClose: () -> Unit) {
                         val body = """{"type":"circle","name":${JsonPrimitive(name.ifBlank { "Around $anchorName" })},"center":{"lat":${c.lat},"lon":${c.lon}},"radius_km":$radius,"kinds":[${kinds.joinToString(",") { "\"$it\"" }}],"channels":{"push":false,"email":true}}"""
                         val (status, text) = runCatching { Backend.send("POST", "/api/watch/create", token, body) }.getOrElse { 0 to "" }
                         if (status in 200..299) { name = ""; load() }
-                        else error = runCatching { Backend.json.parseToJsonElement(text).jsonObject["error"]?.jsonPrimitive?.content }.getOrNull() ?: "The server refused the watch ($status)."
+                        else error = if (status == 0) OfflineText.RETRY
+                            else runCatching { Backend.json.parseToJsonElement(text).jsonObject["error"]?.jsonPrimitive?.content }.getOrNull() ?: "The server refused the watch ($status)."
                     }
                 }, Modifier.fillMaxWidth(), enabled = kinds.isNotEmpty() && anchor != null) { Text("Create watch") }
                 Text("Push and email delivery, polygons and route watches are set up on commutescout.com.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

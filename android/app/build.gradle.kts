@@ -34,7 +34,7 @@ android {
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
         targetSdk = 36
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
-        versionName = "0.2.6"
+        versionName = "0.2.7"
     }
 
     signingConfigs {
@@ -93,6 +93,11 @@ dependencies {
     implementation(libs.ferrostar.ui.compose)
     implementation(libs.ferrostar.ui.maplibre)
     implementation(libs.ferrostar.google.play.services)
+    // Ferrostar's generated route converter extends JNA types. JNA is
+    // already on the runtime classpath through Ferrostar; declaring it
+    // at the same version lets the compiler see it too, for the saved
+    // trip (TripStore).
+    compileOnly("net.java.dev.jna:jna:5.18.1@aar")
     implementation(libs.maplibre.compose)
     implementation(libs.play.services.location)
     implementation(platform(libs.firebase.bom))

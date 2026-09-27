@@ -100,6 +100,9 @@ final class AppModel: ObservableObject {
     let sources = SourcesStore()
     var origin: Place?                      // a chosen start instead of the driver
     @Published var toast: String?
+    /// A trip that was running when the app last closed, offered back.
+    @Published var resumable: SavedTrip?
+    private var flushing = false
     private let delegate = NavDelegate()
     private var accountSink: AnyCancellable?
     /// Optional via points for the next route (a corridor to prefer), cleared when a trip starts.
@@ -117,6 +120,7 @@ final class AppModel: ObservableObject {
         alerts.spoken = prefs.spokenAlerts
         alerts.announceAheadMeters = prefs.alertAheadMeters
         alerts.rules = { [prefs] m in prefs.rule(for: Prefs.ruleKind(for: m)) }
+        alerts.fallback = { [weak self] in (self?.allMarkers ?? [], self?.markers.asOf) }
         location.startUpdating()
         // The live map asks the server for community plugin alerts
         // around where this phone actually is, and gets none at all
@@ -137,10 +141,102 @@ final class AppModel: ObservableObject {
         // Views watch the model; changes in the stores it owns must show.
         for child in [places.objectWillChange.eraseToAnyPublisher(), markers.objectWillChange.eraseToAnyPublisher(),
                       alerts.objectWillChange.eraseToAnyPublisher(), account.objectWillChange.eraseToAnyPublisher(),
-                      reporter.objectWillChange.eraseToAnyPublisher(), sources.objectWillChange.eraseToAnyPublisher()] {
+                      reporter.objectWillChange.eraseToAnyPublisher(), sources.objectWillChange.eraseToAnyPublisher(),
+                      Connectivity.shared.objectWillChange.eraseToAnyPublisher()] {
             child.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         }
+        Connectivity.shared.onReconnect { [weak self] in self?.reconnected() }
+        resumable = SavedTrip.load()
+        if let trip = resumable { DriveLog.note("trip to '\(trip.place.name)' was running when the app closed; offering it back") }
         Task { await followOnceAllowed() }
+        Task { await flushReports() }
+    }
+
+    /// The signal is back: spoken alerts catch up and any report made
+    /// meanwhile goes out. The marker store catches itself up.
+    private func reconnected() {
+        alerts.refreshNow()
+        Task { await flushReports() }
+    }
+
+    // MARK: offline
+
+    var online: Bool { Connectivity.shared.online }
+
+    /// Off the route line, as Ferrostar sees it.
+    var isOffRoute: Bool {
+        guard let dev = coreState?.currentDeviation else { return false }
+        if case .noDeviation = dev { return false }
+        return true
+    }
+
+    /// What the offline banner says, or nil while online.
+    var offlineNotice: (title: String, detail: String)? {
+        guard !online else { return nil }
+        let asOf = markers.asOf.map { "as of " + OfflineText.time($0) }
+        if state.isNavigating {
+            if isOffRoute {
+                return ("No signal to reroute", "Head back to the route. Rerouting resumes when you are back online.")
+            }
+            return ("No connection", "Guidance continues." + (asOf.map { " Alerts \($0)." } ?? ""))
+        }
+        if markers.asOf == nil { return ("No connection", "The map fills in when you are back online.") }
+        return ("No connection", "Showing road reports " + (asOf ?? "saved earlier") + ".")
+    }
+
+    /// Reports made without a signal, sent now. One that waited past
+    /// `PendingReport.maxAge` is dropped instead, because the server
+    /// would stamp it as new.
+    func flushReports() async {
+        // Launch and a reconnect can both ask at once; one sender only,
+        // or a queued report goes out twice.
+        guard !flushing else { return }
+        flushing = true
+        defer { flushing = false }
+        let pending = PendingReport.all()
+        guard !pending.isEmpty, online else { return }
+        guard let token = await account.token() else { return }
+        var sent: [PendingReport] = [], waiting: [PendingReport] = [], dropped = 0
+        for r in pending {
+            if Date().timeIntervalSince(r.createdAt) > PendingReport.maxAge {
+                dropped += 1
+                DriveLog.note("report \(r.kind) from \(OfflineText.time(r.createdAt)) dropped: too old to send")
+                continue
+            }
+            do {
+                try await reporter.send(kind: r.kind, at: CLLocationCoordinate2D(latitude: r.lat, longitude: r.lon),
+                                        heading: r.heading, description: r.note, token: token)
+                sent.append(r)
+            } catch {
+                if Connectivity.isOffline(error) { waiting.append(r) } else { DriveLog.note("queued report refused: \(error)") }
+            }
+        }
+        PendingReport.store(waiting)
+        if let first = sent.first {
+            toast = sent.count == 1 ? "Your report from \(OfflineText.time(first.createdAt)) was sent."
+                : "\(sent.count) reports you made offline were sent."
+            markers.refresh(force: true)
+        } else if dropped > 0 {
+            toast = dropped == 1 ? "A report made offline was too old to send."
+                : "\(dropped) reports made offline were too old to send."
+        }
+    }
+
+    /// Take the saved trip back up.
+    func resume() {
+        guard let trip = resumable else { return }
+        guard here != nil || simulating else {
+            errorMessage = "Waiting for your location. Try again in a moment."
+            return
+        }
+        resumable = nil
+        DriveLog.note("resume trip to '\(trip.place.name)', saved \(Int(Date().timeIntervalSince(trip.startedAt))) s ago")
+        start(trip.route, to: trip.place)
+    }
+
+    func dismissResume() {
+        resumable = nil
+        SavedTrip.clear()
     }
 
     /// Where the map opens before the first fix arrives.
@@ -178,10 +274,14 @@ final class AppModel: ObservableObject {
             endpointUrl: Backend.navRouteURL.absoluteString, profile: "auto")
             .withJsonOptions(options: options)
         // A bad provider is a programming error, not a runtime condition.
+        // The app's own session: a 20 second timeout rather than the
+        // shared session's 60, so "Finding routes" on a weak signal gives
+        // up in reasonable time, and the app's User-Agent.
         return try! FerrostarCore(
             wellKnownRouteProvider: provider,
             locationProvider: location,
             navigationControllerConfig: config,
+            networkSession: Backend.session,
             annotation: AnnotationPublisher<ValhallaExtendedOSRMAnnotation>.valhallaExtendedOSRM()
         )
     }
@@ -206,6 +306,8 @@ final class AppModel: ObservableObject {
             if let loc = s?.preferredUserLocation?.clLocation.coordinate, self.state.isNavigating {
                 self.alerts.update(position: loc)
             }
+            // Arrived: nothing left to resume.
+            if case .complete = s?.tripState { SavedTrip.clear() }
         }
     }
 
@@ -431,6 +533,9 @@ final class AppModel: ObservableObject {
         }
         guard let from = origin?.coordinate ?? here else {
             DriveLog.note("routes: no position yet (denied=\(location.denied))")
+            // Back to the pin, or "Finding routes" stays up behind the
+            // alert with no way to dismiss it.
+            state = .found(place)
             errorMessage = location.denied
                 ? "Location is off for CommuteScout Drive. Turn it on in Settings to navigate."
                 : "Waiting for your location."
@@ -453,7 +558,8 @@ final class AppModel: ObservableObject {
         } catch {
             DriveLog.note("routes failed to '\(place.name)': \(error)")
             errorMessage = (error as? DriveError)?.errorDescription
-                ?? "Could not get a route. Check your connection and try again."
+                ?? (!online || Connectivity.isOffline(error) ? OfflineText.routes
+                    : "Could not get a route. Try again in a moment.")
             state = .found(place)
         }
     }
@@ -462,6 +568,7 @@ final class AppModel: ObservableObject {
         do {
             if simulating { try location.simulate(route: route) }
             try core.startNavigation(route: route)
+            SavedTrip.save(route: route, place: place)
             DriveLog.note("route start to '\(place.name)': \(DriveLog.meters(route.distance)) \(Int(route.steps.reduce(0) { $0 + $1.duration } / 60)) min, "
                           + "\(route.geometry.count) pts, simulated=\(simulating), alertsAhead=\(Int(prefs.alertAheadMeters)) m")
             preview = nil
@@ -473,18 +580,22 @@ final class AppModel: ObservableObject {
             delegate.onReroute = { [weak self] r in
                 guard let self else { return }
                 self.alerts.start(route: r.geometry.map(\.clLocationCoordinate2D))
+                SavedTrip.save(route: r, place: place)
                 DriveLog.note("rerouted: \(DriveLog.meters(r.distance)), \(r.geometry.count) pts")
             }
             camera = navigationCamera
             state = .navigating(place)
             UIApplication.shared.isIdleTimerDisabled = prefs.keepAwake
         } catch {
-            errorMessage = error.localizedDescription
+            DriveLog.note("route start failed: \(error)")
+            errorMessage = here == nil ? "Waiting for your location. Try again in a moment."
+                : "Could not start navigation. Try again."
         }
     }
 
     func stop() {
         DriveLog.note("route stop")
+        SavedTrip.clear()
         core.stopNavigation()
         // Ferrostar stops location updates with the trip; start them again so
         // the puck stays live and the next route starts from where the phone is.
