@@ -65,7 +65,14 @@ struct SnapshotPayload: Decodable {
     let build: String?
     let published: Date?
     let degraded: Bool
-    let markers: [RoadMarker]
+    var markers: [RoadMarker]
+    /// Set when this came from the copy saved on the phone rather than
+    /// the network: when that copy was written.
+    var savedAt: Date? = nil
+
+    /// How new the markers are: the publisher's own stamp, else when the
+    /// copy was saved.
+    var asOf: Date? { published ?? savedAt }
 
     enum CodingKeys: String, CodingKey { case schema, build, published, degraded, markers }
 
@@ -134,10 +141,26 @@ enum Snapshot {
             // behaviour, not to a blank map: the API builds the same
             // payload on demand, slowly.
             DriveLog.note("snapshot: \(feed.rawValue) unavailable (\(error)), asking the API instead")
-            data = try await get(apiURL(feed, box: box))
+            do {
+                data = try await get(apiURL(feed, box: box))
+            } catch {
+                // No network at all: the copy from the last good fetch,
+                // with whatever has gone stale since taken out.
+                guard let saved = OfflineStore.load(savedName(feed), maxAge: ShelfLife.maxAge) else { throw error }
+                var payload = try decode(saved.data, box: box)
+                payload.savedAt = saved.savedAt
+                let before = payload.markers.count
+                payload.markers = ShelfLife.prune(payload.markers, asOf: payload.asOf)
+                DriveLog.note("snapshot: \(feed.rawValue) offline, using the copy saved "
+                              + "\(Int(Date().timeIntervalSince(saved.savedAt))) s ago, \(payload.markers.count) of \(before) still current")
+                return payload
+            }
         }
+        OfflineStore.save(data, as: savedName(feed))
         return try decode(data, box: box)
     }
+
+    private static func savedName(_ feed: Feed) -> String { "snapshot-" + feed.rawValue.replacingOccurrences(of: ".gz", with: "") }
 
     private static func get(_ url: URL) async throws -> Data {
         let (data, response) = try await Backend.session.data(from: url)

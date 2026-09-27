@@ -43,6 +43,14 @@ class AlertsEngine(context: Context) {
     var announceAheadMeters = 1500.0
     /** Per-kind rules from Settings; null means the one distance above. */
     var rules: ((RoadMarker) -> Prefs.AlertRule)? = null
+    /**
+     * What the map is showing and when it was current. Used when the
+     * route's own fetch cannot reach the server, so a trip started
+     * without a signal still announces what the phone already knows.
+     */
+    var fallback: (() -> Pair<List<RoadMarker>, Long?>)? = null
+    /** When the list in [all] was current. */
+    private var allAsOf: Long? = null
     private val repeated = HashSet<String>()
 
     private var route: List<LatLon> = emptyList()
@@ -153,6 +161,7 @@ class AlertsEngine(context: Context) {
         if (lats.isEmpty()) return
         box = doubleArrayOf(lats.min() - 0.05, lons.min() - 0.05, lats.max() + 0.05, lons.max() + 0.05)
         announced.clear(); repeated.clear()
+        allAsOf = null
         refreshJob = scope.launch {
             while (isActive) {
                 refresh()
@@ -227,10 +236,35 @@ class AlertsEngine(context: Context) {
         tts?.speak(text, TextToSpeech.QUEUE_ADD, null, marker.key)
     }
 
+    /** Fetch again now: the signal came back. */
+    fun refreshNow() {
+        if (box != null) scope.launch { refresh() }
+    }
+
     private suspend fun refresh() {
         val b = box ?: return
+        var asOf = System.currentTimeMillis()
         val markers = runCatching { LiveData.markers(b[0], b[1], b[2], b[3]) }
-            .onFailure { Log.w(TAG, "alerts fetch failed: $it") }.getOrNull() ?: return
+            .onFailure { Log.w(TAG, "alerts fetch failed: $it") }.getOrNull() ?: run {
+                // No answer. A list fetched earlier on this trip covers the
+                // whole route, so it is kept, less whatever has gone stale
+                // for its kind since. With none, because the trip began
+                // without a signal, the map's own markers stand in.
+                val was = allAsOf
+                if (was != null && all.isNotEmpty()) {
+                    val age = System.currentTimeMillis() - was
+                    if (age > 15 * 60_000L) {
+                        val kept = all.filter { ShelfLife.keep(it.marker.kind, age) }
+                        if (kept.size != all.size) { Log.i(TAG, "offline: ${all.size - kept.size} gone stale on the route"); all = kept }
+                    }
+                    return
+                }
+                val saved = fallback?.invoke() ?: return
+                if (saved.first.isEmpty()) return
+                asOf = saved.second ?: System.currentTimeMillis()
+                Log.i(TAG, "no answer from the server, using ${saved.first.size} markers the map already had")
+                ShelfLife.prune(saved.first, saved.second)
+            }
         val pts = route; val cum = cumulative
         all = withContext(Dispatchers.Default) {
             markers.mapNotNull { m ->
@@ -244,6 +278,7 @@ class AlertsEngine(context: Context) {
                 Upcoming(m, hit.along)
             }.sortedBy { it.alongMeters }
         }
+        allAsOf = asOf
         Log.i(TAG, "alerts: ${markers.size} markers in box, ${all.size} on the route")
     }
 

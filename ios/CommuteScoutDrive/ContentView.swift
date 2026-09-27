@@ -69,6 +69,10 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
+                    if let n = model.offlineNotice {
+                        OfflineBanner(title: n.title, detail: n.detail)
+                            .padding(.horizontal, 12).padding(.top, 8)
+                    }
                     Spacer()
                 }
             }
@@ -155,7 +159,7 @@ struct ContentView: View {
             }
         }
         switch model.state {
-        case .browsing: return 0
+        case .browsing: return model.resumable == nil ? 0 : 140
         case .found: return 150
         case .routing: return 80
         case .choosing: return 330
@@ -283,8 +287,14 @@ struct ContentView: View {
 
     }
 
+    /// Under the instruction card while navigating: the offline notice
+    /// when there is no signal (a reroute cannot happen then, and saying
+    /// "Rerouting" would be a promise the app cannot keep), otherwise
+    /// the reroute in progress.
     @ViewBuilder private var reroutingBanner: some View {
-        if model.coreState?.isCalculatingNewRoute == true {
+        if let n = model.offlineNotice {
+            OfflineBanner(title: n.title, detail: n.detail).padding(.horizontal, 12)
+        } else if model.coreState?.isCalculatingNewRoute == true {
             NavigationUIBanner(severity: .loading) { Text("Rerouting") }
         }
     }
@@ -295,7 +305,7 @@ struct ContentView: View {
         } else {
             switch model.state {
             case .browsing:
-                EmptyView()
+                if let trip = model.resumable { ResumeCard(trip: trip) }
             case let .found(place):
                 PlaceCard(place: place)
             case .routing:
@@ -309,6 +319,58 @@ struct ContentView: View {
                 EmptyView()
             }
         }
+    }
+}
+
+/// No signal: what still works, and how old the road reports are.
+struct OfflineBanner: View {
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "wifi.slash").font(.subheadline.weight(.semibold)).foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.semibold))
+                Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("offline-banner")
+    }
+}
+
+/// A trip that was running when the app closed: pick it up again, with
+/// or without a signal, since guidance only needs the saved route.
+struct ResumeCard: View {
+    @EnvironmentObject var model: AppModel
+    let trip: SavedTrip
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Resume your trip to \(trip.place.shortName)?").font(.headline)
+                Text("Started at \(OfflineText.time(trip.startedAt)). Works without a signal.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 8) {
+                Button { model.resume() } label: {
+                    Label("Resume", systemImage: "location.north.line.fill").frame(maxWidth: .infinity).padding(.vertical, 10)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("resume-trip")
+                Button("Not now") { model.dismissResume() }
+                    .buttonStyle(.bordered).padding(.vertical, 10)
+                    .accessibilityIdentifier("dismiss-trip")
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .padding(12)
     }
 }
 

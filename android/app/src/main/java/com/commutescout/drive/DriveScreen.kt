@@ -31,6 +31,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import android.app.Activity
 import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -169,6 +171,17 @@ fun DriveScreen(model: DriveViewModel) {
     var stripCollapsed by remember { mutableStateOf(false) }
     val toastText by model.toast.collectAsStateWithLifecycle()
     val isNavigating = uiState.isNavigating()
+    val online by Connectivity.online.collectAsStateWithLifecycle()
+    val asOf by model.markers.asOf.collectAsStateWithLifecycle()
+    val resumable by model.resumable.collectAsStateWithLifecycle()
+    // What the offline banner says, or null while online.
+    val offRoute = uiState.routeDeviation.let { it != null && it !is uniffi.ferrostar.RouteDeviation.NoDeviation }
+    val offlineNotice: Pair<String, String>? = if (online) null else when {
+        isNavigating && offRoute -> "No signal to reroute" to "Head back to the route. Rerouting resumes when you are back online."
+        isNavigating -> "No connection" to ("Guidance continues." + (asOf?.let { " Alerts as of ${OfflineText.time(it)}." } ?: ""))
+        asOf == null -> "No connection" to "The map fills in when you are back online."
+        else -> "No connection" to ("Showing road reports " + (asOf?.let { "as of ${OfflineText.time(it)}" } ?: "saved earlier") + ".")
+    }
 
     val permissions = if (Build.VERSION.SDK_INT >= 34) arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -248,7 +261,7 @@ fun DriveScreen(model: DriveViewModel) {
             config = VisualNavigationViewConfig.Default().withSpeedLimitStyle(SignageStyle.MUTCD),
             views = NavigationViewComponentBuilder.Default().withCustomOverlayView { modifier ->
                 if (!uiState.isNavigating()) {
-                    BrowsingOverlay(modifier, model, onSettings = { showSettings = true }, onLayers = { showTools = true })
+                    BrowsingOverlay(modifier, model, offlineNotice, onSettings = { showSettings = true }, onLayers = { showTools = true })
                 }
             },
             onTapExit = { model.stopNavigation() },
@@ -270,7 +283,7 @@ fun DriveScreen(model: DriveViewModel) {
         // Map controls: 2D/3D, compass when turned, my location. While
         // navigating Ferrostar draws its own zoom and recenter buttons.
         Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = 12.dp,
-            bottom = if (isNavigating) 118.dp else bottomCardHeight(state, selected) + 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            bottom = if (isNavigating) 118.dp else bottomCardHeight(state, selected, resumable != null) + 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (!isNavigating && abs(bearing) > 1.0) {
                 RoundIcon(Icons.Default.Navigation, "Face north", tint = Color(0xFFD32F2F), rotate = -bearing.toFloat(), tag = "compass") {
                     scope.launch { mapState.cameraState.animateTo(mapState.cameraState.position.copy(bearing = 0.0)) }
@@ -288,6 +301,20 @@ fun DriveScreen(model: DriveViewModel) {
             Box(Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 70.dp)) {
                 Text(it, Modifier.background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
                     style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+
+        // While navigating, above the alert strip: the offline notice when
+        // there is no signal (a reroute cannot happen then, and saying
+        // "Rerouting" would be a promise the app cannot keep), otherwise
+        // the reroute in progress.
+        if (isNavigating) {
+            val rerouting = online && uiState.isCalculatingNewRoute == true
+            val banner = offlineNotice ?: if (rerouting) "Rerouting" to "Finding a new route from here." else null
+            banner?.let { (title, detail) ->
+                Box(Modifier.align(Alignment.BottomStart).padding(start = 12.dp, end = 76.dp, bottom = 196.dp)) {
+                    OfflineBanner(title, detail, if (offlineNotice != null) Icons.Default.WifiOff else Icons.Default.Sync)
+                }
             }
         }
 
@@ -321,6 +348,7 @@ fun DriveScreen(model: DriveViewModel) {
             } else if (selected != null) {
                 MarkerCard(selected!!, here, model)
             } else when (val s = state) {
+                is DriveState.Browsing -> resumable?.let { ResumeCard(it, model) }
                 is DriveState.Found -> PlaceCard(s.place, here, model)
                 is DriveState.Routing -> Card(Modifier.padding(12.dp).fillMaxWidth().safeDrawingPadding()) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -353,8 +381,9 @@ fun DriveScreen(model: DriveViewModel) {
     }
 }
 
-private fun bottomCardHeight(state: DriveState, selected: RoadMarker?) = when {
+private fun bottomCardHeight(state: DriveState, selected: RoadMarker?, resumable: Boolean = false) = when {
     selected != null -> 170.dp
+    state is DriveState.Browsing && resumable -> 150.dp
     state is DriveState.Found -> 150.dp
     state is DriveState.Routing -> 80.dp
     state is DriveState.Choosing -> 330.dp
@@ -482,7 +511,8 @@ private fun RouteLine(route: Route) {
 
 /** Search, settings and layers, floating over the map while browsing. */
 @Composable
-private fun BrowsingOverlay(modifier: Modifier, model: DriveViewModel, onSettings: () -> Unit, onLayers: () -> Unit) {
+private fun BrowsingOverlay(modifier: Modifier, model: DriveViewModel, offline: Pair<String, String>?,
+                            onSettings: () -> Unit, onLayers: () -> Unit) {
     Column(modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 12.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.Top) {
             Box(Modifier.weight(1f)) { SearchBar(model) }
@@ -490,6 +520,47 @@ private fun BrowsingOverlay(modifier: Modifier, model: DriveViewModel, onSetting
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 RoundIcon(Icons.Default.Settings, "Settings", tag = "settings", onClick = onSettings)
                 RoundIcon(Icons.Default.Menu, "Tools", tag = "tools", onClick = onLayers)
+            }
+        }
+        offline?.let { (title, detail) ->
+            Spacer(Modifier.height(8.dp))
+            OfflineBanner(title, detail, Icons.Default.WifiOff)
+        }
+    }
+}
+
+/** No signal: what still works, and how old the road reports are. */
+@Composable
+private fun OfflineBanner(title: String, detail: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Row(Modifier.fillMaxWidth().shadow(4.dp, RoundedCornerShape(14.dp))
+        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(14.dp))
+        .padding(horizontal = 14.dp, vertical = 10.dp).testTag("offline-banner"),
+        verticalAlignment = Alignment.Top) {
+        Icon(icon, null, Modifier.size(18.dp), tint = Color(0xFFF57C00))
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/**
+ * A trip that was running when the app closed: pick it up again, with
+ * or without a signal, since guidance only needs the saved route.
+ */
+@Composable
+private fun ResumeCard(trip: SavedTrip, model: DriveViewModel) {
+    Card(Modifier.padding(12.dp).fillMaxWidth().safeDrawingPadding().testTag("resume-card")) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column {
+                Text("Resume your trip to ${trip.place.shortName}?", style = MaterialTheme.typography.titleMedium)
+                Text("Started at ${OfflineText.time(trip.startedAt)}. Works without a signal.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button({ model.resume() }, Modifier.weight(1f).testTag("resume-trip")) { Text("Resume") }
+                OutlinedButton({ model.dismissResume() }, Modifier.testTag("dismiss-trip")) { Text("Not now") }
             }
         }
     }
@@ -562,8 +633,17 @@ private fun SearchBar(model: DriveViewModel) {
         parseCoordinates(t)?.let { pick("%.5f, %.5f".format(it.lat, it.lon), it.lat, it.lon); return }
         local.firstOrNull()?.let { pick(it.name, it.lat, it.lon); return }
         results.firstOrNull()?.let { pick(it.name, it.lat, it.lon); return }
-        val found = runCatching { Search.geocode(t) }.getOrNull()?.firstOrNull()
+        if (t.isEmpty()) return
+        val result = runCatching { Search.geocode(t) }
+        val found = result.getOrNull()?.firstOrNull()
+        // Pressing search used to do nothing at all when nothing came
+        // back. No answer is not the same as no match, so they read differently.
         if (found != null) pick(found.name, found.lat, found.lon)
+        else model.showError(when {
+            result.isSuccess -> "Nothing found for \"$t\". Try adding a city."
+            !Connectivity.online.value || Connectivity.isOffline(result.exceptionOrNull()) -> OfflineText.SEARCH
+            else -> "Search is not answering right now. Try again in a moment."
+        })
     }
 
     Column {
@@ -774,7 +854,7 @@ private fun CameraShot(marker: RoadMarker) {
     }
     when {
         shot != null -> Image(shot!!, null, Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.FillWidth)
-        failed -> Note("The snapshot is not available right now.")
+        failed -> Note(if (Connectivity.online.value) "The snapshot is not available right now." else OfflineText.CAMERA)
         else -> Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
             Spacer(Modifier.width(8.dp)); Note("Loading the snapshot")
@@ -868,11 +948,12 @@ private fun ConfirmRow(alertId: String, model: DriveViewModel) {
     var voted by remember(alertId) { mutableStateOf<String?>(null) }
     fun vote(v: String) {
         scope.launch {
+            if (!Connectivity.online.value) { model.toast(OfflineText.RETRY); return@launch }
             val token = model.account.token()
             if (token == null) { (context as? Activity)?.let { model.account.signInWithGoogle(it) }; return@launch }
             runCatching { Reporter.confirm(alertId, v, token) }
                 .onSuccess { voted = v; model.toast(if (v == "up") "Thanks, confirmed." else "Thanks, marked as gone.") }
-                .onFailure { model.toast(it.message ?: "Could not record that.") }
+                .onFailure { model.toast(if (Connectivity.isOffline(it)) OfflineText.RETRY else it.message ?: "Could not record that.") }
         }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

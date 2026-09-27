@@ -170,9 +170,23 @@ fun ReportSheet(model: DriveViewModel, lat: Double, lon: Double, onClose: () -> 
             Button(
                 onClick = {
                     val k = kind ?: return@Button
+                    // No signal: keep it and send it when there is one. A
+                    // signed-in driver's token cannot be refreshed offline,
+                    // and asking them to sign in again would be the wrong
+                    // answer to a dead zone.
+                    fun queue() {
+                        PendingReport.add(PendingReport(k, placedLat, placedLon, model.courseDegrees, note, System.currentTimeMillis()))
+                        model.toast("No connection. Your report sends when you are back online, if within 15 minutes.")
+                        onClose()
+                    }
                     scope.launch {
+                        if (!Connectivity.online.value && user != null) { queue(); return@launch }
                         val token = model.account.token()
-                        if (token == null) { (context as? Activity)?.let { model.account.signInWithGoogle(it) }; return@launch }
+                        if (token == null) {
+                            if (!Connectivity.online.value) error = OfflineText.RETRY
+                            else (context as? Activity)?.let { model.account.signInWithGoogle(it) }
+                            return@launch
+                        }
                         sending = true
                         try {
                             Reporter.send(k, placedLat, placedLon, model.courseDegrees, note, token)
@@ -180,7 +194,8 @@ fun ReportSheet(model: DriveViewModel, lat: Double, lon: Double, onClose: () -> 
                             model.toast("Thanks. Your report is on the map.")
                             onClose()
                         } catch (e: Exception) {
-                            error = e.message
+                            if (Connectivity.isOffline(e)) queue()
+                            else error = (e as? BackendError)?.message ?: "Could not send the report. Try again."
                         } finally { sending = false }
                     }
                 },

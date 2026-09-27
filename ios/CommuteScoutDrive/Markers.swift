@@ -23,6 +23,14 @@ final class MarkerStore: ObservableObject {
     /// Bumped whenever `markers` is replaced, so views can cache the
     /// shapes they build from it instead of rebuilding every frame.
     @Published private(set) var stamp = 0
+    /// How new the markers on screen are: the last viewport answer, or
+    /// the snapshot's own stamp. Shown in the offline banner.
+    @Published private(set) var asOf: Date?
+    /// Bundles that painted from the network this session. One that
+    /// failed or came from the saved copy is fetched again when the
+    /// signal comes back.
+    private var liveFeeds: Set<Snapshot.Feed> = []
+    private var wantedFeeds: Set<Snapshot.Feed> = []
     private var byKey: [String: RoadMarker] = [:]
     private var box: (s: Double, w: Double, n: Double, e: Double)?
     private var kinds = ""
@@ -44,10 +52,34 @@ final class MarkerStore: ObservableObject {
     init() {
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, Date() >= self.holdUntil else { return }
+                guard let self else { return }
+                if !Connectivity.shared.online { self.pruneStale(); return }
+                guard Date() >= self.holdUntil else { return }
                 self.refresh(force: true)
             }
         }
+        Connectivity.shared.onReconnect { [weak self] in self?.reconnected() }
+    }
+
+    /// Without a signal nothing on screen gets newer, so what has gone
+    /// stale for its kind (a police report after half an hour) is taken
+    /// off rather than shown as if it were current.
+    func pruneStale() {
+        let kept = ShelfLife.prune(markers, asOf: asOf)
+        if kept.count != markers.count {
+            DriveLog.note("markers: offline, \(markers.count - kept.count) gone stale")
+            publish(kept)
+        }
+    }
+
+    /// The signal is back: catch up at once rather than at the next tick.
+    private func reconnected() {
+        backoff = 0
+        holdUntil = .distantPast
+        if !snapshotRetired {
+            for feed in wantedFeeds.subtracting(liveFeeds) { fetchedFeeds.remove(feed); load(feed) }
+        }
+        refresh(force: true)
     }
 
     func marker(for key: String) -> RoadMarker? { byKey[key] }
@@ -79,7 +111,9 @@ final class MarkerStore: ObservableObject {
         // Once the viewport is answering, /api/mapdata is both fresher
         // and far smaller than a nationwide object. The snapshot's job
         // is the first paint, and it is over.
-        guard !snapshotRetired, !fetchedFeeds.contains(feed) else { return }
+        guard !snapshotRetired else { return }
+        wantedFeeds.insert(feed)
+        guard !fetchedFeeds.contains(feed) else { return }
         fetchedFeeds.insert(feed)
         let area = box ?? bootBox
         Task { [weak self] in
@@ -103,6 +137,9 @@ final class MarkerStore: ObservableObject {
                       + (age.map { ", published \($0) s ago" } ?? "")
                       + (payload.degraded ? ", publisher reports degraded feeds" : ""))
         guard !snapshotRetired else { return }   // the viewport answer is the fresher one
+        if payload.savedAt == nil { liveFeeds.insert(feed) }
+        let stamp = payload.asOf ?? Date()
+        if asOf.map({ stamp > $0 }) ?? true { asOf = stamp }
         for marker in payload.markers { snapshot[marker.key] = marker }
         publish(Array(snapshot.values))
     }
@@ -158,6 +195,7 @@ final class MarkerStore: ObservableObject {
                 snapshot = [:]
                 publish(found)
                 fetchedAt = Date()
+                asOf = fetchedAt
                 backoff = 0
                 holdUntil = .distantPast
             }
@@ -312,7 +350,7 @@ struct CameraView: View {
                     case let .success(image):
                         image.resizable().aspectRatio(contentMode: .fit)
                     case .failure:
-                        Text("This camera has no picture right now.")
+                        Text(Connectivity.shared.online ? "This camera has no picture right now." : OfflineText.camera)
                             .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 60)
                     default:
                         ProgressView().frame(maxWidth: .infinity, minHeight: 60)
@@ -512,6 +550,7 @@ struct ConfirmButtons: View {
 
     private func vote(_ v: String) async {
         guard let id = marker.id else { return }
+        guard model.online else { model.errorMessage = OfflineText.retry; return }
         guard let token = await model.account.token() else { showSignIn = true; return }
         do {
             try await model.reporter.confirm(alertId: id, vote: v, token: token)
@@ -519,7 +558,7 @@ struct ConfirmButtons: View {
             model.toast = v == "up" ? "Thanks, confirmed." : "Thanks, marked as gone."
             DriveLog.note("confirm \(v): \(id)")
         } catch {
-            model.errorMessage = error.localizedDescription
+            model.errorMessage = Connectivity.isOffline(error) ? OfflineText.retry : error.localizedDescription
         }
     }
 }

@@ -161,14 +161,32 @@ struct ReportSheet: View {
 
     private func send() async {
         guard let kind else { return }
-        guard let token = await model.account.token() else { showSignIn = true; return }
+        // No signal: keep it and send it when there is one. A signed-in
+        // driver's token cannot be refreshed offline, and asking them to
+        // sign in again would be the wrong answer to a dead zone.
+        if !model.online, model.account.signedIn {
+            queue(kind)
+            return
+        }
+        guard let token = await model.account.token() else {
+            if !model.online { error = OfflineText.retry } else { showSignIn = true }
+            return
+        }
         do {
             try await model.reporter.send(kind: kind, at: placed, heading: model.courseDegrees, description: note, token: token)
             model.markers.refresh(force: true)
             model.toast = "Thanks. Your report is on the map."
             dismiss()
         } catch {
-            self.error = error.localizedDescription
+            if Connectivity.isOffline(error) { queue(kind) } else { self.error = error.localizedDescription }
         }
+    }
+
+    private func queue(_ kind: String) {
+        PendingReport.add(PendingReport(kind: kind, lat: placed.latitude, lon: placed.longitude,
+                                        heading: model.courseDegrees, note: note, createdAt: Date()))
+        DriveLog.note("report \(kind) queued: no connection")
+        model.toast = "No connection. Your report sends when you are back online, if within 15 minutes."
+        dismiss()
     }
 }
