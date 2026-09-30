@@ -1,0 +1,32 @@
+# Dependency updates for both apps, a few PRs a week at most. Each
+# ecosystem groups its minor and patch bumps into one PR; a major bump
+# comes on its own, since those need a look. Ferrostar pins the same
+# version on both platforms and its bumps are taken by hand together,
+# so it is left out here.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      android-minor:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "com.stadiamaps.ferrostar:*"
+  - package-ecosystem: swift
+    directory: /ios
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      ios-minor:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "ferrostar"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
