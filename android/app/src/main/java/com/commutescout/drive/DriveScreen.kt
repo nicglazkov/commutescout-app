@@ -67,6 +67,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -174,6 +175,8 @@ fun DriveScreen(model: DriveViewModel) {
     val online by Connectivity.online.collectAsStateWithLifecycle()
     val asOf by model.markers.asOf.collectAsStateWithLifecycle()
     val resumable by model.resumable.collectAsStateWithLifecycle()
+    val usingLocal by MapFiles.usingLocal.collectAsStateWithLifecycle()
+    val mapManifest by MapFiles.manifest.collectAsStateWithLifecycle()
     // What the offline banner says, or null while online.
     val offRoute = uiState.routeDeviation.let { it != null && it !is uniffi.ferrostar.RouteDeviation.NoDeviation }
     val offlineNotice: Pair<String, String>? = if (online) null else when {
@@ -254,7 +257,7 @@ fun DriveScreen(model: DriveViewModel) {
 
         DynamicallyOrientingNavigationView(
             modifier = Modifier.fillMaxSize(),
-            baseStyle = BaseStyle.Uri(model.styleUrl),
+            baseStyle = remember(prefs.mapStyle, model.isDark, usingLocal, mapManifest) { BaseStyle.Json(model.styleJson) },
             navigationMapState = mapState,
             navigationCameraOptions = navigationCameraOptions().copy(browsingZoom = 14.0, navigationTilt = if (prefs.is3D) 45.0 else 0.0),
             viewModel = model,
@@ -996,6 +999,20 @@ private fun RoutesCard(routes: List<Route>, place: Place, model: DriveViewModel,
             }
             Button({ model.start(routes[chosen], place) }, Modifier.fillMaxWidth().testTag("start")) {
                 Icon(Icons.Default.Navigation, null); Spacer(Modifier.width(6.dp)); Text("Start")
+            }
+            // The map along the route, for a drive through a dead zone.
+            // Saved on its own on Wi-Fi when the trip starts; this is the
+            // tap for mobile data, and it says so.
+            val online by Connectivity.online.collectAsStateWithLifecycle()
+            val wifi by Connectivity.onWifi.collectAsStateWithLifecycle()
+            val saving by MapFiles.progress.collectAsStateWithLifecycle()
+            if (online && saving.isNotEmpty()) {
+                Text("Saving the map for this trip", style = MaterialTheme.typography.bodySmall)
+                LinearProgressIndicator(progress = { saving.values.first() }, modifier = Modifier.fillMaxWidth())
+            } else if (online && !(wifi && model.prefs.mapAutoSave)) {
+                TextButton({ model.saveTripMap(routes[chosen], place, manual = true) }, Modifier.testTag("save-trip-map")) {
+                    Text(if (wifi) "Save the map for this trip" else "Save the map for this trip (mobile data)")
+                }
             }
         }
     }

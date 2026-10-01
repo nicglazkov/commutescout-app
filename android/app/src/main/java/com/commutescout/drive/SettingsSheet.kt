@@ -50,6 +50,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsSheet(model: DriveViewModel, onClose: () -> Unit) {
+    var showOfflineMaps by remember { mutableStateOf(false) }
+    if (showOfflineMaps) OfflineMapsSheet(model) { showOfflineMaps = false }
     val prefs = model.prefs
     val places by model.places.places.collectAsStateWithLifecycle()
     val simulating by model.simulating.collectAsStateWithLifecycle()
@@ -124,6 +126,11 @@ fun SettingsSheet(model: DriveViewModel, onClose: () -> Unit) {
             ToggleRow("Show speed limit", prefs.showSpeedLimit) { prefs.showSpeedLimit = it }
             ToggleRow("Keep the screen on", prefs.keepAwake) { prefs.keepAwake = it }
 
+            Heading("Offline maps")
+            val mapFiles by MapFiles.files.collectAsStateWithLifecycle()
+            LinkRow(if (mapFiles.isEmpty()) "Maps saved on this phone: none yet"
+                    else "Maps saved on this phone: ${mapFiles.size}, ${Units.bytes(MapFiles.bytesOnDisk)}") { showOfflineMaps = true }
+            ToggleRow("Save the map for each trip on Wi-Fi", prefs.mapAutoSave) { prefs.mapAutoSave = it }
             Heading("Layers")
             ToggleRow("Traffic", prefs.traffic) { prefs.traffic = it }
             Prefs.layerKinds.forEach { k -> ToggleRow(k.label, prefs.isShown(k.key)) { prefs.setShown(k.key, it); model.layersChanged() } }

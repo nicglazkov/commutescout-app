@@ -15,13 +15,16 @@ final class Connectivity: ObservableObject {
     static let shared = Connectivity()
 
     @Published private(set) var online = true
+    /// On Wi-Fi or wired, as opposed to a mobile data plan.
+    @Published private(set) var onWifi = false
     private var reconnect: [() -> Void] = []
     private let monitor = NWPathMonitor()
 
     private init() {
         monitor.pathUpdateHandler = { path in
             let up = path.status == .satisfied
-            Task { @MainActor in Connectivity.shared.set(up) }
+            let wifi = up && (path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet)) && !path.isExpensive
+            Task { @MainActor in Connectivity.shared.set(up, wifi: wifi) }
         }
         monitor.start(queue: DispatchQueue(label: "cs.connectivity"))
     }
@@ -29,7 +32,8 @@ final class Connectivity: ObservableObject {
     /// Run `action` every time the network comes back.
     func onReconnect(_ action: @escaping () -> Void) { reconnect.append(action) }
 
-    private func set(_ up: Bool) {
+    private func set(_ up: Bool, wifi: Bool) {
+        if wifi != onWifi { onWifi = wifi }
         guard up != online else { return }
         online = up
         DriveLog.note(up ? "network: back" : "network: lost")

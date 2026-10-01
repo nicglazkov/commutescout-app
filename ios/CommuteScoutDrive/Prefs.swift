@@ -14,16 +14,17 @@ final class Prefs: ObservableObject {
     }
 
     enum MapStyle: String, CaseIterable, Identifiable {
+        // "outdoors" is the old raw value, kept so a saved choice still reads.
         case auto, light, dark, outdoors
         var id: String { rawValue }
-        var label: String { switch self { case .auto: "Match theme"; case .light: "Light"; case .dark: "Dark"; case .outdoors: "Outdoors" } }
-        /// The server's style name for this choice in the given appearance.
-        func serverStyle(dark isDark: Bool) -> String {
+        var label: String { switch self { case .auto: "Match theme"; case .light: "Light"; case .dark: "Dark"; case .outdoors: "Grayscale" } }
+        /// The bundled style for this choice in the given appearance.
+        func flavor(dark isDark: Bool) -> String {
             switch self {
-            case .auto: isDark ? "alidade_smooth_dark" : "alidade_smooth"
-            case .light: "alidade_smooth"
-            case .dark: "alidade_smooth_dark"
-            case .outdoors: "outdoors"
+            case .auto: isDark ? "dark" : "light"
+            case .light: "light"
+            case .dark: "dark"
+            case .outdoors: "grayscale"
             }
         }
     }
@@ -54,6 +55,8 @@ final class Prefs: ObservableObject {
     @AppStorage("cs.theme") var themeRaw: String = Theme.system.rawValue
     @AppStorage("cs.mapstyle") var mapStyleRaw: String = MapStyle.auto.rawValue
     @AppStorage("cs.3d") var is3D: Bool = true
+    /// Save the map along a route when a trip starts, on Wi-Fi.
+    @AppStorage("cs.map.autosave") var mapAutoSave: Bool = true
     @AppStorage("cs.traffic") var traffic: Bool = false
     @AppStorage("cs.layers.off") var layersOff: String = Prefs.layersOffByDefault   // comma-separated kinds hidden
     @AppStorage("cs.spokenalerts") var spokenAlerts: Bool = true

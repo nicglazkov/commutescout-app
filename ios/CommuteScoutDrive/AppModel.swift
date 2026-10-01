@@ -98,6 +98,7 @@ final class AppModel: ObservableObject {
     lazy var push = PushRegistrar(account: account)
     let reporter = Reporter()
     let sources = SourcesStore()
+    let mapFiles = MapFiles.shared
     var origin: Place?                      // a chosen start instead of the driver
     @Published var toast: String?
     /// A trip that was running when the app last closed, offered back.
@@ -128,6 +129,7 @@ final class AppModel: ObservableObject {
         // free of the model and follows a simulated drive too.
         LiveData.position = { [weak self] in self?.here }
         LiveData.routeAhead = { [weak self] in self?.alerts.stretchAhead() ?? [] }
+        mapFiles.position = { [weak self] in self?.here ?? self?.viewCenter }
         camera = .center(Self.defaultCenter, zoom: 8)
         // Every dot has to be on the map by the time the camera finishes
         // its zoom to the driver, which takes a second or two. So the
@@ -142,7 +144,7 @@ final class AppModel: ObservableObject {
         for child in [places.objectWillChange.eraseToAnyPublisher(), markers.objectWillChange.eraseToAnyPublisher(),
                       alerts.objectWillChange.eraseToAnyPublisher(), account.objectWillChange.eraseToAnyPublisher(),
                       reporter.objectWillChange.eraseToAnyPublisher(), sources.objectWillChange.eraseToAnyPublisher(),
-                      Connectivity.shared.objectWillChange.eraseToAnyPublisher()] {
+                      Connectivity.shared.objectWillChange.eraseToAnyPublisher(), mapFiles.objectWillChange.eraseToAnyPublisher()] {
             child.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         }
         Connectivity.shared.onReconnect { [weak self] in self?.reconnected() }
@@ -360,8 +362,19 @@ final class AppModel: ObservableObject {
         return here
     }
 
-    /// The base map for the current choice and appearance.
-    var styleURL: URL { Backend.styleURL(prefs.mapStyle.serverStyle(dark: isDark)) }
+    /// The base map for the current choice and appearance: a bundled
+    /// style, drawing from the online file or a saved one (MapFiles).
+    var styleURL: URL { mapFiles.styleURL(flavor: prefs.mapStyle.flavor(dark: isDark)) }
+
+    /// The map along this route, saved for the drive. Automatic on
+    /// Wi-Fi when the setting allows; `manual` is the driver's tap.
+    func saveTripMap(_ route: Route, to place: Place, manual: Bool) {
+        Task {
+            await mapFiles.saveCorridor(route: route.geometry.map(\.clLocationCoordinate2D), name: place.shortName,
+                                        manual: manual, autoAllowed: prefs.mapAutoSave)
+            if let n = mapFiles.lastNotice { toast = n; mapFiles.lastNotice = nil }
+        }
+    }
 
     /// Keep the map on the driver, like a maps app at rest: north up in
     /// 2D, tilted in 3D.
@@ -569,6 +582,7 @@ final class AppModel: ObservableObject {
             if simulating { try location.simulate(route: route) }
             try core.startNavigation(route: route)
             SavedTrip.save(route: route, place: place)
+            saveTripMap(route, to: place, manual: false)
             DriveLog.note("route start to '\(place.name)': \(DriveLog.meters(route.distance)) \(Int(route.steps.reduce(0) { $0 + $1.duration } / 60)) min, "
                           + "\(route.geometry.count) pts, simulated=\(simulating), alertsAhead=\(Int(prefs.alertAheadMeters)) m")
             preview = nil

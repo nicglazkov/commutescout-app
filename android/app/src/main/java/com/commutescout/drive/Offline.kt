@@ -39,6 +39,9 @@ object Connectivity {
     private const val TAG = "Connectivity"
     private val _online = MutableStateFlow(true)
     val online = _online.asStateFlow()
+    /** On Wi-Fi or wired, as opposed to a mobile data plan. */
+    private val _onWifi = MutableStateFlow(false)
+    val onWifi = _onWifi.asStateFlow()
     private val reconnect = CopyOnWriteArrayList<() -> Unit>()
     private val main by lazy { Handler(Looper.getMainLooper()) }
     private var started = false
@@ -47,18 +50,24 @@ object Connectivity {
         if (started) return
         started = true
         val cm = context.getSystemService(ConnectivityManager::class.java) ?: return
-        _online.value = cm.activeNetwork?.let { cm.getNetworkCapabilities(it) }
-            ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val caps0 = cm.activeNetwork?.let { cm.getNetworkCapabilities(it) }
+        _online.value = caps0?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        _onWifi.value = caps0?.let(::wifi) == true
         runCatching {
             cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
                 override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                    _onWifi.value = wifi(caps)
                     set(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
                 }
-                override fun onLost(network: Network) { set(false) }
-                override fun onUnavailable() { set(false) }
+                override fun onLost(network: Network) { _onWifi.value = false; set(false) }
+                override fun onUnavailable() { _onWifi.value = false; set(false) }
             })
         }.onFailure { Log.w(TAG, "could not watch the network: $it") }
     }
+
+    private fun wifi(caps: NetworkCapabilities) =
+        (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
 
     /** Run [action] on the main thread every time the network comes back. */
     fun onReconnect(action: () -> Unit) { reconnect.add(action) }

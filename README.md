@@ -39,7 +39,7 @@ A drive does not stop at a dead zone. What each part does with no network:
 - **Reports**: one made with no signal is queued and sent when the signal returns, if that is within 15 minutes. The server stamps a report with the time it arrives, so an older one is dropped rather than shown as new.
 - **Search and new routes** need a signal. Saved and recent places still match, and the error says why a search or route failed rather than "nothing found".
 
-The base map uses whatever tiles the map library already cached. Downloading map areas ahead of a drive is a separate, later step.
+- **The map itself**: the base map is CommuteScout's own file, a vector tile archive of the United States on the data host, read by byte range. The three styles and their fonts are bundled in the app, so the map draws with no signal at all as long as the tiles are on the phone. When a trip starts on Wi-Fi the app saves the map along the route (tens of MB, Settings has the switch); on mobile data the route card offers it with a tap. Settings also offers whole states, which can be several gigabytes. Offline, the map draws from whichever saved file covers the phone.
 
 ## Layout
 
