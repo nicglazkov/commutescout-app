@@ -495,6 +495,20 @@ struct RoutesCard: View {
             }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("start")
+            // The map along the route, for a drive through a dead zone.
+            // Saved on its own on Wi-Fi when the trip starts; this is the
+            // tap for mobile data, and it says so.
+            if model.online, !model.mapFiles.progress.isEmpty {
+                ProgressView(value: model.mapFiles.progress.values.first ?? 0) { Text("Saving the map for this trip").font(.caption) }
+            } else if model.online, !(Connectivity.shared.onWifi && model.prefs.mapAutoSave) {
+                Button { model.saveTripMap(routes[chosen], to: place, manual: true) } label: {
+                    Label(Connectivity.shared.onWifi ? "Save the map for this trip" : "Save the map for this trip (mobile data)",
+                          systemImage: "arrow.down.circle")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain).foregroundStyle(.tint)
+                .accessibilityIdentifier("save-trip-map")
+            }
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))

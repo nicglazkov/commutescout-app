@@ -111,6 +111,13 @@ object Units {
         get() = Engine.prefs.useMiles
         set(v) { Engine.prefs.useMiles = v }
 
+    /** A file size the way a phone shows it: "34 MB", "2.1 GB". */
+    fun bytes(n: Long): String = when {
+        n >= 1_000_000_000L -> "%.1f GB".format(n / 1e9)
+        n >= 1_000_000L -> "%.0f MB".format(n / 1e6)
+        else -> "%.0f KB".format(n / 1e3)
+    }
+
     fun distance(meters: Double): String {
         if (useMiles) {
             val mi = meters / 1609.344

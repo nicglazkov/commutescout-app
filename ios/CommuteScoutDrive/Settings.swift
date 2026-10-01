@@ -78,6 +78,17 @@ struct SettingsSheet: View {
                     Toggle("Show speed limit", isOn: Binding(get: { prefs.showSpeedLimit }, set: { prefs.showSpeedLimit = $0; prefs.objectWillChange.send() }))
                     Toggle("Keep the screen on", isOn: Binding(get: { prefs.keepAwake }, set: { prefs.keepAwake = $0; prefs.objectWillChange.send() }))
                 }
+                Section("Offline maps") {
+                    NavigationLink { OfflineMapsView() } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Maps saved on this phone")
+                            Text(model.mapFiles.files.isEmpty ? "None yet"
+                                 : "\(model.mapFiles.files.count) saved, \(ByteCountFormatter.string(fromByteCount: model.mapFiles.bytesOnDisk, countStyle: .file))")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Toggle("Save the map for each trip on Wi-Fi", isOn: Binding(get: { prefs.mapAutoSave }, set: { prefs.mapAutoSave = $0; prefs.objectWillChange.send() }))
+                }
                 Section("Layers") {
                     Toggle("Traffic", isOn: Binding(get: { prefs.traffic }, set: { prefs.traffic = $0; prefs.objectWillChange.send() }))
                     ForEach(Prefs.layerKinds, id: \.key) { k in

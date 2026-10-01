@@ -186,6 +186,7 @@ object Engine {
     fun init(application: Application) {
         app = application
         Connectivity.start(application)
+        MapFiles.init(application)
         prefs = Prefs(application)
         places = PlaceStore(application)
         alerts = AlertsEngine(application)
@@ -302,8 +303,17 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     val reportLatLon: LatLon?
         get() = (_state.value as? DriveState.Found)?.place?.let { LatLon(it.lat, it.lon) } ?: _here.value ?: viewCenter
 
-    /** The base map for the current choice and appearance. */
-    val styleUrl: String get() = Backend.styleUrl(prefs.mapStyle.serverStyle(isDark))
+    /** The base map for the current choice and appearance: a bundled
+     *  style, drawing from the online file or a saved one (MapFiles). */
+    val styleJson: String get() = MapFiles.styleJson(prefs.mapStyle.flavor(isDark))
+
+    /** The map along this route, saved for the drive. */
+    fun saveTripMap(route: Route, place: Place, manual: Boolean) {
+        viewModelScope.launch {
+            MapFiles.saveCorridor(route.geometry.map { LatLon(it.lat, it.lng) }, place.shortName, manual, prefs.mapAutoSave)
+            MapFiles.notice.value?.let { toast(it); MapFiles.notice.value = null }
+        }
+    }
 
     // While browsing the puck follows the phone's own fix; Ferrostar only
     // reports a location during a trip.
@@ -316,6 +326,8 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     init {
         _resumable.value?.let { Log.i("DriveViewModel", "trip to ${it.place.shortName} was running when the app closed; offering it back") }
         viewModelScope.launch { Engine.notice.collect { n -> if (n != null) { toast(n); Engine.notice.value = null } } }
+        viewModelScope.launch { MapFiles.notice.collect { n -> if (n != null) { toast(n); MapFiles.notice.value = null } } }
+        MapFiles.position = { _here.value ?: viewCenter }
         viewModelScope.launch { Engine.flushReports()?.let { toast(it) } }
         viewModelScope.launch {
             navigationUiState.collect { s ->
@@ -462,6 +474,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             Engine.core.startNavigation(route)
             Engine.tripPlace = place
             TripStore.save(route, place)
+            saveTripMap(route, place, manual = false)
             setDestination(place.shortName)
             Engine.places.noteRecent(place.name, place.lat, place.lon)
             Engine.alerts.start(route.geometry.map { LatLon(it.lat, it.lng) })

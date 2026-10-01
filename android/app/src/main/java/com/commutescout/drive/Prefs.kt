@@ -16,13 +16,15 @@ class Prefs(context: Context) {
 
     enum class Theme(val label: String) { SYSTEM("System"), LIGHT("Light"), DARK("Dark") }
     enum class MapStyle(val label: String) {
-        AUTO("Match theme"), LIGHT("Light"), DARK("Dark"), OUTDOORS("Outdoors");
+        // OUTDOORS is the old stored name, kept so a saved choice still reads.
+        AUTO("Match theme"), LIGHT("Light"), DARK("Dark"), OUTDOORS("Grayscale");
 
-        fun serverStyle(dark: Boolean): String = when (this) {
-            AUTO -> if (dark) "alidade_smooth_dark" else "alidade_smooth"
-            LIGHT -> "alidade_smooth"
-            DARK -> "alidade_smooth_dark"
-            OUTDOORS -> "outdoors"
+        /** The bundled style for this choice in the given appearance. */
+        fun flavor(dark: Boolean): String = when (this) {
+            AUTO -> if (dark) "dark" else "light"
+            LIGHT -> "light"
+            DARK -> "dark"
+            OUTDOORS -> "grayscale"
         }
     }
 
@@ -72,6 +74,8 @@ class Prefs(context: Context) {
     var mapStyle by state(MapStyle.valueOf(p.getString("mapstyle", "AUTO")!!)) { p.edit().putString("mapstyle", it.name).apply() }
     var is3D by state(p.getBoolean("3d", true)) { p.edit().putBoolean("3d", it).apply() }
     var traffic by state(p.getBoolean("traffic", false)) { p.edit().putBoolean("traffic", it).apply() }
+    /** Save the map along a route when a trip starts, on Wi-Fi. */
+    var mapAutoSave by state(p.getBoolean("map.autosave", true)) { p.edit().putBoolean("map.autosave", it).apply() }
     var hiddenKinds by state(savedHiddenKinds()) { p.edit().putStringSet("layers.off", it).apply() }
     var spokenAlerts by state(p.getBoolean("spokenalerts", true)) { p.edit().putBoolean("spokenalerts", it).apply() }
     var alertAheadMeters by state(p.getFloat("alertahead", 1500f).toDouble()) { p.edit().putFloat("alertahead", it.toFloat()).apply() }

@@ -33,6 +33,13 @@ targets:
     platform: iOS
     sources:
       - path: CommuteScoutDrive
+        excludes:
+          - "Map"
+      # The base map's styles, fonts and sprites, kept as a folder so the
+      # paths inside the bundle stay what the styles expect.
+      - path: CommuteScoutDrive/Map
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: Ferrostar
         product: FerrostarCore
