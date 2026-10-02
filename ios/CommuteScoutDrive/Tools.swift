@@ -96,7 +96,7 @@ struct AlertsListView: View {
                         dismissTools()
                     } label: {
                         HStack(spacing: 10) {
-                            Image(systemName: MarkerIcons.name(m.kind)).foregroundStyle(MarkerIcons.tint(m.kind)).frame(width: 24)
+                            MarkerGlyph(marker: m, size: 22).frame(width: 24)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(m.displayTitle).font(.subheadline).foregroundStyle(.primary).lineLimit(2)
                                 if let l = m.detailLines.first { Text(l).font(.caption).foregroundStyle(.secondary).lineLimit(1) }

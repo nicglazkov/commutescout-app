@@ -133,7 +133,7 @@ fun SettingsSheet(model: DriveViewModel, onClose: () -> Unit) {
             ToggleRow("Save the map for each trip on Wi-Fi", prefs.mapAutoSave) { prefs.mapAutoSave = it }
             Heading("Layers")
             ToggleRow("Traffic", prefs.traffic) { prefs.traffic = it }
-            Prefs.layerKinds.forEach { k -> ToggleRow(k.label, prefs.isShown(k.key)) { prefs.setShown(k.key, it); model.layersChanged() } }
+            Prefs.layerKinds.forEach { k -> ToggleRow(k.label, prefs.isChosen(k.key)) { prefs.setShown(k.key, it); model.layersChanged() } }
 
             Heading("Places")
             if (places.isEmpty()) Text("Search a place, then save it as Home, Work or a favorite.", color = MaterialTheme.colorScheme.onSurfaceVariant)

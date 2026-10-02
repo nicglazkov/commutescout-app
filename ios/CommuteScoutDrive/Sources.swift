@@ -31,6 +31,13 @@ struct FlareSource: Codable, Identifiable, Hashable {
 
     var isDirect: Bool { base != nil && ownSessionPath == nil }
 
+    /// The one category this plugin shows, when it only ever shows one;
+    /// its badge in a list carries that picture, otherwise none.
+    var oneCategory: String? {
+        let cats = Set(kinds.map { PluginStyle.category($0) })
+        return cats.count == 1 ? cats.first : nil
+    }
+
     /// Where the plugin says it covers, in words.
     var coverageLabel: String {
         guard let b = coverage, b.count == 4 else { return "Coverage not stated" }
