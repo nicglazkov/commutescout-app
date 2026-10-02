@@ -92,7 +92,7 @@ struct SettingsSheet: View {
                 Section("Layers") {
                     Toggle("Traffic", isOn: Binding(get: { prefs.traffic }, set: { prefs.traffic = $0; prefs.objectWillChange.send() }))
                     ForEach(Prefs.layerKinds, id: \.key) { k in
-                        Toggle(k.label, isOn: Binding(get: { prefs.isShown(k.key) },
+                        Toggle(k.label, isOn: Binding(get: { prefs.isChosen(k.key) },
                                                       set: { prefs.setShown(k.key, $0); model.markers.refresh(force: true) }))
                     }
                 }

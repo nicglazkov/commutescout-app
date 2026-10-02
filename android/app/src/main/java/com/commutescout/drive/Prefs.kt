@@ -43,7 +43,7 @@ class Prefs(context: Context) {
             LayerKind("chain_control", "Chain controls", "chain"),
             LayerKind("wildfire", "Wildfires", "fire"),
             LayerKind("toll", "Toll prices", "toll"),
-            LayerKind("plugin", "Community reports", "plugin"),
+            LayerKind("plugin", "Plugin alerts", "plugin"),
             LayerKind("rwis", "Weather stations", "rwis"),
             LayerKind("sign", "Message signs", "sign"),
             LayerKind("camera", "Cameras", "camera"),
@@ -64,7 +64,7 @@ class Prefs(context: Context) {
     /** Back to defaults, for UI tests that must start the same way every run. */
     fun resetForTests() {
         p.edit().clear().apply()
-        theme = Theme.SYSTEM; mapStyle = MapStyle.AUTO; is3D = true; traffic = false; hiddenKinds = offByDefault
+        theme = Theme.SYSTEM; mapStyle = MapStyle.AUTO; is3D = true; traffic = false; hiddenKinds = offByDefault; sourceFilter = SourceFilter.ALL
         spokenAlerts = true; alertAheadMeters = 1500.0; showSpeedLimit = true; keepAwake = true
         avoidTolls = false; avoidHighways = false; avoidFerries = false; stripAheadMeters = 16093.0
         advancedAlerts = false; alertRulesRaw = ""; useMiles = true
@@ -77,6 +77,9 @@ class Prefs(context: Context) {
     /** Save the map along a route when a trip starts, on Wi-Fi. */
     var mapAutoSave by state(p.getBoolean("map.autosave", true)) { p.edit().putBoolean("map.autosave", it).apply() }
     var hiddenKinds by state(savedHiddenKinds()) { p.edit().putStringSet("layers.off", it).apply() }
+    var sourceFilter by state(runCatching { SourceFilter.valueOf(p.getString("layers.sources", "ALL")!!) }.getOrDefault(SourceFilter.ALL)) {
+        p.edit().putString("layers.sources", it.name).apply()
+    }
     var spokenAlerts by state(p.getBoolean("spokenalerts", true)) { p.edit().putBoolean("spokenalerts", it).apply() }
     var alertAheadMeters by state(p.getFloat("alertahead", 1500f).toDouble()) { p.edit().putFloat("alertahead", it.toFloat()).apply() }
     var showSpeedLimit by state(p.getBoolean("speedlimit", true)) { p.edit().putBoolean("speedlimit", it).apply() }
@@ -122,7 +125,18 @@ class Prefs(context: Context) {
         return saved + offByDefault
     }
 
-    fun isShown(kind: String) = kind !in hiddenKinds
+    /** Official sources, plugins, or both: one choice over the layer
+     *  switches, which keep what they were set to. */
+    enum class SourceFilter(val label: String) {
+        ALL("Everything"), OFFICIAL("Official"), PLUGINS("Plugins");
+        fun allows(kind: String) = when (this) { ALL -> true; OFFICIAL -> kind != "plugin"; PLUGINS -> kind == "plugin" }
+    }
+
+    /** The layer's own switch, whatever the source filter says. */
+    fun isChosen(kind: String) = kind !in hiddenKinds
+
+    /** Whether the kind is drawn: its switch is on and the filter lets it through. */
+    fun isShown(kind: String) = isChosen(kind) && sourceFilter.allows(kind)
     fun setShown(kind: String, on: Boolean) { hiddenKinds = if (on) hiddenKinds - kind else hiddenKinds + kind }
 
     /**

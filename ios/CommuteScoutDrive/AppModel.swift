@@ -484,6 +484,24 @@ final class AppModel: ObservableObject {
         return mediated + sources.directMarkers
     }
 
+    /// Whether a marker's plugin is switched on. Official markers always are.
+    func pluginIsOn(_ m: RoadMarker) -> Bool {
+        m.kind != "plugin" || sources.isOn(PluginStyle.sourceId(m))
+    }
+
+    struct PluginBadgeKey: Hashable { let key: String; let sourceId: String; let category: String }
+
+    /// Every badge on the map right now: one per plugin and category.
+    var pluginBadges: [PluginBadgeKey] {
+        guard prefs.isShown("plugin") else { return [] }
+        var seen = Set<PluginBadgeKey>()
+        for m in allMarkers where m.kind == "plugin" && pluginIsOn(m) {
+            seen.insert(PluginBadgeKey(key: PluginStyle.key(m), sourceId: PluginStyle.sourceId(m),
+                                       category: PluginStyle.category(m.flareKind)))
+        }
+        return seen.sorted { $0.key < $1.key }
+    }
+
     func marker(for key: String) -> RoadMarker? {
         markers.marker(for: key) ?? sources.directMarkers.first { $0.key == key }
     }
@@ -503,7 +521,7 @@ final class AppModel: ObservableObject {
     /// content is rebuilt on every model change, and a single burn
     /// footprint can run to a thousand points across seven rings.
     func mapShapes() -> MapShapes {
-        let key = "\(markers.stamp)|\(prefs.layersOff)|\(sources.directMarkers.count)"
+        let key = "\(markers.stamp)|\(prefs.layersOff)|\(prefs.sourceFilterRaw)|\(sources.directMarkers.count)"
         if let cached = shapeCache, cached.key == key { return cached.shapes }
         var out = MapShapes()
         for m in allMarkers where prefs.isShown(m.kind) {

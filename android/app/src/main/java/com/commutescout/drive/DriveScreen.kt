@@ -120,7 +120,13 @@ import org.maplibre.compose.camera.CameraPosition
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.expressions.value.LineCap
 import org.maplibre.compose.expressions.value.LineJoin
+import androidx.compose.material3.Switch
+import androidx.compose.runtime.key
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.unit.DpSize
+import org.maplibre.compose.expressions.dsl.image
 import org.maplibre.compose.layers.CircleLayer
+import org.maplibre.compose.layers.SymbolLayer
 import org.maplibre.compose.layers.FillLayer
 import org.maplibre.compose.layers.LineLayer
 import org.maplibre.compose.layers.RasterLayer
@@ -160,6 +166,7 @@ fun DriveScreen(model: DriveViewModel) {
     val directMarkers by model.sources.directMarkers.collectAsStateWithLifecycle()
     val hiddenSources by model.sources.hidden.collectAsStateWithLifecycle()
     val ownIds by model.sources.ownSessionIds.collectAsStateWithLifecycle()
+    val pluginsOff by model.sources.hidden.collectAsStateWithLifecycle()
     val allMarkers = (siteMarkers.filter { m -> ownIds.none { m.id?.startsWith("$it:") == true } } + directMarkers)
         .filter { (it.source ?: "") !in hiddenSources }
     var tool by remember { mutableStateOf<Tool?>(null) }
@@ -278,7 +285,8 @@ fun DriveScreen(model: DriveViewModel) {
             ),
         ) {
             if (prefs.traffic) TrafficLayer()
-            MarkerLayers(allMarkers.filter { prefs.isShown(it.kind) && !it.blankSign }) { key -> model.showMarker(key) }
+            MarkerLayers(allMarkers.filter { prefs.isShown(it.kind) && !it.blankSign &&
+                (it.kind != "plugin" || PluginStyle.sourceId(it) !in pluginsOff) }) { key -> model.showMarker(key) }
             (state as? DriveState.Found)?.let { PinLayer(it.place) }
             if (state is DriveState.Choosing) chosenRoute?.let { RouteLine(it) }
         }
@@ -333,7 +341,7 @@ fun DriveScreen(model: DriveViewModel) {
                         .shadow(4.dp, RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp))
                         .clickable { stripCollapsed = false }.padding(horizontal = 10.dp, vertical = 8.dp).testTag("alert-pill"),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Icon(MarkerIcons.icon(next.marker.kind), null, Modifier.size(18.dp), tint = MarkerIcons.color(next.marker.kind))
+                        MarkerGlyph(next.marker, 18.dp)
                         Spacer(Modifier.width(6.dp))
                         Text(Units.distance(max(0.0, next.alongMeters - along)), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                         if (ahead.size > 1) Text(" +${ahead.size - 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -420,6 +428,7 @@ private fun MarkerLayers(markers: List<RoadMarker>, onTap: (String) -> Unit) {
     // Shapes first so a dot is never hidden under the line it belongs to.
     ShapeLayers(markers, onTap)
     for (kind in MarkerIcons.kinds) {
+        if (kind == "plugin") continue
         val ofKind = markers.filter { it.kind == kind }
         val source = rememberGeoJsonSource(GeoJsonData.Features(FeatureCollection(ofKind.map { m ->
             Feature(geometry = Point(Position(m.lon, m.lat)), properties = buildJsonObject { put("key", JsonPrimitive(m.key)) })
@@ -429,6 +438,26 @@ private fun MarkerLayers(markers: List<RoadMarker>, onTap: (String) -> Unit) {
             strokeColor = const(Color.White), strokeWidth = const(2.dp),
             onClick = { features -> tapped(features.firstOrNull()?.properties, onTap) },
         )
+    }
+    // A plugin alert is a badge, not a dot: the picture is what it is,
+    // the color is which plugin (PluginStyle). One layer per badge on
+    // screen, above the official dots.
+    val badges = markers.filter { it.kind == "plugin" }.groupBy { PluginStyle.key(it) }
+    for ((badge, ofBadge) in badges.entries.sortedBy { it.key }) {
+        key(badge) {
+            val first = ofBadge.first()
+            val glyph = rememberVectorPainter(PluginStyle.icon(PluginStyle.category(first.flare_kind)))
+            val painter = remember(badge) { BadgePainter(PluginStyle.color(PluginStyle.sourceId(first)), glyph) }
+            val source = rememberGeoJsonSource(GeoJsonData.Features(FeatureCollection(ofBadge.map { m ->
+                Feature(geometry = Point(Position(m.lon, m.lat)), properties = buildJsonObject { put("key", JsonPrimitive(m.key)) })
+            })))
+            SymbolLayer(
+                id = "cs-m-plugin-$badge", source = source,
+                iconImage = image(painter, DpSize(28.dp, 28.dp)),
+                iconAllowOverlap = const(true), iconIgnorePlacement = const(true),
+                onClick = { features -> tapped(features.firstOrNull()?.properties, onTap) },
+            )
+        }
     }
 }
 
@@ -765,11 +794,13 @@ private fun MarkerCard(marker: RoadMarker, here: LatLon?, model: DriveViewModel)
     Card(Modifier.padding(12.dp).fillMaxWidth().safeDrawingPadding().testTag("marker-card"), elevation = CardDefaults.cardElevation(6.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.Top) {
-                Icon(MarkerIcons.icon(marker.kind), null, tint = MarkerIcons.color(marker.kind))
+                MarkerGlyph(marker, 28.dp)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(MarkerIcons.label(marker.kind), style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold, color = MarkerIcons.color(marker.kind))
+                    val plugin = marker.kind == "plugin"
+                    Text(if (plugin) (marker.source ?: "Plugin").uppercase() else MarkerIcons.label(marker.kind),
+                        style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                        color = if (plugin) PluginStyle.color(PluginStyle.sourceId(marker)) else MarkerIcons.color(marker.kind))
                     Text(marker.cardTitle, style = MaterialTheme.typography.titleMedium, maxLines = 3)
                     marker.detailLines.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     here?.let { Text(Units.distance(AlertsEngine.meters(it, LatLon(marker.lat, marker.lon))) + " from you",
@@ -1023,7 +1054,7 @@ private fun RoutesCard(routes: List<Route>, place: Place, model: DriveViewModel,
 private fun AlertStrip(item: Upcoming, along: Double, more: Int, onCollapse: (() -> Unit)? = null, onTap: () -> Unit) {
     Card(Modifier.padding(horizontal = 12.dp).fillMaxWidth().clickable(onClick = onTap).testTag("alert-strip"), elevation = CardDefaults.cardElevation(6.dp)) {
         Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(MarkerIcons.icon(item.marker.kind), null, tint = MarkerIcons.color(item.marker.kind))
+            MarkerGlyph(item.marker)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(item.marker.displayTitle, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -1044,14 +1075,31 @@ private fun LayersSheet(model: DriveViewModel, onClose: () -> Unit) {
     val prefs = model.prefs
     val context = LocalContext.current
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("layers-sheet")) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Layers", style = MaterialTheme.typography.titleLarge)
             Heading("Base map")
             Choice("Style", Prefs.MapStyle.entries.map { it.label }, prefs.mapStyle.ordinal) { prefs.mapStyle = Prefs.MapStyle.entries[it] }
             ToggleRow("Traffic", prefs.traffic) { prefs.traffic = it }
             ToggleRow("3D perspective", prefs.is3D) { model.toggle3D() }
+            Heading("Sources")
+            Choice("Show", Prefs.SourceFilter.entries.map { it.label }, prefs.sourceFilter.ordinal) {
+                prefs.sourceFilter = Prefs.SourceFilter.entries[it]; model.layersChanged()
+            }
             Heading("On the road")
-            Prefs.layerKinds.forEach { k -> ToggleRow(k.label, prefs.isShown(k.key)) { prefs.setShown(k.key, it); model.layersChanged() } }
+            Prefs.layerKinds.forEach { k -> ToggleRow(k.label, prefs.isChosen(k.key)) { prefs.setShown(k.key, it); model.layersChanged() } }
+            Heading("Plugins")
+            val catalog by model.sources.catalog.collectAsStateWithLifecycle()
+            val off by model.sources.hidden.collectAsStateWithLifecycle()
+            LaunchedEffect(Unit) { model.sources.loadCatalog() }
+            catalog.forEach { p ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    PluginBadge(p.id, PluginStyle.oneCategory(p.kinds), 22.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Text(p.name, Modifier.weight(1f), maxLines = 2)
+                    Switch(p.id !in off, { on -> model.sources.setOn(p.id, on); model.markers.refresh(true) },
+                        Modifier.testTag("plugin-switch-${p.id}"))
+                }
+            }
             LinkRow("Where this data comes from") { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://commutescout.com/data-sources"))) }
         }
     }

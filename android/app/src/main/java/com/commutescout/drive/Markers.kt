@@ -1,6 +1,29 @@
 package com.commutescout.drive
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.CarCrash
+import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.DoNotDisturbOn
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Traffic
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
@@ -163,6 +186,99 @@ class MarkerStore {
             }
         }
     }
+}
+
+/**
+ * How a plugin's alerts look, everywhere they show.
+ *
+ * Official agency data is a dot. A plugin alert is a rounded square
+ * badge instead: the picture says what the alert is, the color says
+ * which plugin it came from. The website and the iPhone app draw the
+ * same thing, with the same colors and categories.
+ */
+object PluginStyle {
+    // The plugins CommuteScout runs get fixed colors; any other plugin
+    // gets one from its id, so it is the same on every launch.
+    private val known = mapOf("wz-flare" to Color(0xFF1D4ED8), "osm-cameras" to Color(0xFFEA580C))
+    private val palette = listOf(Color(0xFF7C3AED), Color(0xFF0F766E), Color(0xFFBE123C),
+        Color(0xFF4D7C0F), Color(0xFFA16207), Color(0xFF0369A1))
+
+    fun color(sourceId: String): Color {
+        known[sourceId]?.let { return it }
+        var h = 0L
+        for (c in sourceId) h = (h * 31 + c.code) and 0xFFFFFFFFL
+        return palette[(h % palette.size).toInt()]
+    }
+
+    /** The plugin a marker came from: the part of its id before the colon. */
+    fun sourceId(m: RoadMarker): String = m.id?.substringBefore(':', "")?.takeIf { it.isNotEmpty() } ?: m.source ?: "plugin"
+
+    fun category(flareKind: String?): String {
+        val k = (flareKind ?: "").uppercase()
+        return when {
+            k.startsWith("POLICE") -> "police"
+            k.startsWith("CRASH") -> "crash"
+            k.startsWith("CAMERA") -> "camera"
+            k.startsWith("JAM") -> "jam"
+            k.startsWith("WEATHER") -> "weather"
+            k.startsWith("ROAD_CLOSED") || k.startsWith("LANE_CLOSED") || k.startsWith("RAMP_CLOSED") -> "closed"
+            k.startsWith("CHAINS") -> "chains"
+            k.startsWith("HAZARD") -> "hazard"
+            else -> "other"
+        }
+    }
+
+    fun icon(category: String): ImageVector = when (category) {
+        "police" -> Icons.Default.Shield
+        "crash" -> Icons.Default.CarCrash
+        "camera" -> Icons.Default.CameraAlt
+        "jam" -> Icons.Default.Traffic
+        "weather" -> Icons.Default.Cloud
+        "closed" -> Icons.Default.DoNotDisturbOn
+        "chains" -> Icons.Default.Link
+        "hazard" -> Icons.Default.Warning
+        else -> Icons.Default.Circle
+    }
+
+    /** What names a badge: the plugin and the category, safe inside a layer id. */
+    fun key(m: RoadMarker): String =
+        sourceId(m).map { if (it.isLetterOrDigit()) it else '-' }.joinToString("") + "_" + category(m.flare_kind)
+
+    /** The one category a plugin shows, when it only ever shows one. */
+    fun oneCategory(kinds: List<String>): String? = kinds.map { category(it) }.toSet().singleOrNull()
+}
+
+/** The badge itself: a white edge, the plugin's color, the kind's picture. */
+class BadgePainter(private val color: Color, private val glyph: Painter?) : Painter() {
+    override val intrinsicSize: Size = Size.Unspecified
+    override fun DrawScope.onDraw() {
+        val edge = size.minDimension * 0.085f
+        drawRoundRect(Color.White, cornerRadius = CornerRadius(size.minDimension * 0.3f))
+        drawRoundRect(color, topLeft = Offset(edge, edge), size = Size(size.width - 2 * edge, size.height - 2 * edge),
+            cornerRadius = CornerRadius(size.minDimension * 0.23f))
+        glyph?.let { g ->
+            val pad = size.minDimension * 0.24f
+            translate(pad, pad) {
+                with(g) { draw(Size(size.width - 2 * pad, size.height - 2 * pad), colorFilter = ColorFilter.tint(Color.White)) }
+            }
+        }
+    }
+}
+
+/** A plugin's badge in a list or a card: the same picture as on the map. */
+@Composable
+fun PluginBadge(sourceId: String, category: String?, size: Dp = 24.dp) {
+    val glyph = category?.let { rememberVectorPainter(PluginStyle.icon(it)) }
+    val color = PluginStyle.color(sourceId)
+    Canvas(Modifier.size(size)) { with(BadgePainter(color, glyph)) { draw(this@Canvas.size) } }
+}
+
+/** The icon beside a marker in a list or a card: a plugin badge for a
+ *  plugin alert, the kind's own icon for everything else. */
+@Composable
+fun MarkerGlyph(marker: RoadMarker, size: Dp = 24.dp) {
+    if (marker.kind == "plugin") PluginBadge(PluginStyle.sourceId(marker), PluginStyle.category(marker.flare_kind), size)
+    else Icon(MarkerIcons.icon(marker.kind), null, Modifier.size(size), tint = MarkerIcons.color(marker.kind))
 }
 
 /** One color and glyph per marker kind, the website's palette. */

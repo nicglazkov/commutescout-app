@@ -203,6 +203,138 @@ final class MarkerStore: ObservableObject {
     }
 }
 
+/// How a plugin's alerts look, everywhere they show.
+///
+/// Official agency data is a round icon. A plugin alert is a rounded
+/// square badge instead: the picture says what the alert is, the color
+/// says which plugin it came from. The website draws the same thing
+/// (plugin-badges.js), with the same colors and categories.
+enum PluginStyle {
+    /// The plugins CommuteScout runs get fixed colors; any other plugin
+    /// gets one from its id, so it is the same on every launch.
+    private static let known: [String: UIColor] = [
+        "wz-flare": UIColor(red: 0.11, green: 0.31, blue: 0.85, alpha: 1),      // #1d4ed8
+        "osm-cameras": UIColor(red: 0.92, green: 0.35, blue: 0.05, alpha: 1),   // #ea580c
+    ]
+    private static let palette: [UIColor] = [
+        UIColor(red: 0.49, green: 0.23, blue: 0.93, alpha: 1), UIColor(red: 0.06, green: 0.46, blue: 0.43, alpha: 1),
+        UIColor(red: 0.75, green: 0.07, blue: 0.24, alpha: 1), UIColor(red: 0.30, green: 0.49, blue: 0.06, alpha: 1),
+        UIColor(red: 0.63, green: 0.38, blue: 0.03, alpha: 1), UIColor(red: 0.01, green: 0.41, blue: 0.63, alpha: 1),
+    ]
+
+    static func color(_ sourceId: String) -> UIColor {
+        if let c = known[sourceId] { return c }
+        var h: UInt32 = 0
+        for u in sourceId.unicodeScalars { h = h &* 31 &+ u.value }
+        return palette[Int(h % UInt32(palette.count))]
+    }
+
+    /// The plugin a marker came from: the part of its id before the colon.
+    static func sourceId(_ m: RoadMarker) -> String {
+        if let id = m.id, let colon = id.firstIndex(of: ":") { return String(id[..<colon]) }
+        return m.source ?? "plugin"
+    }
+
+    static func category(_ flareKind: String?) -> String {
+        let k = (flareKind ?? "").uppercased()
+        if k.hasPrefix("POLICE") { return "police" }
+        if k.hasPrefix("CRASH") { return "crash" }
+        if k.hasPrefix("CAMERA") { return "camera" }
+        if k.hasPrefix("JAM") { return "jam" }
+        if k.hasPrefix("WEATHER") { return "weather" }
+        if k.hasPrefix("ROAD_CLOSED") || k.hasPrefix("LANE_CLOSED") || k.hasPrefix("RAMP_CLOSED") { return "closed" }
+        if k.hasPrefix("CHAINS") { return "chains" }
+        if k.hasPrefix("HAZARD") { return "hazard" }
+        return "other"
+    }
+
+    static func symbol(_ category: String) -> String {
+        switch category {
+        case "police": "shield.fill"
+        case "crash": "car.side.rear.and.collision.and.car.side.front"
+        case "camera": "camera.fill"
+        case "jam": "car.2.fill"
+        case "weather": "cloud.fill"
+        case "closed": "minus.circle.fill"
+        case "chains": "link"
+        case "hazard": "exclamationmark.triangle.fill"
+        default: "circle.fill"
+        }
+    }
+
+    /// What names a badge: the plugin and the category, in a form that is
+    /// safe inside a layer identifier.
+    static func key(_ m: RoadMarker) -> String {
+        let id = sourceId(m).map { $0.isLetter || $0.isNumber ? $0 : "-" }
+        return String(id) + "_" + category(m.flareKind)
+    }
+
+    private static var cache: [String: UIImage] = [:]
+
+    /// The badge for one plugin and category, drawn once.
+    static func image(sourceId: String, category: String) -> UIImage {
+        let cacheKey = sourceId + "|" + category
+        if let hit = cache[cacheKey] { return hit }
+        let size = CGSize(width: 30, height: 30)
+        let img = UIGraphicsImageRenderer(size: size).image { _ in
+            UIColor.white.setFill()
+            UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 9).fill()
+            color(sourceId).setFill()
+            UIBezierPath(roundedRect: CGRect(origin: .zero, size: size).insetBy(dx: 2.5, dy: 2.5), cornerRadius: 7).fill()
+            let config = UIImage.SymbolConfiguration(pointSize: 13, weight: .bold)
+            let glyph = (UIImage(systemName: symbol(category), withConfiguration: config)
+                ?? UIImage(systemName: "circle.fill", withConfiguration: config))?
+                .withTintColor(.white, renderingMode: .alwaysOriginal)
+            if let glyph {
+                // Some symbols are wider than the badge; fit them inside.
+                let scale = min(1, 20 / max(glyph.size.width, glyph.size.height))
+                let w = glyph.size.width * scale, h = glyph.size.height * scale
+                glyph.draw(in: CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h))
+            }
+        }
+        cache[cacheKey] = img
+        return img
+    }
+
+    static func image(for m: RoadMarker) -> UIImage { image(sourceId: sourceId(m), category: category(m.flareKind)) }
+}
+
+/// A plugin's badge in a list or a card: the same picture as on the map.
+struct PluginBadge: View {
+    let sourceId: String
+    let category: String?
+    var size: CGFloat = 24
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
+            .fill(Color(PluginStyle.color(sourceId)))
+            .frame(width: size, height: size)
+            .overlay {
+                if let category {
+                    Image(systemName: PluginStyle.symbol(category)).resizable().scaledToFit()
+                        .foregroundStyle(.white).padding(size * 0.22)
+                }
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// The icon beside a marker in a list or a card: a plugin badge for a
+/// plugin alert, the kind's own symbol for everything else.
+struct MarkerGlyph: View {
+    let marker: RoadMarker
+    var size: CGFloat = 22
+
+    var body: some View {
+        if marker.kind == "plugin" {
+            PluginBadge(sourceId: PluginStyle.sourceId(marker), category: PluginStyle.category(marker.flareKind), size: size)
+        } else {
+            Image(systemName: MarkerIcons.name(marker.kind)).font(.system(size: size * 0.85))
+                .foregroundStyle(MarkerIcons.tint(marker.kind))
+        }
+    }
+}
+
 /// One icon per marker kind, drawn once: a colored disc with a white glyph.
 enum MarkerIcons {
     static let color: [String: UIColor] = [
@@ -279,9 +411,12 @@ struct MarkerCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: MarkerIcons.name(marker.kind)).font(.title2).foregroundStyle(MarkerIcons.tint(marker.kind))
+                MarkerGlyph(marker: marker, size: 28)
                 VStack(alignment: .leading, spacing: 2) {
-                    if let heading = MarkerIcons.heading[marker.kind] {
+                    if marker.kind == "plugin" {
+                        Text((marker.source ?? "Plugin").uppercased()).font(.caption2.weight(.bold))
+                            .foregroundStyle(Color(PluginStyle.color(PluginStyle.sourceId(marker)))).lineLimit(1)
+                    } else if let heading = MarkerIcons.heading[marker.kind] {
                         Text(heading).font(.caption2.weight(.bold)).foregroundStyle(MarkerIcons.tint(marker.kind))
                     }
                     Text(marker.displayTitle).font(.headline).lineLimit(3)

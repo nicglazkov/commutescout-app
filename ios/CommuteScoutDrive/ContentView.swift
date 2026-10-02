@@ -39,6 +39,7 @@ struct ContentView: View {
                 // A closure stretch and a toll corridor answer a tap the
                 // same way their dot does, which is what the website does.
                 layerIds: Set(MarkerIcons.kinds.map { "cs-m-\($0)" })
+                    .union(model.pluginBadges.map { "cs-m-plugin-\($0.key)" })
                     .union(["cs-closure-line", "cs-toll-line"]),
                 trafficTiles: model.prefs.traffic ? Backend.trafficTiles : nil,
                 onTap: { _, keys in
@@ -221,17 +222,27 @@ struct ContentView: View {
             .lineDashPattern([2, 1.5]).lineCap(.butt).lineJoin(.round)
         // Live road markers, one layer per kind so each has its icon.
         let markers = ShapeSource(identifier: "cs-markers") {
-            for m in model.allMarkers where model.prefs.isShown(m.kind) && model.sources.isOn(m.source ?? "") {
+            for m in model.allMarkers where model.prefs.isShown(m.kind) && model.pluginIsOn(m) {
                 let f = MLNPointFeature(coordinate: m.coordinate)
-                f.attributes = ["key": m.key, "kind": m.kind, "geo": "dot"]
+                f.attributes = ["key": m.key, "kind": m.kind, "geo": "dot",
+                                "badge": m.kind == "plugin" ? PluginStyle.key(m) : ""]
                 f
             }
         }
-        for kind in MarkerIcons.kinds {
+        for kind in MarkerIcons.kinds where kind != "plugin" {
             SymbolStyleLayer(identifier: "cs-m-\(kind)", source: markers)
                 .iconImage(MarkerIcons.images[kind]!)
                 .iconAllowsOverlap(true)
                 .predicate(NSPredicate(format: "kind == %@", kind))
+        }
+        // A plugin alert is a badge, not a disc: the picture is what it
+        // is, the color is which plugin (PluginStyle). One layer per badge
+        // on screen, above the official icons.
+        for badge in model.pluginBadges {
+            SymbolStyleLayer(identifier: "cs-m-plugin-\(badge.key)", source: markers)
+                .iconImage(PluginStyle.image(sourceId: badge.sourceId, category: badge.category))
+                .iconAllowsOverlap(true)
+                .predicate(NSPredicate(format: "badge == %@", badge.key))
         }
         // The alternative under consideration, drawn like the navigation route.
         let line = ShapeSource(identifier: "cs-route") {
@@ -268,7 +279,7 @@ struct ContentView: View {
                     Spacer()
                     Button { withAnimation { stripCollapsed = false } } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: MarkerIcons.name(next.marker.kind)).foregroundStyle(MarkerIcons.tint(next.marker.kind))
+                            MarkerGlyph(marker: next.marker, size: 18)
                             Text(Units.distance(max(0, next.alongMeters - model.alerts.hereAlong))).font(.caption.weight(.semibold))
                             if model.alerts.ahead.count > 1 { Text("+\(model.alerts.ahead.count - 1)").font(.caption2).foregroundStyle(.secondary) }
                         }
@@ -384,7 +395,7 @@ struct AlertStrip: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: MarkerIcons.name(item.marker.kind)).font(.title3).foregroundStyle(MarkerIcons.tint(item.marker.kind))
+            MarkerGlyph(marker: item.marker, size: 24)
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.marker.displayTitle).font(.subheadline.weight(.semibold)).lineLimit(2)
                 Text("in \(Units.distance(max(0, item.alongMeters - along)))" +
@@ -537,9 +548,19 @@ struct LayersSheet: View {
                     Toggle("Traffic", isOn: Binding(get: { model.prefs.traffic }, set: { model.prefs.traffic = $0; model.objectWillChange.send() }))
                     Toggle("3D perspective", isOn: Binding(get: { model.prefs.is3D }, set: { _ in model.toggle3D() }))
                 }
+                Section {
+                    Picker("Sources", selection: Binding(get: { model.prefs.sourceFilter },
+                                                         set: { model.prefs.sourceFilter = $0; model.markers.refresh(force: true) })) {
+                        ForEach(Prefs.SourceFilter.allCases) { f in Text(f.label).tag(f) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("source-filter")
+                } footer: {
+                    Text("Official is agency data. Plugins are the sources you installed from the marketplace.")
+                }
                 Section("On the road") {
                     ForEach(Prefs.layerKinds, id: \.key) { k in
-                        Toggle(isOn: Binding(get: { model.prefs.isShown(k.key) },
+                        Toggle(isOn: Binding(get: { model.prefs.isChosen(k.key) },
                                              set: { model.prefs.setShown(k.key, $0); model.markers.refresh(force: true) })) {
                             Label { Text(k.label) } icon: {
                                 Image(systemName: MarkerIcons.name(k.key)).foregroundStyle(MarkerIcons.tint(k.key))
@@ -549,8 +570,20 @@ struct LayersSheet: View {
                     Text("Cameras and toll prices start off, the same as the website. Cameras are the densest layer.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
+                Section("Plugins") {
+                    ForEach(model.sources.catalog) { p in
+                        Toggle(isOn: Binding(get: { model.sources.isOn(p.id) },
+                                             set: { model.sources.setOn(p.id, $0); model.markers.refresh(force: true) })) {
+                            Label { Text(p.name).lineLimit(2) } icon: {
+                                PluginBadge(sourceId: p.id, category: p.oneCategory, size: 22)
+                            }
+                        }
+                        .accessibilityIdentifier("plugin-switch-\(p.id)")
+                    }
+                    NavigationLink("My plugins and private sources") { SourcesView() }
+                }
+                .task { await model.sources.loadCatalog() }
                 Section {
-                    NavigationLink("Community sources (Flare plugins)") { SourcesView() }
                     Link(destination: URL(string: "https://commutescout.com/data-sources")!) {
                         Label("Where this data comes from", systemImage: "safari")
                     }

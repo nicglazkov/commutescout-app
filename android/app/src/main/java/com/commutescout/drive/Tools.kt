@@ -221,7 +221,7 @@ fun AlertsListSheet(model: DriveViewModel, mapState: NavigationMapState, onClose
                         }
                         onClose()
                     }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(MarkerIcons.icon(m.kind), null, tint = MarkerIcons.color(m.kind))
+                        MarkerGlyph(m)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(m.displayTitle, maxLines = 2, overflow = TextOverflow.Ellipsis)

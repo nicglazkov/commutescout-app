@@ -41,7 +41,7 @@ final class Prefs: ObservableObject {
         ("rwis", "Weather stations", "rwis"),
         ("wildfire", "Wildfires", "fire"),
         ("toll", "Toll prices", "toll"),
-        ("plugin", "Community reports", "plugin"),
+        ("plugin", "Plugin alerts", "plugin"),
         ("camera", "Cameras", "camera"),
         ("sign", "Message signs", "sign"),
     ]
@@ -59,6 +59,7 @@ final class Prefs: ObservableObject {
     @AppStorage("cs.map.autosave") var mapAutoSave: Bool = true
     @AppStorage("cs.traffic") var traffic: Bool = false
     @AppStorage("cs.layers.off") var layersOff: String = Prefs.layersOffByDefault   // comma-separated kinds hidden
+    @AppStorage("cs.layers.sources") var sourceFilterRaw: String = "all"
     @AppStorage("cs.spokenalerts") var spokenAlerts: Bool = true
     @AppStorage("cs.alertahead") var alertAheadMeters: Double = 1500
     @AppStorage("cs.speedlimit") var showSpeedLimit: Bool = true
@@ -141,7 +142,27 @@ final class Prefs: ObservableObject {
         set { layersOff = newValue.sorted().joined(separator: ","); objectWillChange.send() }
     }
 
-    func isShown(_ kind: String) -> Bool { !hiddenKinds.contains(kind) }
+    /// Official sources, plugins, or both: one choice over the layer
+    /// switches, which keep what they were set to.
+    enum SourceFilter: String, CaseIterable, Identifiable {
+        case all, official, plugins
+        var id: String { rawValue }
+        var label: String { switch self { case .all: "Everything"; case .official: "Official"; case .plugins: "Plugins" } }
+        func allows(_ kind: String) -> Bool {
+            switch self { case .all: true; case .official: kind != "plugin"; case .plugins: kind == "plugin" }
+        }
+    }
+
+    var sourceFilter: SourceFilter {
+        get { SourceFilter(rawValue: sourceFilterRaw) ?? .all }
+        set { sourceFilterRaw = newValue.rawValue; objectWillChange.send() }
+    }
+
+    /// The layer's own switch, whatever the source filter says.
+    func isChosen(_ kind: String) -> Bool { !hiddenKinds.contains(kind) }
+
+    /// Whether the kind is drawn: its switch is on and the filter lets it through.
+    func isShown(_ kind: String) -> Bool { isChosen(kind) && sourceFilter.allows(kind) }
 
     func setShown(_ kind: String, _ on: Bool) {
         var h = hiddenKinds
