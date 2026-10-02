@@ -89,6 +89,14 @@ class DriveTests {
     }
 
     private fun openSettings() { tag("settings").performClick(); waitFor { tagExists("settings-sheet") } }
+    /** Settings is a home page of categories; this opens one, by its name. */
+    private fun openSettingsPage(name: String) {
+        if (!tagExists("settings-sheet")) openSettings()
+        if (tagExists("settings-back")) settingsHome()
+        scrollTo(tag("settings-" + name.lowercase().replace(' ', '-'))).performClick()
+        waitFor { tagExists("settings-back") }
+    }
+    private fun settingsHome() { tag("settings-back").performClick(); waitFor { !tagExists("settings-back") } }
     private fun openTool(t: String) { tag("tools").performClick(); waitFor { tagExists("tools-sheet") }; tag(t).performClick() }
     /** A tap on the scrim above the sheet closes it, as a person would.
      *  Injected by the system so Compose's idle wait cannot stall on the map. */
@@ -147,7 +155,7 @@ class DriveTests {
         text("Home").performClick()
         waitFor { tagExists("navigate") }
         tag("place-close").performClick()
-        openSettings()
+        openSettingsPage("Saved places")
         scrollTo(text("Home")).assertIsDisplayed()
         val remove = compose.onAllNodesWithContentDescription("Remove", useUnmergedTree = true)
         val n = remove.fetchSemanticsNodes().size
@@ -173,46 +181,64 @@ class DriveTests {
     }
 
     @Test fun unitsChangeThePlaceCard() {
-        openSettings()
+        openSettingsPage("Units")
         scrollTo(text("Kilometers")).performClick()
         closeSheet("settings-sheet")
         search("Los Altos"); pickSuggestion("Los Altos")
         waitFor { exists(" km") }
         tag("place-close").performClick()
-        openSettings()
+        openSettingsPage("Units")
         scrollTo(text("Miles")).performClick()
     }
 
     // MARK: settings
 
-    @Test fun settingsSwitchesPickersAndPerspective() {
+    @Test fun settingsHomeListsEveryCategoryWithItsValue() {
         openSettings()
-        for (label in listOf("3D perspective", "Traffic", "Avoid tolls", "Avoid highways", "Avoid ferries",
-                             "Speak road alerts", "Show speed limit", "Keep the screen on")) {
-            val sw = scrollTo(tag("switch-$label")); sw.performClick(); sw.performClick()
-        }
+        for (name in listOf("account", "appearance", "units", "navigation", "alerts", "map-layers", "plugins",
+                            "offline-maps", "saved-places", "help", "about")) scrollTo(tag("settings-$name")).assertIsDisplayed()
+        // A row says what it is set to without being opened.
+        assertTrue(exists("Miles") || exists("Kilometers"))
+        assertTrue(exists("Voice on") || exists("Voice off") || exists("Avoids"))
+        closeSheet("settings-sheet")
+    }
+
+    @Test fun settingsSwitchesPickersAndPerspective() {
+        fun flip(vararg labels: String) { for (label in labels) { val sw = scrollTo(tag("switch-$label")); sw.performClick(); sw.performClick() } }
+        openSettingsPage("Appearance")
+        flip("3D perspective")
         for (label in listOf("Light", "Dark", "System")) scrollTo(compose.onAllNodesWithText(label, useUnmergedTree = true)[0]).performClick()
-        for (label in listOf("Outdoors", "Match theme")) scrollTo(compose.onAllNodesWithText(label, useUnmergedTree = true)[0]).performClick()
+        for (label in listOf("Grayscale", "Match theme")) scrollTo(compose.onAllNodesWithText(label, useUnmergedTree = true)[0]).performClick()
         scrollTo(compose.onAllNodesWithText("Dark", useUnmergedTree = true)[1]).performClick()
         scrollTo(compose.onAllNodesWithText("Light", useUnmergedTree = true)[1]).performClick()
+        openSettingsPage("Navigation")
+        flip("Avoid tolls", "Avoid highways", "Avoid ferries", "Show speed limit", "Keep the screen on")
+        openSettingsPage("Alerts")
+        flip("Speak road alerts")
         scrollTo(text("Advanced alerts", sub = true)).performClick()
         waitFor { tagExists("advanced-alerts") }
         scrollTo(tag("switch-Set alerts per kind")).performClick()
         waitFor { exists("Incidents") }
         scrollTo(text("Reset to defaults")).performClick()
         closeSheet("advanced-alerts")
+        // Back goes to the home page first, not out of Settings.
+        settingsHome()
+        assertTrue(tagExists("settings-sheet"))
         closeSheet("settings-sheet")
     }
 
     @Test fun layerSwitchesForEveryKind() {
-        openSettings()
+        openSettingsPage("Map layers")
+        val traffic = scrollTo(tag("switch-Traffic")); traffic.performClick(); traffic.performClick()
         for (k in Prefs.layerKinds) { val sw = scrollTo(tag("switch-${k.label}")); sw.performClick(); sw.performClick() }
+        openSettingsPage("About")
         scrollTo(text("Version", sub = true)).assertIsDisplayed()
+        openSettingsPage("Help")
         for (label in listOf("Live map on the web", "Data sources", "Developers and API", "Privacy")) scrollTo(text(label, sub = true)).assertIsDisplayed()
     }
 
     @Test fun accountRowSignedOutOrIn() {
-        openSettings()
+        openSettingsPage("Account")
         if (exists("Signed in as")) {
             scrollTo(text("Delete account")).performClick()
             waitFor { exists("Delete your account?") }

@@ -11,7 +11,8 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.colorScheme) private var colorScheme
-    @State private var showSettings = false
+    // "-csOpenSettings" opens Settings at launch, for screenshots and tests.
+    @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-csOpenSettings")
     @State private var showLayers = false
     @State private var showReport = false
     @State private var showTools = false
