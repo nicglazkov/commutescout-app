@@ -235,27 +235,13 @@ object Engine {
         val pending = PendingReport.all()
         if (pending.isEmpty() || !Connectivity.online.value) return@withLock null
         val token = account.token() ?: return@withLock null
-        val sent = ArrayList<PendingReport>(); val waiting = ArrayList<PendingReport>(); var dropped = 0
-        for (r in pending) {
-            if (System.currentTimeMillis() - r.createdAt > PendingReport.MAX_AGE_MS) {
-                dropped++; Log.i(TAG, "report ${r.kind} from ${OfflineText.time(r.createdAt)} dropped: too old to send"); continue
-            }
-            try {
-                Reporter.send(r.kind, r.lat, r.lon, r.heading, r.note, token)
-                sent.add(r)
-            } catch (e: Exception) {
-                if (Connectivity.isOffline(e)) waiting.add(r) else Log.w(TAG, "queued report refused: ${e.message}")
-            }
+        val done = PendingReport.flush(pending, System.currentTimeMillis()) { r ->
+            Reporter.send(r.kind, r.lat, r.lon, r.heading, r.note, token)
         }
-        PendingReport.store(waiting)
-        if (sent.isNotEmpty()) markers.refresh(true)
-        when {
-            sent.size == 1 -> "Your report from ${OfflineText.time(sent[0].createdAt)} was sent."
-            sent.size > 1 -> "${sent.size} reports you made offline were sent."
-            dropped == 1 -> "A report made offline was too old to send."
-            dropped > 1 -> "$dropped reports made offline were too old to send."
-            else -> null
-        }
+        if (done.dropped + done.refused > 0) Log.i(TAG, "queued reports: ${done.dropped} too old, ${done.refused} refused")
+        PendingReport.store(done.waiting)
+        if (done.sent.isNotEmpty()) markers.refresh(true)
+        done.message()
     }
 }
 
