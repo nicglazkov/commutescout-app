@@ -15,17 +15,9 @@ updates:
         update-types: ["minor", "patch"]
     ignore:
       - dependency-name: "com.stadiamaps.ferrostar:*"
-      # Held until the move to Gradle 9 and Android Gradle plugin 9.1,
-      # which is its own job: Compose 1.12, OkHttp 5.5 and the newer
-      # MapLibre Compose all require it (Dependabot #11, #12).
-      - dependency-name: "gradle-wrapper"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "com.android.tools.build:gradle"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "androidx.compose*"
-      - dependency-name: "com.squareup.okhttp3:*"
+      # MapLibre Compose moves with Ferrostar, whose map UI is compiled
+      # against one exact version of it; taken by hand together.
       - dependency-name: "org.maplibre.compose:*"
-      - dependency-name: "org.jetbrains.kotlin*"
   - package-ecosystem: swift
     directory: /ios
     schedule:

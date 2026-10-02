@@ -2,7 +2,6 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.androidApplication)
-    alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.googleServices) apply false
@@ -23,7 +22,7 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "com.commutescout.drive"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.commutescout.drive"
@@ -97,7 +96,7 @@ dependencies {
     // already on the runtime classpath through Ferrostar; declaring it
     // at the same version lets the compiler see it too, for the saved
     // trip (TripStore).
-    compileOnly("net.java.dev.jna:jna:5.18.1@aar")
+    compileOnly("net.java.dev.jna:jna:5.19.1@aar")
     implementation(libs.maplibre.compose)
     implementation(libs.play.services.location)
     implementation(platform(libs.firebase.bom))
