@@ -242,5 +242,36 @@ data class PendingReport(
         }
 
         fun add(report: PendingReport) { synchronized(lock) { store(all() + report) } }
+
+        /**
+         * Try every queued report once. `send` throws when it fails: a
+         * failure that means "no network" keeps the report for the next
+         * try, any other one is the server saying no and the report is
+         * given up. One older than [MAX_AGE_MS] is never sent.
+         */
+        suspend fun flush(pending: List<PendingReport>, now: Long, send: suspend (PendingReport) -> Unit): Flush {
+            val sent = ArrayList<PendingReport>(); val waiting = ArrayList<PendingReport>(); var dropped = 0; var refused = 0
+            for (r in pending) {
+                if (now - r.createdAt > MAX_AGE_MS) { dropped++; continue }
+                try { send(r); sent.add(r) } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    if (Connectivity.isOffline(e)) waiting.add(r) else refused++
+                }
+            }
+            return Flush(sent, waiting, dropped, refused)
+        }
+    }
+
+    /** How one pass over the queue went. */
+    data class Flush(val sent: List<PendingReport>, val waiting: List<PendingReport>, val dropped: Int, val refused: Int) {
+        /** What to tell the driver, if anything. */
+        fun message(): String? = when {
+            sent.size == 1 -> "Your report from ${OfflineText.time(sent[0].createdAt)} was sent."
+            sent.size > 1 -> "${sent.size} reports you made offline were sent."
+            dropped == 1 -> "A report made offline was too old to send."
+            dropped > 1 -> "$dropped reports made offline were too old to send."
+            refused > 0 -> "A report made offline could not be sent."
+            else -> null
+        }
     }
 }

@@ -198,7 +198,7 @@ final class AppModel: ObservableObject {
         let pending = PendingReport.all()
         guard !pending.isEmpty, online else { return }
         guard let token = await account.token() else { return }
-        var sent: [PendingReport] = [], waiting: [PendingReport] = [], dropped = 0
+        var sent: [PendingReport] = [], waiting: [PendingReport] = [], dropped = 0, refused = 0
         for r in pending {
             if Date().timeIntervalSince(r.createdAt) > PendingReport.maxAge {
                 dropped += 1
@@ -210,7 +210,7 @@ final class AppModel: ObservableObject {
                                         heading: r.heading, description: r.note, token: token)
                 sent.append(r)
             } catch {
-                if Connectivity.isOffline(error) { waiting.append(r) } else { DriveLog.note("queued report refused: \(error)") }
+                if Connectivity.isOffline(error) { waiting.append(r) } else { refused += 1; DriveLog.note("queued report refused: \(error)") }
             }
         }
         PendingReport.store(waiting)
@@ -221,6 +221,8 @@ final class AppModel: ObservableObject {
         } else if dropped > 0 {
             toast = dropped == 1 ? "A report made offline was too old to send."
                 : "\(dropped) reports made offline were too old to send."
+        } else if refused > 0 {
+            toast = "A report made offline could not be sent."
         }
     }
 

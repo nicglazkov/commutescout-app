@@ -4,6 +4,8 @@ import kotlinx.serialization.builtins.ListSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.io.IOException
 import java.io.InterruptedIOException
@@ -53,5 +55,40 @@ class OfflineTest {
                           PendingReport("HAZARD_ON_ROAD", 37.6, -122.2, null, "", now + minute))
         val text = Backend.json.encodeToString(ListSerializer(PendingReport.serializer()), list)
         assertEquals(list, Backend.json.decodeFromString(ListSerializer(PendingReport.serializer()), text))
+    }
+
+    private fun report(kind: String, minutesAgo: Long) = PendingReport(kind, 37.5, -122.1, null, "", now - minutesAgo * minute)
+
+    @Test fun aQueuedReportIsSentOnceTheSignalIsBack() = runBlocking {
+        val asked = ArrayList<String>()
+        val done = PendingReport.flush(listOf(report("POLICE_VISIBLE", 3), report("HAZARD_ON_ROAD", 1)), now) { asked.add(it.kind) }
+        assertEquals(listOf("POLICE_VISIBLE", "HAZARD_ON_ROAD"), asked)
+        assertEquals(2, done.sent.size)
+        assertTrue(done.waiting.isEmpty())
+        assertEquals("2 reports you made offline were sent.", done.message())
+    }
+
+    @Test fun aReportStaysQueuedWhileThereIsStillNoSignal() = runBlocking {
+        val queued = listOf(report("POLICE_VISIBLE", 3))
+        val done = PendingReport.flush(queued, now) { throw UnknownHostException("commutescout.com") }
+        assertEquals(queued, done.waiting)
+        assertTrue(done.sent.isEmpty())
+        assertNull(done.message())
+    }
+
+    @Test fun aReportThatWaitedTooLongIsNeverSent() = runBlocking {
+        var asked = 0
+        val done = PendingReport.flush(listOf(report("POLICE_VISIBLE", 16), report("CRASH_MAJOR", 14)), now) { asked++ }
+        assertEquals(1, asked)
+        assertEquals(listOf("CRASH_MAJOR"), done.sent.map { it.kind })
+        assertEquals(1, done.dropped)
+        assertTrue(done.waiting.isEmpty())
+    }
+
+    @Test fun aReportTheServerRefusesIsGivenUpAndSaidSo() = runBlocking {
+        val done = PendingReport.flush(listOf(report("POLICE_VISIBLE", 2)), now) { throw BackendError("Too many reports for now.", 429) }
+        assertTrue(done.waiting.isEmpty())
+        assertEquals(1, done.refused)
+        assertEquals("A report made offline could not be sent.", done.message())
     }
 }
