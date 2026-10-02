@@ -418,7 +418,7 @@ struct MarketplaceView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showSources = false
     private var sources: SourcesStore { model.sources }
-    private let columns = [GridItem(.adaptive(minimum: 160), spacing: 12)]
+    private let columns = [GridItem(.adaptive(minimum: 320), spacing: 12)]
 
     var body: some View {
         NavigationStack {
@@ -450,52 +450,89 @@ struct MarketplaceView: View {
     }
 }
 
-/// One marketplace tile.
+/// One marketplace listing: icon, name, operator and the install button
+/// on one line, then what it does and a strip of figures.
 struct PluginCard: View {
     @EnvironmentObject var model: AppModel
     let source: FlareSource
     private var installed: Bool { model.sources.isOn(source.id) }
 
+    /// What the plugin is mostly about, read from its kinds: it picks the
+    /// icon and its color, the way a store listing has an app icon.
+    private var icon: (symbol: String, colors: [Color]) {
+        let k = source.kinds
+        if !k.isEmpty, k.allSatisfy({ $0.hasPrefix("CAMERA") }) {
+            return ("camera.fill", [Color(red: 0.98, green: 0.75, blue: 0.14), Color(red: 0.92, green: 0.35, blue: 0.05)])
+        }
+        if k.contains(where: { $0.hasPrefix("POLICE") || $0.hasPrefix("CRASH") || $0.hasPrefix("HAZARD") }) {
+            return ("person.3.fill", [Color(red: 0.22, green: 0.74, blue: 0.97), Color(red: 0.11, green: 0.31, blue: 0.85)])
+        }
+        return ("puzzlepiece.extension.fill", [Color(red: 0.58, green: 0.64, blue: 0.72), Color(red: 0.2, green: 0.25, blue: 0.33)])
+    }
+
+    /// An operator named the same as its plugin says nothing twice.
+    private var operatorName: String {
+        if let a = source.attribution, !a.isEmpty, a != source.name { return a }
+        return "Run by its community"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
-                Text(source.name).font(.subheadline.weight(.semibold)).lineLimit(2)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(LinearGradient(colors: icon.colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 52, height: 52)
+                    .overlay(Image(systemName: icon.symbol).font(.system(size: 22, weight: .semibold)).foregroundStyle(.white))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(source.name).font(.subheadline.weight(.semibold)).lineLimit(2)
+                    Text(operatorName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
                 Spacer(minLength: 4)
-                Text(source.tier == "approved" ? "Approved" : "Not reviewed")
-                    .font(.caption2.weight(.semibold)).padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(source.tier == "approved" ? Color.green.opacity(0.18) : Color.orange.opacity(0.18), in: Capsule())
+                Button {
+                    model.sources.setOn(source.id, !installed)
+                    model.markers.refresh(force: true)
+                } label: {
+                    Text(installed ? "Installed" : "Install").font(.subheadline.weight(.bold))
+                        .padding(.horizontal, 14).padding(.vertical, 6)
+                        .foregroundStyle(installed ? Color.primary : Color.white)
+                        .background(installed ? Color(.tertiarySystemFill) : Color.accentColor, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("install-\(source.id)")
             }
             Text(source.summary ?? (source.kindsLabel.isEmpty ? "Community alerts for the map." : "Shows \(source.kindsLabel)."))
-                .font(.caption).foregroundStyle(.secondary).lineLimit(4)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(source.coverageLabel)
-                Text(source.ok == false ? "Not answering" : "\(source.count) alerts now")
-                if let a = source.attribution { Text(a).lineLimit(1) }
-                Text(source.acceptsReports ? "Accepts reports" : "Read only")
-                Text("Free")
+                .font(.footnote).foregroundStyle(.secondary).lineLimit(4)
+            Divider()
+            HStack(alignment: .top, spacing: 0) {
+                stat("Alerts now", source.ok == false ? "Offline" : source.count.formatted())
+                Divider()
+                stat("Coverage", source.coverageLabel)
+                Divider()
+                stat("Reports", source.acceptsReports ? "Accepted" : "Read only")
+                Divider()
+                stat("Price", "Free")
             }
-            .font(.caption2).foregroundStyle(.secondary)
-            Button {
-                model.sources.setOn(source.id, !installed)
-                model.markers.refresh(force: true)
-            } label: {
-                Text(installed ? "Installed" : "Install").font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
-            }
-            .installStyle(installed)
-            .accessibilityIdentifier("install-\(source.id)")
+            .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            Text(source.tier == "approved" ? "Approved by CommuteScout" : "Public, not reviewed. It never speaks unless you turn voice on for it.")
+                .font(.caption2).foregroundStyle(source.tier == "approved" ? Color.green : Color.orange)
         }
-        .padding(12)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .padding(16)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         // A container element, so the tile has its id and the Install
         // button keeps its own (a bare stack passes modifiers to children).
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("plugin-card")
     }
-}
 
-private extension View {
-    @ViewBuilder func installStyle(_ installed: Bool) -> some View {
-        if installed { buttonStyle(.bordered) } else { buttonStyle(.borderedProminent) }
+    private func stat(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 2) {
+            Text(label.uppercased()).font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary).lineLimit(1)
+            Text(value).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 2)
     }
 }
 

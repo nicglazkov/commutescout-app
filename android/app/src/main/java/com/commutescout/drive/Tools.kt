@@ -4,6 +4,17 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -92,29 +103,71 @@ fun MarketplaceSheet(model: DriveViewModel, onClose: () -> Unit) {
             Text("Plugins add alerts to the map. Every one here is free. Approved ones are reviewed by CommuteScout; the others are public but not reviewed, and say so.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
             if (catalog.isEmpty()) Text("No plugin is listed yet.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp))
-            LazyVerticalGrid(columns = GridCells.Adaptive(160.dp), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
+            LazyVerticalGrid(columns = GridCells.Adaptive(320.dp), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
                 items(catalog, key = { it.id }) { s ->
                     val installed = s.id !in hidden
-                    Card(Modifier.testTag("plugin-card")) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(verticalAlignment = Alignment.Top) {
-                                Text(s.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f), maxLines = 2)
-                                Text(if (s.tier == "approved") "Approved" else "Not reviewed", style = MaterialTheme.typography.labelSmall,
-                                    color = if (s.tier == "approved") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
-                            }
-                            Text(s.summary ?: if (s.kindsLabel.isEmpty()) "Community alerts for the map." else "Shows ${s.kindsLabel}.",
-                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4)
-                            Text(listOf(s.coverageLabel, if (s.ok == false) "Not answering" else "${s.count} alerts now", s.attribution ?: "",
-                                if (s.acceptsReports) "Accepts reports" else "Read only", "Free").filter { it.isNotEmpty() }.joinToString("\n"),
-                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (installed) OutlinedButton({ model.sources.setOn(s.id, false); model.markers.refresh(true) }, Modifier.fillMaxWidth().testTag("install-${s.id}")) { Text("Installed") }
-                            else Button({ model.sources.setOn(s.id, true); model.markers.refresh(true) }, Modifier.fillMaxWidth().testTag("install-${s.id}")) { Text("Install") }
-                        }
-                    }
+                    PluginListing(s, installed) { on -> model.sources.setOn(s.id, on); model.markers.refresh(true) }
                 }
             }
             LinkRow("Write a plugin") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://commutescout.com/plugins"))) }
         }
+    }
+}
+
+/** What a plugin is mostly about, read from its kinds: it picks the icon
+ *  and its color, the way a store listing has an app icon. */
+private fun pluginIcon(kinds: List<String>): Pair<ImageVector, List<Color>> = when {
+    kinds.isNotEmpty() && kinds.all { it.startsWith("CAMERA") } ->
+        Icons.Default.CameraAlt to listOf(Color(0xFFFBBF24), Color(0xFFEA580C))
+    kinds.any { it.startsWith("POLICE") || it.startsWith("CRASH") || it.startsWith("HAZARD") } ->
+        Icons.Default.Groups to listOf(Color(0xFF38BDF8), Color(0xFF1D4ED8))
+    else -> Icons.Default.Extension to listOf(Color(0xFF94A3B8), Color(0xFF334155))
+}
+
+/** One marketplace listing: icon, name, operator and the install button
+ *  on one line, then what it does and a strip of figures. */
+@Composable
+private fun PluginListing(s: FlareSource, installed: Boolean, onToggle: (Boolean) -> Unit) {
+    val (icon, colors) = pluginIcon(s.kinds)
+    // An operator named the same as its plugin says nothing twice.
+    val operator = s.attribution?.takeIf { it.isNotBlank() && it != s.name } ?: "Run by its community"
+    Card(Modifier.fillMaxWidth().testTag("plugin-card"), shape = RoundedCornerShape(20.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(52.dp).background(Brush.linearGradient(colors), RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
+                    Icon(icon, null, tint = Color.White, modifier = Modifier.size(26.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(s.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(operator, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.width(8.dp))
+                if (installed) FilledTonalButton({ onToggle(false) }, Modifier.testTag("install-${s.id}")) { Text("Installed") }
+                else Button({ onToggle(true) }, Modifier.testTag("install-${s.id}")) { Text("Install") }
+            }
+            Text(s.summary ?: if (s.kindsLabel.isEmpty()) "Community alerts for the map." else "Shows ${s.kindsLabel}.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            HorizontalDivider()
+            Row(Modifier.fillMaxWidth()) {
+                ListingStat("Alerts now", if (s.ok == false) "Offline" else "%,d".format(s.count), Modifier.weight(1f))
+                ListingStat("Coverage", s.coverageLabel, Modifier.weight(1.3f))
+                ListingStat("Reports", if (s.acceptsReports) "Accepted" else "Read only", Modifier.weight(1.1f))
+                ListingStat("Price", "Free", Modifier.weight(0.8f))
+            }
+            HorizontalDivider()
+            Text(if (s.tier == "approved") "Approved by CommuteScout" else "Public, not reviewed. It never speaks unless you turn voice on for it.",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (s.tier == "approved") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
+        }
+    }
+}
+
+@Composable
+private fun ListingStat(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier.padding(horizontal = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        Text(value, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
