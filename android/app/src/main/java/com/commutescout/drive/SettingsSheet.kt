@@ -77,6 +77,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Work
+import androidx.compose.material.icons.filled.Home
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /** The pages of Settings; null in the sheet's state is the home page. */
@@ -425,15 +431,96 @@ private fun OfflinePage(model: DriveViewModel) {
 @Composable
 private fun PlacesPage(model: DriveViewModel) {
     val places by model.places.places.collectAsStateWithLifecycle()
-    if (places.isEmpty()) {
-        PageGroup { Text("Search a place, then save it as Home, Work or a favorite.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-    } else {
-        PageGroup {
-            model.places.home?.let { PlaceRow("Home", it, model) }
-            model.places.work?.let { PlaceRow("Work", it, model) }
-            model.places.saved.forEach { PlaceRow("Saved", it, model) }
+    val user by model.account.user.collectAsStateWithLifecycle()
+    var picking by remember { mutableStateOf<PlaceKind?>(null) }
+    picking?.let { kind -> PlacePickerSheet(model, kind) { picking = null } }
+    PageGroup {
+        PlaceSlot("Home", Icons.Default.Home, model.places.home, { picking = PlaceKind.home }) { model.places.remove(it) }
+        PlaceSlot("Work", Icons.Default.Work, model.places.work, { picking = PlaceKind.work }) { model.places.remove(it) }
+    }
+    Note("Home and Work are one each; setting a new one replaces the old.")
+    GroupTitle("Favorites")
+    PageGroup {
+        model.places.saved.forEach { PlaceRow(it.name, Icons.Default.Star, it, model) }
+        LinkRow("Add a favorite") { picking = PlaceKind.saved }
+    }
+    if (model.places.recents.isNotEmpty()) {
+        GroupTitle("Recent destinations")
+        PageGroup { model.places.recents.forEach { PlaceRow(it.name, Icons.Default.History, it, model) } }
+        Note("The last ten places you navigated to.")
+    }
+    Note(if (user == null) "Sign in and these follow your account to the website and your other phone."
+         else "Signed in: these follow your account to the website and your other phone.")
+}
+
+/** Home or Work: the place with Change and Remove, or the way to set it. */
+@Composable
+private fun PlaceSlot(label: String, icon: ImageVector, p: Place?, onSet: () -> Unit, onRemove: (Place) -> Unit) {
+    if (p == null) {
+        Row(Modifier.fillMaxWidth().clickable(onClick = onSet).padding(vertical = 6.dp).testTag("set-${label.lowercase()}"), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(10.dp))
+            Text("Set $label", color = MaterialTheme.colorScheme.primary)
         }
-        Note("Signed in, these follow your account to the website and your other phone.")
+    } else {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(label)
+                Text(p.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            TextButton(onSet) { Text("Change") }
+            IconButton({ onRemove(p) }) { Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
+        }
+    }
+}
+
+/**
+ * Find a place and save it as Home, Work or a favorite, from Settings:
+ * the same lookup the search bar uses.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlacePickerSheet(model: DriveViewModel, kind: PlaceKind, onClose: () -> Unit) {
+    var text by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<Suggestion>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    val here by model.here.collectAsStateWithLifecycle()
+    val title = when (kind) { PlaceKind.home -> "Set Home"; PlaceKind.work -> "Set Work"; else -> "Add a favorite" }
+    fun pick(name: String, lat: Double, lon: Double) { model.places.set(kind, name, lat, lon); onClose() }
+    LaunchedEffect(text) {
+        val q = text.trim()
+        if (q.length < 2) { results = emptyList(); return@LaunchedEffect }
+        delay(150)
+        searching = true
+        results = runCatching { Search.suggest(q, here?.let { it.lat to it.lon }) }.getOrDefault(emptyList())
+        searching = false
+    }
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("place-picker")) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().testTag("place-search"), placeholder = { Text("Search a place or address") }, singleLine = true)
+            if (kind != PlaceKind.saved) here?.let { h ->
+                LinkRow("Use my current location") { pick("%.5f, %.5f".format(h.lat, h.lon), h.lat, h.lon) }
+            }
+            if (searching) Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Searching") }
+            results.forEach { r ->
+                Column(Modifier.fillMaxWidth().clickable { pick(r.name, r.lat, r.lon) }.padding(vertical = 6.dp)) {
+                    Text(r.name.substringBefore(","))
+                    Text(r.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (results.isEmpty()) {
+                val recents = model.places.recents.filter { text.isBlank() || it.name.contains(text, ignoreCase = true) }
+                if (recents.isNotEmpty()) {
+                    Heading("Recent destinations")
+                    recents.forEach { p ->
+                        Row(Modifier.fillMaxWidth().clickable { pick(p.name, p.lat, p.lon) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.History, null, tint = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.width(10.dp)); Text(p.name, maxLines = 2)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -456,7 +543,7 @@ private fun HelpPage() {
 @Composable
 private fun AboutPage() {
     PageGroup { Text("Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})") }
-    Note("Map tiles and routing by Stadia Maps, data (c) OpenStreetMap contributors. Road data from the agencies listed on commutescout.com. Verify before you drive.")
+    Note("Routing and address lookup by Stadia Maps. Map data (c) OpenStreetMap contributors, drawn from files CommuteScout hosts. Road data from the agencies listed on commutescout.com. Verify before you drive.")
 }
 
 @Composable
@@ -501,10 +588,10 @@ fun LinkRow(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PlaceRow(label: String, p: Place, model: DriveViewModel) {
+private fun PlaceRow(label: String, icon: ImageVector, p: Place, model: DriveViewModel) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(60.dp))
-        Text(p.shortName, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.width(10.dp))
+        Text(label, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
         IconButton({ model.places.remove(p) }) { Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
     }
 }

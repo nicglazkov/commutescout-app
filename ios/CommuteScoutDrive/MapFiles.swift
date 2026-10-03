@@ -37,6 +37,10 @@ final class MapFiles: ObservableObject {
         let south: Double, west: Double, north: Double, east: Double
         let savedAt: Date
         let build: String?
+        /// A corridor's route, thinned, so the detail page can draw the
+        /// ground the file really covers rather than its bounding box.
+        /// Absent on records saved before October 2026.
+        var path: [[Double]]? = nil
 
         func covers(_ c: CLLocationCoordinate2D) -> Bool {
             c.latitude >= south && c.latitude <= north && c.longitude >= west && c.longitude <= east
@@ -186,8 +190,10 @@ final class MapFiles: ObservableObject {
                                  south: lats.min()! - pad, west: lons.min()! - pad, north: lats.max()! + pad, east: lons.max()! + pad,
                                  savedAt: Date(), build: manifest?.build)
             let written = try await Downloader.fetch(req, to: path(for: file)) { [weak self] p in self?.progress[id] = p }
+            let thin = max(1, route.count / 300 + 1)
             let done = LocalFile(id: file.id, kind: file.kind, name: file.name, bytes: written, south: file.south, west: file.west,
-                                 north: file.north, east: file.east, savedAt: file.savedAt, build: file.build)
+                                 north: file.north, east: file.east, savedAt: file.savedAt, build: file.build,
+                                 path: stride(from: 0, to: route.count, by: thin).map { [route[$0].latitude, route[$0].longitude] })
             files.append(done)
             persist()
             pruneCorridors()
@@ -277,6 +283,38 @@ final class MapFiles: ObservableObject {
 /// Rough bounds per state, for choosing which saved state covers the
 /// phone. Generous on purpose; a file that also covers a neighbour's
 /// edge is better than one that stops at the line.
+/// The outline of a state, from the site's us-states.json (the same
+/// file the map build cuts the state files with), cached on the phone.
+enum StateOutline {
+    private static var cache: [String: [[CLLocationCoordinate2D]]] = [:]
+
+    static func rings(for name: String) async -> [[CLLocationCoordinate2D]]? {
+        if let c = cache[name] { return c }
+        let local = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("us-states.json")
+        var data = try? Data(contentsOf: local)
+        if data == nil, let (d, _) = try? await Backend.session.data(from: URL(string: "https://commutescout.com/static/us-states.json")!) {
+            data = d
+            try? d.write(to: local)
+        }
+        guard let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let features = json["features"] as? [[String: Any]] else { return nil }
+        for f in features {
+            guard let props = f["properties"] as? [String: Any], (props["NAME"] as? String) == name,
+                  let geom = f["geometry"] as? [String: Any], let type = geom["type"] as? String else { continue }
+            var rings: [[CLLocationCoordinate2D]] = []
+            func ring(_ r: Any) {
+                guard let pts = r as? [[Double]] else { return }
+                rings.append(pts.map { CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0]) })
+            }
+            if type == "Polygon", let coords = geom["coordinates"] as? [Any], let outer = coords.first { ring(outer) }
+            if type == "MultiPolygon", let polys = geom["coordinates"] as? [[Any]] { for p in polys { if let outer = p.first { ring(outer) } } }
+            cache[name] = rings
+            return rings
+        }
+        return nil
+    }
+}
+
 enum StateBounds {
     struct Box { let south: Double, west: Double, north: Double, east: Double }
     static func of(_ code: String) -> Box {

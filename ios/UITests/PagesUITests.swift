@@ -14,8 +14,8 @@ final class PagesUITests: XCTestCase {
         app.launch()
     }
 
-    private func shot(_ name: String) {
-        sleep(2)
+    private func shot(_ name: String, _ wait: UInt32 = 2) {
+        sleep(wait)
         let png = XCUIScreen.main.screenshot().pngRepresentation
         try? png.write(to: URL(fileURLWithPath: "/tmp/cs-page-\(name).png"))
     }
@@ -56,6 +56,34 @@ final class PagesUITests: XCTestCase {
         if trip.waitForExistence(timeout: 3) {
             trip.tap()
             shot("offline-detail")
+            back()
         }
+        back(); back()
+        open("Saved places")
+        shot("places")
+        app.buttons["set-home"].firstMatch.tap()
+        sleep(1)
+        let field = app.textFields["place-search"].firstMatch
+        if field.waitForExistence(timeout: 4) { field.tap(); field.typeText("San Jose City Hall") }
+        shot("places-picker", 3)
+        app.buttons["Cancel"].firstMatch.tap()
+        back()
+        open("About")
+        shot("about")
+    }
+
+    func testCameraCards() {
+        app.terminate()
+        app.launchArguments = ["-csSimulate", "-csOpenCamera", "video"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["camera-image"].firstMatch.waitForExistence(timeout: 20))
+        shot("camera-video-still")
+        app.descendants(matching: .any)["camera-image"].firstMatch.tap()
+        shot("camera-video-playing", 6)
+        app.terminate()
+        app.launchArguments = ["-csSimulate", "-csOpenCamera", "still"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["camera-image"].firstMatch.waitForExistence(timeout: 20))
+        shot("camera-still", 3)
     }
 }

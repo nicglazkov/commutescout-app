@@ -58,8 +58,12 @@ enum BackendError: LocalizedError {
 }
 
 enum AppInfo {
+    /// "0.4.0 (202610021716)": the version from VERSION at the repo
+    /// root, and the minute the build was made.
     static var version: String {
-        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0"
+        let v = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0"
+        let b = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? ""
+        return b.isEmpty || b == "1" ? v : "\(v) (\(b))"
     }
 }
 

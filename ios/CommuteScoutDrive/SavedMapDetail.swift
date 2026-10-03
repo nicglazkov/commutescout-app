@@ -36,6 +36,9 @@ struct SavedMapDetail: View {
     let file: MapFiles.LocalFile
     @State private var check: MapFiles.Check?
     @State private var confirmDelete = false
+    /// The ground the file really covers: a state's outline, or a
+    /// corridor's route. The box is only the fallback.
+    @State private var outline: [[CLLocationCoordinate2D]]?
 
     private var bounds: MLNCoordinateBounds {
         MLNCoordinateBounds(sw: CLLocationCoordinate2D(latitude: file.south, longitude: file.west),
@@ -46,19 +49,34 @@ struct SavedMapDetail: View {
         Form {
             Section {
                 MapView(styleURL: model.styleURL, camera: .constant(.boundingBox(bounds, edgePadding: .init(top: 24, left: 24, bottom: 24, right: 24)))) {
-                    let area = ShapeSource(identifier: "cs-saved-area") {
-                        MLNPolygonFeature(coordinates: [
-                            CLLocationCoordinate2D(latitude: file.south, longitude: file.west),
-                            CLLocationCoordinate2D(latitude: file.south, longitude: file.east),
-                            CLLocationCoordinate2D(latitude: file.north, longitude: file.east),
-                            CLLocationCoordinate2D(latitude: file.north, longitude: file.west),
-                            CLLocationCoordinate2D(latitude: file.south, longitude: file.west),
-                        ], count: 5)
+                    let blue = UIColor(red: 0.18, green: 0.5, blue: 0.97, alpha: 1)
+                    if file.kind == .corridor, let path = file.path, path.count > 1 {
+                        // The road, drawn as wide as the buffer the file was cut with.
+                        let road = ShapeSource(identifier: "cs-saved-road") {
+                            let pts = path.map { CLLocationCoordinate2D(latitude: $0[0], longitude: $0[1]) }
+                            MLNPolylineFeature(coordinates: pts, count: UInt(pts.count))
+                        }
+                        LineStyleLayer(identifier: "cs-saved-buffer", source: road)
+                            .lineColor(blue).lineOpacity(0.25).lineWidth(22).lineCap(.round).lineJoin(.round)
+                        LineStyleLayer(identifier: "cs-saved-road", source: road)
+                            .lineColor(blue).lineWidth(3).lineCap(.round).lineJoin(.round)
+                    } else {
+                        let area = ShapeSource(identifier: "cs-saved-area") {
+                            if let rings = outline {
+                                for r in rings { MLNPolygonFeature(coordinates: r, count: UInt(r.count)) }
+                            } else {
+                                MLNPolygonFeature(coordinates: [
+                                    CLLocationCoordinate2D(latitude: file.south, longitude: file.west),
+                                    CLLocationCoordinate2D(latitude: file.south, longitude: file.east),
+                                    CLLocationCoordinate2D(latitude: file.north, longitude: file.east),
+                                    CLLocationCoordinate2D(latitude: file.north, longitude: file.west),
+                                    CLLocationCoordinate2D(latitude: file.south, longitude: file.west),
+                                ], count: 5)
+                            }
+                        }
+                        FillStyleLayer(identifier: "cs-saved-fill", source: area).fillColor(blue).fillOpacity(0.18)
+                        LineStyleLayer(identifier: "cs-saved-edge", source: area).lineColor(blue).lineWidth(2)
                     }
-                    FillStyleLayer(identifier: "cs-saved-fill", source: area)
-                        .fillColor(UIColor(red: 0.18, green: 0.5, blue: 0.97, alpha: 1)).fillOpacity(0.18)
-                    LineStyleLayer(identifier: "cs-saved-edge", source: area)
-                        .lineColor(UIColor(red: 0.18, green: 0.5, blue: 0.97, alpha: 1)).lineWidth(2)
                 }
                 .unsafeMapViewControllerModifier { c in
                     c.mapView.isUserInteractionEnabled = false
@@ -69,7 +87,8 @@ struct SavedMapDetail: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .listRowInsets(EdgeInsets())
             } footer: {
-                Text(file.kind == .state ? "The whole state, at every zoom." : "The road and a few miles either side of it.")
+                Text(file.kind == .state ? "The state inside its border, at every zoom. The file is cut to the outline, not to a box."
+                     : (file.path == nil ? "The road and a few miles either side of it." : "The road, and about a mile and a half either side of it."))
             }
 
             Section("Status") {
@@ -124,7 +143,10 @@ struct SavedMapDetail: View {
         }
         .navigationTitle(file.name)
         .navigationBarTitleDisplayMode(.inline)
-        .task { check = await model.mapFiles.check(file) }
+        .task {
+            check = await model.mapFiles.check(file)
+            if file.kind == .state { outline = await StateOutline.rings(for: file.name) }
+        }
         .confirmationDialog("Delete \(file.name)?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { model.mapFiles.delete(file); dismiss() }
             Button("Cancel", role: .cancel) {}
