@@ -24,7 +24,15 @@ object Backend {
 
     /** The website page focused on a spot, the same link the site shares. */
     fun mapUrl(lat: Double, lon: Double, kind: String? = null): String =
-        "$BASE/map?focus=%.5f,%.5f".format(lat, lon) + (kind?.let { "&k=$it" } ?: "")
+        "$BASE/map?focus=${num(lat, 5)},${num(lon, 5)}" + (kind?.let { "&k=$it" } ?: "")
+
+    /**
+     * A number for the wire. The phone's own locale writes a decimal
+     * comma in much of the world, and "37,3382" is not a coordinate the
+     * server accepts, so every number in a query or a link goes through
+     * here.
+     */
+    fun num(v: Double, places: Int = 5): String = String.format(java.util.Locale.US, "%.${places}f", v)
 
     val http: OkHttpClient = OkHttpClient.Builder()
         .callTimeout(20, TimeUnit.SECONDS)
@@ -58,7 +66,7 @@ private data class GeocodeResponse(val candidates: List<Suggestion> = emptyList(
 object Search {
     suspend fun suggest(q: String, near: Pair<Double, Double>?): List<Suggestion> {
         val query = mutableMapOf("q" to q, "limit" to "6")
-        near?.let { query["lat"] = "%.5f".format(it.first); query["lon"] = "%.5f".format(it.second) }
+        near?.let { query["lat"] = Backend.num(it.first); query["lon"] = Backend.num(it.second) }
         return Backend.get<SuggestResponse>("/api/suggest", query).suggestions
     }
 
@@ -383,17 +391,17 @@ object LiveData {
 
     suspend fun markers(south: Double, west: Double, north: Double, east: Double, kinds: String = KINDS): List<RoadMarker> {
         val query = mutableMapOf(
-            "bbox" to "%.4f,%.4f,%.4f,%.4f".format(south, west, north, east),
+            "bbox" to listOf(south, west, north, east).joinToString(",") { Backend.num(it, 4) },
             "kinds" to kinds,
         )
         // Four places is about ten metres, and the server rounds it to a
         // tenth of a degree before it stores or forwards it.
-        here?.let { query["at"] = "%.4f,%.4f".format(it.lat, it.lon) }
+        here?.let { query["at"] = "${Backend.num(it.lat, 4)},${Backend.num(it.lon, 4)}" }
         ahead?.takeIf { it.size >= 2 }?.let { pts ->
             // Three places is about a hundred metres; the server snaps it
             // further before anything leaves for a plugin.
             query["ahead"] = pts.take(40).joinToString(";") { p ->
-                String.format(java.util.Locale.US, "%.3f,%.3f", p.lat, p.lon)
+                "${Backend.num(p.lat, 3)},${Backend.num(p.lon, 3)}"
             }
         }
         return Backend.get<MapData>("/api/mapdata", query).markers
