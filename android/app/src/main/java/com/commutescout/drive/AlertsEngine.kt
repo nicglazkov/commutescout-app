@@ -1,7 +1,11 @@
 package com.commutescout.drive
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +58,12 @@ class AlertsEngine(context: Context) {
     /** Per-kind rules from Settings; null means the one distance above. */
     var rules: ((RoadMarker) -> Prefs.AlertRule)? = null
     /**
+     * Whether the map shows a marker at all: a layer switched off or a
+     * plugin uninstalled is not spoken about and not on the banner.
+     */
+    var shown: ((RoadMarker) -> Boolean)? = null
+    private fun wanted(m: RoadMarker) = (shown?.invoke(m) ?: true) && (rules?.invoke(m)?.enabled ?: true) && !m.tooMinorToAnnounce
+    /**
      * What the map is showing and when it was current. Used when the
      * route's own fetch cannot reach the server, so a trip started
      * without a signal still announces what the phone already knows.
@@ -79,10 +89,41 @@ class AlertsEngine(context: Context) {
     private var ttsReady = false
     private var tts: TextToSpeech? = null
 
+    // A spoken alert is guidance: music turns down for the sentence and
+    // comes back, a podcast pauses and resumes. Focus is taken before
+    // each utterance and let go when the voice is done.
+    private val audio = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val voiceAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
+    private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+        .setAudioAttributes(voiceAttributes)
+        .setOnAudioFocusChangeListener { }
+        .build()
+    private var speaking = 0
+
     init {
         tts = TextToSpeech(context.applicationContext) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
-            if (ttsReady) tts?.language = Locale.getDefault()
+            if (ttsReady) {
+                tts?.language = Locale.getDefault()
+                tts?.setAudioAttributes(voiceAttributes)
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) = letGo()
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) = letGo()
+                    override fun onError(utteranceId: String?, errorCode: Int) = letGo()
+                })
+            }
+        }
+    }
+
+    private fun letGo() {
+        synchronized(this) {
+            speaking = max(0, speaking - 1)
+            if (speaking == 0) audio.abandonAudioFocusRequest(focus)
         }
     }
 
@@ -170,6 +211,9 @@ class AlertsEngine(context: Context) {
     fun startFreeDrive() {
         stop()
         _dismissed.value = emptySet()
+        // A fresh start: what was said on the last drive is said again
+        // on this one, and the sets do not grow for the life of the process.
+        announced.clear(); repeated.clear(); spokenAt.clear()
         freeDrive = true
         refreshJob = scope.launch {
             while (isActive) {
@@ -195,8 +239,14 @@ class AlertsEngine(context: Context) {
             if (_ahead.value.isNotEmpty()) _ahead.value = emptyList()
             return
         }
+        // Once a thing is well behind the car it may be announced again
+        // when it comes up ahead on the way back.
+        if (announced.isNotEmpty()) {
+            val behind = around.filter { it.key in announced && meters(position, LatLon(it.lat, it.lon)) > 5000 }
+            for (m in behind) { announced.remove(m.key); repeated.remove(m.key) }
+        }
         val upcoming = around.mapNotNull { m ->
-            if (!(rules?.invoke(m)?.enabled ?: true) || m.tooMinorToAnnounce) return@mapNotNull null
+            if (!wanted(m)) return@mapNotNull null
             val d = meters(position, LatLon(m.lat, m.lon))
             if (d > 6000 || d <= 20) return@mapNotNull null
             val off = angleBetween(heading.first, bearing(position, LatLon(m.lat, m.lon)))
@@ -284,7 +334,7 @@ class AlertsEngine(context: Context) {
         val hit = along(route, cumulative, position, lastSegment)
         lastSegment = hit.segment
         _hereAlong.value = hit.along
-        val upcoming = all.filter { it.alongMeters > hit.along - 100 && (rules?.invoke(it.marker)?.enabled ?: true) }
+        val upcoming = all.filter { it.alongMeters > hit.along - 100 && wanted(it.marker) }
         if (upcoming != _ahead.value) _ahead.value = upcoming
         announce(upcoming, hit.along)
     }
@@ -314,7 +364,11 @@ class AlertsEngine(context: Context) {
         if (gap > 0 && (spokenAt[marker.spokenTitle] ?: 0L) > now - 90_000) return
         spokenAt[marker.spokenTitle] = now
         val text = marker.spokenTitle + if (gap > 200) ", in " + Units.spoken(gap) else ""
-        tts?.speak(text, TextToSpeech.QUEUE_ADD, null, marker.key)
+        synchronized(this) {
+            if (speaking == 0) audio.requestAudioFocus(focus)
+            speaking += 1
+        }
+        if (tts?.speak(text, TextToSpeech.QUEUE_ADD, null, marker.key) != TextToSpeech.SUCCESS) letGo()
     }
 
     /** Fetch again now: the signal came back. */

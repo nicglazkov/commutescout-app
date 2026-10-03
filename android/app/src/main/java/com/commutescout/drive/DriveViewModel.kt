@@ -195,6 +195,7 @@ object Engine {
         alerts.spoken = prefs.spokenAlerts
         alerts.announceAheadMeters = prefs.alertAheadMeters
         alerts.rules = { m -> prefs.rule(prefs.ruleKind(m)) }
+        alerts.shown = { m -> prefs.isShown(m.kind) && (m.kind != "plugin" || PluginStyle.sourceId(m) !in sources.hidden.value) }
         alerts.fallback = { markers.held() to markers.asOf.value }
         // The signal is back: the snapshot, spoken alerts and any report
         // made meanwhile all catch up. The marker store does its own.
