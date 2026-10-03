@@ -106,7 +106,7 @@ fun BaseMapCards(choice: Prefs.MapStyle, dark: Boolean, onPick: (Prefs.MapStyle)
     val context = LocalContext.current
     val styles = Prefs.MapStyle.entries
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        styles.chunked(2).forEach { pair ->
+        styles.chunked(3).forEach { pair ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 pair.forEach { s ->
                     val picked = s == choice
@@ -125,7 +125,7 @@ fun BaseMapCards(choice: Prefs.MapStyle, dark: Boolean, onPick: (Prefs.MapStyle)
                             fontWeight = if (picked) FontWeight.SemiBold else FontWeight.Normal)
                     }
                 }
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
+                repeat(3 - pair.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }

@@ -479,10 +479,9 @@ struct LayersSheet: View {
         NavigationStack {
             Form {
                 Section("Base map") {
-                    Picker("Style", selection: Binding(get: { model.prefs.mapStyle }, set: { model.prefs.mapStyle = $0 })) {
-                        ForEach(Prefs.MapStyle.allCases) { s in Text(s.label).tag(s) }
-                    }
-                    .pickerStyle(.inline).labelsHidden()
+                    // The same cards as Settings, so the choice looks the same everywhere.
+                    BaseMapCards(choice: Binding(get: { model.prefs.mapStyle }, set: { model.prefs.mapStyle = $0 }), dark: model.isDark)
+                        .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
                     Toggle("Traffic", isOn: Binding(get: { model.prefs.traffic }, set: { model.prefs.traffic = $0; model.objectWillChange.send() }))
                     Toggle("3D perspective", isOn: Binding(get: { model.prefs.is3D }, set: { _ in model.toggle3D() }))
                 }

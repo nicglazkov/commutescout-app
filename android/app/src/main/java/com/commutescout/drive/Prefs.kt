@@ -15,13 +15,24 @@ class Prefs(context: Context) {
     private val p: SharedPreferences = context.getSharedPreferences("cs.prefs", Context.MODE_PRIVATE)
 
     enum class Theme(val label: String) { SYSTEM("System"), LIGHT("Light"), DARK("Dark") }
+    /**
+     * The same base maps the website offers, in its order. Positron and
+     * Bright are OpenFreeMap's styles, read from its tiles while online;
+     * without a signal the map falls back to Light, drawn from the file
+     * saved on the phone. The other four are CommuteScout's own styles.
+     * OUTDOORS is the old stored name for Grayscale, kept so a saved
+     * choice still reads.
+     */
     enum class MapStyle(val label: String) {
-        // OUTDOORS is the old stored name, kept so a saved choice still reads.
-        AUTO("Match theme"), LIGHT("Light"), DARK("Dark"), OUTDOORS("Grayscale");
+        AUTO("Match theme"), POSITRON("Positron"), BRIGHT("Bright"), SLATE("Slate"),
+        LIGHT("Light"), DARK("Dark"), OUTDOORS("Grayscale");
 
         /** The bundled style for this choice in the given appearance. */
         fun flavor(dark: Boolean): String = when (this) {
-            AUTO -> if (dark) "dark" else "light"
+            AUTO -> if (dark) "dark" else "positron"
+            POSITRON -> "positron"
+            BRIGHT -> "bright"
+            SLATE -> "slate"
             LIGHT -> "light"
             DARK -> "dark"
             OUTDOORS -> "grayscale"

@@ -13,20 +13,36 @@ final class Prefs: ObservableObject {
         var colorScheme: ColorScheme? { switch self { case .system: nil; case .light: .light; case .dark: .dark } }
     }
 
+    /// The same base maps the website offers, in its order. Positron and
+    /// Bright are OpenFreeMap's styles, read from its tiles while online;
+    /// without a signal the map falls back to Light, drawn from the file
+    /// saved on the phone. The other four are CommuteScout's own styles,
+    /// drawn from CommuteScout's file online and from the saved one
+    /// offline. "outdoors" is the old raw value for Grayscale, kept so a
+    /// saved choice still reads.
     enum MapStyle: String, CaseIterable, Identifiable {
-        // "outdoors" is the old raw value, kept so a saved choice still reads.
-        case auto, light, dark, outdoors
+        case auto, positron, bright, slate, light, dark, outdoors
         var id: String { rawValue }
-        var label: String { switch self { case .auto: "Match theme"; case .light: "Light"; case .dark: "Dark"; case .outdoors: "Grayscale" } }
+        var label: String {
+            switch self {
+            case .auto: "Match theme"; case .positron: "Positron"; case .bright: "Bright"; case .slate: "Slate"
+            case .light: "Light"; case .dark: "Dark"; case .outdoors: "Grayscale"
+            }
+        }
         /// The bundled style for this choice in the given appearance.
         func flavor(dark isDark: Bool) -> String {
             switch self {
-            case .auto: isDark ? "dark" : "light"
+            case .auto: isDark ? "dark" : "positron"
+            case .positron: "positron"
+            case .bright: "bright"
+            case .slate: "slate"
             case .light: "light"
             case .dark: "dark"
             case .outdoors: "grayscale"
             }
         }
+        /// Whether this style needs a signal (its tiles are OpenFreeMap's).
+        var online: Bool { self == .positron || self == .bright }
     }
 
     /// The marker kinds the map can show, in the order of the Layers
