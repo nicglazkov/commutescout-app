@@ -102,7 +102,7 @@ class MarkerStore {
             while (isActive) {
                 delay(60_000)
                 _tick.value += 1
-                if (Connectivity.online.value && System.currentTimeMillis() >= holdUntil) refresh(force = true)
+                if (Engine.awake() && Connectivity.online.value && System.currentTimeMillis() >= holdUntil) refresh(force = true)
             }
         }
         scope.launch { markers.collect { byKey = it.associateBy { m -> m.key } } }

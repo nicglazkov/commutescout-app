@@ -306,7 +306,7 @@ class SourcesStore(context: Context) {
     /** Polls now, then every refreshS while the plugin answers, at the backed-off interval while it does not. */
     private fun schedule(src: FlareSource) {
         jobs[src.id]?.cancel()
-        jobs[src.id] = scope.launch { while (isActive) { poll(src); delay(backoff[src.id] ?: src.refreshS * 1000L) } }
+        jobs[src.id] = scope.launch { while (isActive) { if (Engine.awake()) poll(src); delay(backoff[src.id] ?: src.refreshS * 1000L) } }
     }
 
     /** The plugin failed to answer: the next poll waits twice as long, up to ten minutes. */

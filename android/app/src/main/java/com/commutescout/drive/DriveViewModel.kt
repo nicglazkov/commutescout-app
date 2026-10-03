@@ -33,6 +33,7 @@ import com.stadiamaps.ferrostar.core.service.FerrostarForegroundServiceManager
 import com.stadiamaps.ferrostar.core.withJsonOptions
 import com.stadiamaps.ferrostar.googleplayservices.FusedNavigationLocationProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -81,6 +82,10 @@ object Engine {
     @Volatile var tripActive = false
     /** Where the running trip goes, so a reroute can be saved with it. */
     @Volatile var tripPlace: Place? = null
+    /** The app is on screen. Off screen with no trip, the pollers rest and location slows down. */
+    val foreground = MutableStateFlow(true)
+    /** Polling is worth doing: the app is in front, or a trip is running and the service keeps it alive. */
+    fun awake() = foreground.value || tripActive
     /** A line for the screen to show as a toast, from work that ran with no screen attached. */
     val notice = MutableStateFlow<String?>(null)
     private val flushLock = kotlinx.coroutines.sync.Mutex()
@@ -185,6 +190,10 @@ object Engine {
 
     fun init(application: Application) {
         app = application
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onStart(owner: androidx.lifecycle.LifecycleOwner) { foreground.value = true }
+            override fun onStop(owner: androidx.lifecycle.LifecycleOwner) { foreground.value = false }
+        })
         Connectivity.start(application)
         MapFiles.init(application)
         prefs = Prefs(application)
@@ -342,7 +351,17 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         viewModelScope.launch { Engine.notice.collect { n -> if (n != null) { toast(n); Engine.notice.value = null } } }
         viewModelScope.launch { MapFiles.notice.collect { n -> if (n != null) { toast(n); MapFiles.notice.value = null } } }
         MapFiles.position = { _here.value ?: viewCenter }
-        Engine.alerts.startFreeDrive()
+        // The activity was finished under a running trip (a back gesture,
+        // a long time away): the service kept the trip, and this new
+        // model picks it up instead of stopping its alerts.
+        val running = Engine.tripPlace?.takeIf { Engine.tripActive && Engine.core.state.value.tripState is uniffi.ferrostar.TripState.Navigating }
+        if (running != null) {
+            Log.i("DriveViewModel", "trip to ${running.shortName} still running; picking it up")
+            _state.value = DriveState.Navigating(running)
+            _resumable.value = null
+        } else {
+            Engine.alerts.startFreeDrive()
+        }
         viewModelScope.launch { Engine.flushReports()?.let { toast(it) } }
         viewModelScope.launch {
             navigationUiState.collect { s ->
@@ -366,12 +385,52 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         }
     }
 
+    private var locationJob: Job? = null
+    private var locationIntervalMs = 0L
+
+    /**
+     * One collector, never two: the activity calls this again after
+     * each recreate. Every second on screen or on a trip; off screen
+     * with no trip, a fix every fifteen seconds keeps the snapshot aimed
+     * without holding the GPS.
+     */
     fun setLocationPermission(granted: Boolean) {
         _hasPermission.value = granted
-        if (granted) viewModelScope.launch {
-            Engine.location.locationUpdates(1000L).collect { l ->
+        if (!granted) { locationJob?.cancel(); locationJob = null; return }
+        if (locationJob == null) viewModelScope.launch {
+            Engine.foreground.collect { collectLocation(if (it || Engine.tripActive) 1000L else 15_000L) }
+        }
+        collectLocation(if (Engine.awake()) 1000L else 15_000L)
+    }
+
+    private fun collectLocation(intervalMs: Long) {
+        if (locationJob != null && locationIntervalMs == intervalMs) return
+        locationJob?.cancel()
+        locationIntervalMs = intervalMs
+        locationJob = viewModelScope.launch {
+            Engine.location.locationUpdates(intervalMs).collect { l ->
                 browsingLocation.value = l.toUserLocation()
                 noteFix(l)
+            }
+        }
+    }
+
+    /** A push notification was tapped: the map goes to the spot in its link. */
+    fun open(url: String) {
+        val u = runCatching { android.net.Uri.parse(url) }.getOrNull() ?: return
+        val f = u.getQueryParameter("focus")?.split(",")?.mapNotNull { it.trim().toDoubleOrNull() } ?: return
+        if (f.size < 2) return
+        Log.i("DriveViewModel", "open from notification: $url")
+        wantedView = listOf(f[0], f[1], 13.0)
+        val k = u.getQueryParameter("k")
+        if (k != null) viewModelScope.launch {
+            // The markers may still be loading; the nearest of that kind within 300 m.
+            val at = LatLon(f[0], f[1])
+            repeat(10) {
+                val near = markers.held().filter { it.kind == k && AlertsEngine.meters(LatLon(it.lat, it.lon), at) < 300 }
+                    .minByOrNull { AlertsEngine.meters(LatLon(it.lat, it.lon), at) }
+                if (near != null) { _selectedMarker.value = near; return@launch }
+                kotlinx.coroutines.delay(1000)
             }
         }
     }
@@ -413,7 +472,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     /** Take the saved trip back up; guidance needs only the saved route, not a signal. */
     fun resume() {
         val trip = _resumable.value ?: return
-        if (_here.value == null && !simulating.value) { _error.value = "Waiting for your location. Try again in a moment."; return }
+        if (_here.value == null && !simulating.value) { toast("Waiting for your location. Try again in a moment."); return }
         _resumable.value = null
         Log.i("DriveViewModel", "resume trip to ${trip.place.shortName}, saved ${(System.currentTimeMillis() - trip.startedAt) / 1000} s ago")
         start(trip.route, trip.place)
@@ -531,8 +590,9 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     fun routes(place: Place) {
         val from = origin?.let { LatLon(it.lat, it.lon) } ?: if (simulating.value) LatLon(37.3382, -121.8863) else _here.value
         if (from == null) {
-            _error.value = if (!_hasPermission.value) "Location is off for CommuteScout Drive. Turn it on in Settings to navigate."
-                else "Waiting for your location."
+            // The permission case is the one worth a dialog; a fix on its way is a toast.
+            if (!_hasPermission.value) _error.value = "Location is off for CommuteScout Drive. Turn it on in Settings to navigate."
+            else toast("Waiting for your location.")
             return
         }
         _state.value = DriveState.Routing
@@ -550,11 +610,11 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             } catch (e: Exception) {
                 Log.w("DriveViewModel", "routes failed: $e")
                 // The raw exception ("Unable to resolve host ...") is for the log, not the driver.
-                _error.value = when {
-                    e is BackendError && e.code == 0 && !e.message.isNullOrBlank() -> e.message
+                toast(when {
+                    e is BackendError && e.code == 0 && !e.message.isNullOrBlank() -> e.message!!
                     !Connectivity.online.value || Connectivity.isOffline(e) -> OfflineText.ROUTES
                     else -> "Could not get a route. Try again in a moment."
-                }
+                })
                 _state.value = DriveState.Found(place)
             }
         }
@@ -578,7 +638,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             _state.value = DriveState.Navigating(place)
         } catch (e: Exception) {
             Log.e("DriveViewModel", "start failed", e)
-            _error.value = if (_here.value == null) "Waiting for your location. Try again in a moment." else "Could not start navigation. Try again."
+            toast(if (_here.value == null) "Waiting for your location. Try again in a moment." else "Could not start navigation. Try again.")
         }
     }
 
