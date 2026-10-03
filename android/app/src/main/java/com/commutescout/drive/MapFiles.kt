@@ -42,7 +42,9 @@ import java.io.File
 object MapFiles {
     private const val TAG = "MapFiles"
     const val DEFAULT_US = "https://data.commutescout.com/map/us.pmtiles"
-    val flavors = listOf("light", "dark", "grayscale")
+    val flavors = listOf("positron", "bright", "slate", "light", "dark", "grayscale")
+    /** Styles drawn from OpenFreeMap's tiles: online only. Offline, the map draws Light from the saved file instead. */
+    private val onlineFlavors = setOf("positron", "bright")
     /** A trip corridor is kept this long; it is for one drive. */
     private const val CORRIDOR_KEEP_MS = 7 * 24 * 3600_000L
     private const val CORRIDOR_MAX = 6
@@ -104,7 +106,8 @@ object MapFiles {
      * fonts and sprites pointed into the app's assets and the tiles
      * pointed at the online file, or at the local one while offline.
      */
-    fun styleJson(flavor: String): String {
+    fun styleJson(requested: String): String {
+        val flavor = if (_usingLocal.value != null && requested in onlineFlavors) "light" else requested
         val text = app.assets.open("map/styles/$flavor.json").bufferedReader().use { it.readText() }
         return text.replace("__PMTILES_URL__", tileSource()).replace("__ASSETS__", "asset://map")
     }

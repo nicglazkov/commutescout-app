@@ -218,7 +218,7 @@ struct BaseMapCards: View {
     @Binding var choice: Prefs.MapStyle
     let dark: Bool
 
-    private let columns = [GridItem(.adaptive(minimum: 140), spacing: 10)]
+    private let columns = [GridItem(.adaptive(minimum: 104), spacing: 10)]
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: 10) {

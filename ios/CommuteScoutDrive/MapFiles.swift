@@ -58,7 +58,10 @@ final class MapFiles: ObservableObject {
 
     /// Where the phone is, for choosing which local file to draw from.
     var position: (() -> CLLocationCoordinate2D?)?
-    static let flavors = ["light", "dark", "grayscale"]
+    static let flavors = ["positron", "bright", "slate", "light", "dark", "grayscale"]
+    /// Styles drawn from OpenFreeMap's tiles: online only. Offline, the
+    /// map draws Light from the saved file instead.
+    static let onlineFlavors: Set<String> = ["positron", "bright"]
     static let defaultUS = "https://data.commutescout.com/map/us.pmtiles"
     /// A trip corridor is kept this long; it is for one drive.
     static let corridorKeep: TimeInterval = 7 * 24 * 3600
@@ -89,8 +92,11 @@ final class MapFiles: ObservableObject {
     /// pointed at the online file, or at the local one while offline.
     /// A new file is written whenever either changes, so the map sees a
     /// new URL and reloads.
-    func styleURL(flavor: String) -> URL {
+    func styleURL(flavor requested: String) -> URL {
         let source = tileSource()
+        // Positron and Bright read OpenFreeMap's tiles; with no signal the
+        // saved file is what there is, and Light is its closest look.
+        let flavor = (usingLocal != nil && Self.onlineFlavors.contains(requested)) ? "light" : requested
         let key = "\(flavor)|\(source)"
         if let u = styleFiles[key] { return u }
         let bundle = Bundle.main.resourceURL!.appendingPathComponent("Map", isDirectory: true)

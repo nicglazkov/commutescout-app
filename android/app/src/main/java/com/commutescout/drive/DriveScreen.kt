@@ -1209,7 +1209,8 @@ private fun LayersSheet(model: DriveViewModel, onClose: () -> Unit) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Layers", style = MaterialTheme.typography.titleLarge)
             Heading("Base map")
-            Choice("Style", Prefs.MapStyle.entries.map { it.label }, prefs.mapStyle.ordinal) { prefs.mapStyle = Prefs.MapStyle.entries[it] }
+            // The same cards as Settings, so the choice looks the same everywhere.
+            BaseMapCards(prefs.mapStyle, model.isDark) { prefs.mapStyle = it }
             ToggleRow("Traffic", prefs.traffic) { prefs.traffic = it }
             ToggleRow("3D perspective", prefs.is3D) { model.toggle3D() }
             Heading("Sources")
