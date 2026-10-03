@@ -31,15 +31,7 @@ struct ContentView: View {
                 onTapExit: { model.stop() },
                 makeMapContent: { mapContent }
             )
-            .navigationViewInnerGrid(topCenter: {
-                // The grid's middle column is narrow; the banner takes
-                // the width the instruction card has.
-                VStack(spacing: 8) {
-                    reroutingBanner
-                    alertBanner
-                }
-                .frame(width: UIScreen.main.bounds.width - 24)
-            })
+            .navigationViewInnerGrid(topCenter: { reroutingBanner })
 
             MapHook(
                 // A closure stretch and a toll corridor answer a tap the
@@ -81,7 +73,7 @@ struct ContentView: View {
                         OfflineBanner(title: n.title, detail: n.detail)
                             .padding(.horizontal, 12).padding(.top, 8)
                     }
-                    alertBanner.padding(.horizontal, 12).padding(.top, 8)
+                    if !isNavigating { alertBanner.padding(.horizontal, 12).padding(.top, 8) }
                     Spacer()
                 }
             }
@@ -127,18 +119,22 @@ struct ContentView: View {
                 }
             }
 
-            // The speedometer sits above the trip bar, left of the side
-            // buttons: clear of the instruction card whatever its height.
-            if model.prefs.showSpeedLimit, model.speedMps >= 0 || isNavigating {
-                VStack {
-                    Spacer()
+            // Above the trip bar, left of the side buttons, clear of the
+            // instruction card whatever its height: on a trip the alert
+            // banner, then the speedometer under it. (Browsing shows the
+            // banner at the top instead, under the search bar.)
+            VStack {
+                Spacer()
+                if isNavigating { alertBanner.padding(.leading, 12).padding(.trailing, 76).padding(.bottom, 8) }
+                if model.prefs.showSpeedLimit, model.speedMps >= 0 || isNavigating {
                     HStack {
                         Speedometer(speedMps: model.speedMps, limitKmh: model.limitKmh)
                         Spacer()
                     }
-                    .padding(.leading, 12).padding(.bottom, isNavigating ? 124 : bottomCardHeight + 12)
+                    .padding(.leading, 12)
                 }
             }
+            .padding(.bottom, isNavigating ? 124 : bottomCardHeight + 12)
             VStack {
                 Spacer()
                 bottomCard

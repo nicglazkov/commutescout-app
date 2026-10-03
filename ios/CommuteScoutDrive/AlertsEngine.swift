@@ -18,6 +18,41 @@ import Foundation
 /// Projection is done once per location update and cached in
 /// `hereAlong`; nothing here runs per frame, so a 500-mile route with
 /// tens of thousands of vertices costs the same as a short one on screen.
+/// The shared audio session while an alert is spoken: music ducks
+/// (turns down) for the sentence and comes back after, podcasts pause
+/// and resume. Nothing is stopped outright, and the session is let go
+/// as soon as the voice is done. Ferrostar's turn-by-turn voice does
+/// the same for its own sentences.
+final class SpeechFocus: NSObject, AVSpeechSynthesizerDelegate {
+    private var held = false
+
+    func take() {
+        guard !held else { return }
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
+            try session.setActive(true)
+            held = true
+        } catch {
+            DriveLog.note("audio: could not take focus: \(error.localizedDescription)")
+        }
+    }
+
+    func release() {
+        guard held else { return }
+        held = false
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        if !synthesizer.isSpeaking { release() }
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        if !synthesizer.isSpeaking { release() }
+    }
+}
+
 @MainActor
 final class AlertsEngine: ObservableObject {
     struct Upcoming: Identifiable, Hashable {
@@ -69,6 +104,7 @@ final class AlertsEngine: ObservableObject {
     private var box: (south: Double, west: Double, north: Double, east: Double)?
     private var lastSegment = 0
     private let synth = AVSpeechSynthesizer()
+    private let focus = SpeechFocus()
 
     static let refreshSeconds = 60.0
 
@@ -221,6 +257,14 @@ final class AlertsEngine: ObservableObject {
         DriveLog.note("say (tap): \(marker.kind) \(marker.displayTitle)")
         let utterance = AVSpeechUtterance(string: marker.spokenTitle)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        speak(utterance)
+    }
+
+    /// Every sentence goes out the same way: take the audio focus
+    /// (music ducks), say it, give the focus back when done.
+    private func speak(_ utterance: AVSpeechUtterance) {
+        if synth.delegate == nil { synth.delegate = focus }
+        focus.take()
         synth.speak(utterance)
     }
 
@@ -232,7 +276,7 @@ final class AlertsEngine: ObservableObject {
         DriveLog.note("alert spoken: \(marker.kind) '\(marker.displayTitle)' in \(DriveLog.meters(gap))")
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        synth.speak(utterance)
+        speak(utterance)
     }
 
     /// Fetch again now: the signal came back.
