@@ -152,7 +152,7 @@ struct ContentView: View {
             if let t = model.toast {
                 Text(t).font(.subheadline).padding(.horizontal, 14).padding(.vertical, 10)
                     .background(.regularMaterial, in: Capsule()).padding(.top, 64)
-                    .task { try? await Task.sleep(nanoseconds: 2_500_000_000); model.toast = nil }
+                    .task(id: t) { try? await Task.sleep(nanoseconds: 2_500_000_000); if model.toast == t { model.toast = nil } }
             }
         }
         .alert("Something went wrong", isPresented: Binding(

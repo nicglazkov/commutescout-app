@@ -93,11 +93,18 @@ final class PagesUITests: XCTestCase {
         shot("browse", 1)
         app.buttons["tools"].firstMatch.tap()
         shot("tools", 2)
-        for tool in ["tool-layers", "tool-directions", "tool-ask", "tool-watch"] {
+        // Each tool page is a sheet of its own; a swipe down closes it.
+        for tool in ["tool-layers", "tool-directions", "tool-ask", "tool-watches", "tool-marketplace"] {
             let b = app.buttons[tool].firstMatch
-            if b.waitForExistence(timeout: 2) { b.tap(); shot(tool, 2); app.buttons["Done"].firstMatch.tap(); sleep(1); app.buttons["tools"].firstMatch.tap(); sleep(1) }
+            if b.waitForExistence(timeout: 2) {
+                b.tap(); shot(tool, 2)
+                let done = app.buttons["Done"].firstMatch
+                if done.exists { done.tap() } else { app.swipeDown(velocity: .fast) }
+                sleep(1)
+                if !app.buttons["tool-layers"].firstMatch.exists { app.buttons["tools"].firstMatch.tap(); sleep(1) }
+            }
         }
-        app.buttons["Done"].firstMatch.tap()
+        if app.buttons["Done"].firstMatch.exists { app.buttons["Done"].firstMatch.tap() } else { app.swipeDown(velocity: .fast) }
         app.terminate()
         app.launchArguments = ["-csSimulate", "-csAutoDrive"]
         app.launch()
