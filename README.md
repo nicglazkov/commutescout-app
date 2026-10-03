@@ -76,7 +76,7 @@ Debug builds accept a scripted drive for testing without a car: `-csAutoDrive` (
 ## Backend endpoints used
 
 - `POST /api/nav/route`: Valhalla request in, OSRM response out, closures excluded server-side.
-- `GET /api/tiles/style.json?style=`, `/api/tiles/{style}/{z}/{x}/{y}@2x.png`, `/api/traffictile/…`: base map and traffic.
+- `GET /api/map/manifest`, `/api/map/style.json`, `/api/traffictile/…`: map files, base map style and traffic.
 - `GET /api/suggest`, `GET /api/geocode`: search.
 - `GET /api/mapdata`: the markers the website draws, for the area on screen.
 - `GET /api/flare/sources`, `POST /api/flare/report`, `POST /api/flare/confirm`: community sources and reports (Bearer ID token).

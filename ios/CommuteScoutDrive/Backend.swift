@@ -7,15 +7,8 @@ import Foundation
 enum Backend {
     static let base = URL(string: "https://commutescout.com")!
     static let navRouteURL = base.appendingPathComponent("api/nav/route")
-    static let styleURL = base.appendingPathComponent("api/tiles/style.json")
     static let trafficTiles = base.absoluteString + "/api/traffictile/{z}/{x}/{y}.png"
 
-    /// The base map: light, dark or outdoors, all through the proxy.
-    static func styleURL(_ style: String) -> URL {
-        var c = URLComponents(url: styleURL, resolvingAgainstBaseURL: false)!
-        c.queryItems = [URLQueryItem(name: "style", value: style)]
-        return c.url!
-    }
 
     /// The website page focused on a spot, the same link the site shares.
     static func mapURL(lat: Double, lon: Double, kind: String? = nil) -> URL {

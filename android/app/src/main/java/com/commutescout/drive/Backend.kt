@@ -16,11 +16,8 @@ import java.util.concurrent.TimeUnit
 object Backend {
     const val BASE = "https://commutescout.com"
     const val NAV_ROUTE_URL = "$BASE/api/nav/route"
-    const val STYLE_URL = "$BASE/api/tiles/style.json"
     const val TRAFFIC_TILES = "$BASE/api/traffictile/{z}/{x}/{y}.png"
 
-    /** The base map: light, dark or outdoors, all through the proxy. */
-    fun styleUrl(style: String) = "$STYLE_URL?style=$style"
 
     /** The website page focused on a spot, the same link the site shares. */
     fun mapUrl(lat: Double, lon: Double, kind: String? = null): String =
