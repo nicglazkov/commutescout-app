@@ -204,6 +204,7 @@ object Engine {
         alerts.spoken = prefs.spokenAlerts
         alerts.announceAheadMeters = prefs.alertAheadMeters
         alerts.rules = { m -> prefs.rule(prefs.ruleKind(m)) }
+        alerts.shown = { m -> prefs.isShown(m.kind) && (m.kind != "plugin" || PluginStyle.sourceId(m) !in sources.hidden.value) }
         alerts.fallback = { markers.held() to markers.asOf.value }
         // The signal is back: the snapshot, spoken alerts and any report
         // made meanwhile all catch up. The marker store does its own.
@@ -494,7 +495,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         if (now - limitAskedAt < 45_000 && moved < 500) return
         limitAskedAt = now; limitAskedAtPoint = p
         viewModelScope.launch {
-            val q = mapOf("lat" to "%.5f".format(p.lat), "lon" to "%.5f".format(p.lon), "heading" to "%.0f".format(course))
+            val q = mapOf("lat" to Backend.num(p.lat), "lon" to Backend.num(p.lon), "heading" to Backend.num(course, 0))
             _postedLimitKmh.value = runCatching { Backend.get<SpeedLimitAnswer>("/api/speedlimit", q).kmh }.getOrNull()
         }
     }
@@ -548,6 +549,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     // browsing
 
     fun show(place: Place) {
+        origin = null
         _selectedMarker.value = null
         _state.value = DriveState.Found(place)
     }
@@ -631,6 +633,8 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             Engine.places.noteRecent(place.name, place.lat, place.lon)
             Engine.alerts.start(route.geometry.map { LatLon(it.lat, it.lng) })
             _selectedMarker.value = null
+            // The "from" place of the Directions sheet is for this one trip.
+            origin = null
             _state.value = DriveState.Navigating(place)
         } catch (e: Exception) {
             Log.e("DriveViewModel", "start failed", e)

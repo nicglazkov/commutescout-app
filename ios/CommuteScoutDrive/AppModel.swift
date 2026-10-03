@@ -349,7 +349,8 @@ final class AppModel: ObservableObject {
     /// Settings changed: apply what applies now, and rebuild the core
     /// when nothing is running so the next request carries new options.
     private func prefsChanged() {
-        alerts.spoken = prefs.spokenAlerts
+        alerts.spoken = prefs.spokenAlerts && !muted
+        applyIdleTimer()
         alerts.announceAheadMeters = prefs.alertAheadMeters
         // Cameras are published as an object of their own and are only
         // worth fetching while the snapshot is still what the map shows.
@@ -443,6 +444,7 @@ final class AppModel: ObservableObject {
     func show(_ place: Place) {
         preview = nil
         selectedMarker = nil
+        origin = nil
         state = .found(place)
         camera = .center(place.coordinate, zoom: max(viewZoom, 14), pitch: prefs.is3D ? 45 : 0, direction: 0)
     }
@@ -454,15 +456,39 @@ final class AppModel: ObservableObject {
 
     func showMarker(key: String) {
         guard let m = marker(for: key) else { return }
+        // On a trip the bottom belongs to the trip bar; a card there
+        // would cover it and the speedometer. The tap speaks the thing.
+        if state.isNavigating { alerts.say(m); return }
         selectedMarker = m
         if case .found = state { state = .browsing }
     }
 
     func clearMarker() { selectedMarker = nil }
 
+    /// The phone went to the background with no trip running: let go of
+    /// GPS and stop the polling, so a pocketed phone does not hold a
+    /// fix and hit the network all day. A trip keeps everything, which
+    /// is what the location background mode is for.
+    func pauseIfIdle() {
+        guard !state.isNavigating else { return }
+        location.stopUpdating()
+        alerts.stop()
+        markers.pause()
+        DriveLog.note("background: location and polling paused")
+    }
+
+    /// Back in front: everything that was paused.
+    func resumeFromBackground() {
+        location.startUpdating()
+        if !state.isNavigating { alerts.startFreeDrive() }
+        markers.resume()
+        speedMps = -1
+    }
+
     // Drive log: a fix every few seconds is normal; a gap says the phone
     // lost GPS or the app was paused. A summary line every minute.
     private var lastFixAt: Date?
+    private var staleSpeedTimer: Timer?
     private var fixes = 0
     private var lastSummary = Date()
     private var lastDeviating = false
@@ -473,6 +499,12 @@ final class AppModel: ObservableObject {
             DriveLog.note("location gap \(Int(now.timeIntervalSince(last))) s")
         }
         lastFixAt = now
+        staleSpeedTimer?.invalidate()
+        // No fix for a while (a tunnel, a garage): the speedometer must
+        // not keep showing the last speed as if it were now.
+        staleSpeedTimer = Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.speedMps = -1 }
+        }
         fixes += 1
         if case .navigating = state, now.timeIntervalSince(lastSummary) >= 60 {
             let speed = loc.speed.map { String(format: "%.0f km/h", $0.value * 3.6) } ?? "?"
@@ -647,6 +679,7 @@ final class AppModel: ObservableObject {
             places.noteRecent(name: place.name, coordinate: place.coordinate)
             alerts.start(route: route.geometry.map(\.clLocationCoordinate2D))
             via = []
+            resumable = nil
             delegate.onReroute = { [weak self] r in
                 guard let self else { return }
                 self.alerts.start(route: r.geometry.map(\.clLocationCoordinate2D))
@@ -655,7 +688,7 @@ final class AppModel: ObservableObject {
             }
             camera = navigationCamera
             state = .navigating(place)
-            UIApplication.shared.isIdleTimerDisabled = prefs.keepAwake
+            applyIdleTimer()
         } catch {
             DriveLog.note("route start failed: \(error)")
             errorMessage = here == nil ? "Waiting for your location. Try again in a moment."
@@ -671,8 +704,8 @@ final class AppModel: ObservableObject {
         // the puck stays live and the next route starts from where the phone is.
         location.startUpdating()
         alerts.startFreeDrive()
-        UIApplication.shared.isIdleTimerDisabled = false
         state = .browsing
+        applyIdleTimer()
         follow()
     }
 
@@ -758,6 +791,8 @@ final class AppModel: ObservableObject {
     private func setDriving(_ on: Bool) {
         driving = on
         DriveLog.note(on ? "driving mode on" : "driving mode off")
+        applyIdleTimer()
+        if !on { postedLimitKmh = nil }
         guard case .browsing = state else { return }
         // Only when the map is still on the driver: a map that was
         // panned away is left where it was put.
@@ -770,6 +805,14 @@ final class AppModel: ObservableObject {
     func toggleMute() {
         core.spokenInstructionObserver.toggleMute()
         muted = core.spokenInstructionObserver.isMuted
+        // One mute for both voices.
+        alerts.spoken = prefs.spokenAlerts && !muted
+    }
+
+    /// The screen stays on while a trip runs or the car is moving, if
+    /// the setting says so; a parked phone may sleep.
+    private func applyIdleTimer() {
+        UIApplication.shared.isIdleTimerDisabled = prefs.keepAwake && (state.isNavigating || driving)
     }
 
     /// Everything drawn over the base map, built once per change and

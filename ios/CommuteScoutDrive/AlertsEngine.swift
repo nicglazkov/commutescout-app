@@ -239,7 +239,11 @@ final class AlertsEngine: ObservableObject {
     /// once more within its second, by the per-kind rules.
     private func announce(_ upcoming: [Upcoming], from along: Double) {
         for item in upcoming {
-            let rule = rules?(item.marker) ?? Prefs.AlertRule(enabled: true, speak: spoken, firstMeters: announceAheadMeters, repeatMeters: 0)
+            // A public plugin nobody reviewed shows and is listed, but it
+            // does not speak unless a rule of the driver's says so; the
+            // settings text promises exactly that.
+            let quiet = item.marker.kind == "plugin" && !["approved", "private"].contains(item.marker.tier ?? "")
+            let rule = rules?(item.marker) ?? Prefs.AlertRule(enabled: true, speak: spoken && !quiet, firstMeters: announceAheadMeters, repeatMeters: 0)
             let gap = item.alongMeters - along
             if !announced.contains(item.id), gap <= rule.firstMeters, gap > -100 {
                 announced.insert(item.id)

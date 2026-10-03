@@ -64,7 +64,7 @@ final class MarkerStore: ObservableObject {
     init() {
         timer = Timer.scheduledTimer(withTimeInterval: Self.viewportEvery, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, !self.paused else { return }
                 if !Connectivity.shared.online { self.pruneStale(); return }
                 for feed in self.wantedFeeds where Date().timeIntervalSince(self.feedAt[feed] ?? .distantPast) >= Self.snapshotEvery {
                     self.load(feed, again: true)
@@ -98,6 +98,11 @@ final class MarkerStore: ObservableObject {
     }
 
     func marker(for key: String) -> RoadMarker? { held[key]?.marker }
+
+    /// Backgrounded with no trip: the timed refreshes stop.
+    private var paused = false
+    func pause() { paused = true; task?.cancel() }
+    func resume() { paused = false; refresh(force: true) }
 
     // MARK: snapshot
 
@@ -835,18 +840,13 @@ struct ConfirmButtons: View {
         .sheet(isPresented: $showSignIn) { SignInSheet(reason: "Sign in to confirm reports.") }
     }
 
+    /// The same quiet path the banner uses: a toast, never a sheet or an
+    /// alert, because this is tapped from the wheel too. Signed out, the
+    /// sign-in sheet is offered only when the car is not moving.
     private func vote(_ v: String) async {
-        guard let id = marker.id else { return }
-        guard model.online else { model.errorMessage = OfflineText.retry; return }
-        guard let token = await model.account.token() else { showSignIn = true; return }
-        do {
-            try await model.reporter.confirm(alertId: id, vote: v, token: token)
-            voted = v
-            model.toast = v == "up" ? "Thanks, confirmed." : "Thanks, marked as gone."
-            DriveLog.note("confirm \(v): \(id)")
-        } catch {
-            model.errorMessage = Connectivity.isOffline(error) ? OfflineText.retry : error.localizedDescription
-        }
+        if await model.account.token() == nil, !model.driving { showSignIn = true; return }
+        await model.vote(marker, v)
+        voted = v
     }
 }
 
