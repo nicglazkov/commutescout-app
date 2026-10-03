@@ -148,12 +148,14 @@ final class CoverageUITests: XCTestCase {
             seg.tap()
             XCTAssertTrue(seg.isSelected, "\(label) selected")
         }
-        for label in ["Outdoors", "Match theme"] {
-            let seg = app.buttons[label].firstMatch
-            XCTAssertTrue(reveal(seg), label)
-            seg.tap()
-            XCTAssertTrue(seg.isSelected, "\(label) selected")
+        // Base maps are cards with a picture each; tapping applies at once.
+        for raw in ["outdoors", "auto"] {
+            let card = app.buttons["basemap-\(raw)"].firstMatch
+            XCTAssertTrue(reveal(card), raw)
+            card.tap()
         }
+        XCTAssertTrue(app.otherElements["basemap-preview"].firstMatch.exists || app.images["basemap-preview"].firstMatch.exists
+                      || app.descendants(matching: .any)["basemap-preview"].firstMatch.exists, "live preview on the page")
         let before = app.buttons["perspective"].label   // "2D" while 3D is on
         flip("3D perspective")
         app.buttons["Done"].tap()
@@ -184,12 +186,13 @@ final class CoverageUITests: XCTestCase {
 
     func testLayerSwitchesForEveryKind() {
         openSettings()
-        let header = app.staticTexts["Layers"]
+        let header = app.staticTexts["Official sources"]
         XCTAssertTrue(reveal(header))
-        // Every switch after Traffic in the Layers section is a marker kind.
-        // All nine kinds the server emits, the same nine the website draws.
+        // The eight official kinds, then the plugin master switch under
+        // Plugins. All nine kinds the server emits, the same nine the
+        // website draws.
         let names = ["Incidents", "Closures and lane work", "Chain controls", "Weather stations",
-                     "Wildfires", "Toll prices", "Community reports", "Cameras", "Message signs"]
+                     "Wildfires", "Toll prices", "Cameras", "Message signs", "Show plugin alerts"]
         var found = 0
         for n in names where app.switches[n].exists || reveal(app.switches[n], tries: 4) {
             flip(n); flip(n); found += 1

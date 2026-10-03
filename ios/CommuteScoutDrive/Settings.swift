@@ -1,3 +1,4 @@
+import MapLibreSwiftUI
 import SwiftUI
 
 /// Settings, the way a phone's own Settings app is laid out: a short
@@ -182,11 +183,25 @@ private struct AppearanceSettings: View {
                 }
                 .pickerStyle(.segmented)
             }
-            Section("Base map") {
-                Picker("Base map", selection: Binding(get: { prefs.mapStyle }, set: { prefs.mapStyle = $0 })) {
-                    ForEach(Prefs.MapStyle.allCases) { s in Text(s.label).tag(s) }
-                }
-                .pickerStyle(.inline).labelsHidden()
+            Section {
+                // The map as it will look, around the driver, in the
+                // chosen style: no need to close Settings to see it.
+                MapView(styleURL: model.styleURL,
+                        camera: .constant(.center(model.here ?? model.viewCenter ?? AppModel.defaultCenter, zoom: 13)))
+                    .unsafeMapViewControllerModifier { c in
+                        c.mapView.isUserInteractionEnabled = false
+                        c.mapView.logoView.isHidden = true
+                        c.mapView.attributionButton.isHidden = true
+                    }
+                    .frame(height: 180)
+                    .listRowInsets(EdgeInsets())
+                    .accessibilityIdentifier("basemap-preview")
+                BaseMapCards(choice: Binding(get: { prefs.mapStyle }, set: { prefs.mapStyle = $0 }), dark: model.isDark)
+                    .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+            } header: {
+                Text("Base map")
+            } footer: {
+                Text("Match theme follows the Theme setting above: Light by day, Dark at night.")
             }
             Section {
                 Toggle("3D perspective", isOn: Binding(get: { prefs.is3D }, set: { _ in model.toggle3D() }))
@@ -194,6 +209,47 @@ private struct AppearanceSettings: View {
         }
         .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// The base maps as cards: a picture of each, the way the website
+/// shows them. Tapping one applies it at once.
+struct BaseMapCards: View {
+    @Binding var choice: Prefs.MapStyle
+    let dark: Bool
+
+    private let columns = [GridItem(.adaptive(minimum: 140), spacing: 10)]
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 10) {
+            ForEach(Prefs.MapStyle.allCases) { s in
+                Button { choice = s } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ZStack(alignment: .topTrailing) {
+                            thumbnail(s.flavor(dark: dark))
+                                .resizable().aspectRatio(3 / 2, contentMode: .fill)
+                                .frame(maxWidth: .infinity).clipped()
+                            if choice == s {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.title3).foregroundStyle(.white, Color.accentColor).padding(6)
+                            }
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(choice == s ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: choice == s ? 2.5 : 1))
+                        Text(s.label).font(.subheadline.weight(choice == s ? .semibold : .regular)).foregroundStyle(.primary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("basemap-\(s.rawValue)")
+            }
+        }
+    }
+
+    private func thumbnail(_ flavor: String) -> Image {
+        let url = Bundle.main.resourceURL!.appendingPathComponent("Map/thumbs/\(flavor).webp")
+        if let img = UIImage(contentsOfFile: url.path) { return Image(uiImage: img) }
+        return Image(systemName: "map")
     }
 }
 
@@ -281,29 +337,75 @@ private struct LayerSettings: View {
     @EnvironmentObject var model: AppModel
     private var prefs: Prefs { model.prefs }
 
+    private var filter: Binding<Prefs.SourceFilter> {
+        Binding(get: { prefs.sourceFilter }, set: { prefs.sourceFilter = $0; model.markers.refresh(force: true) })
+    }
+
     var body: some View {
         Form {
             Section {
-                Picker("Sources", selection: Binding(get: { prefs.sourceFilter },
-                                                     set: { prefs.sourceFilter = $0; model.markers.refresh(force: true) })) {
+                Picker("Sources", selection: filter) {
                     ForEach(Prefs.SourceFilter.allCases) { f in Text(f.label).tag(f) }
                 }
                 .pickerStyle(.segmented)
-            } footer: { Text("Official is agency data. Plugins are the sources you installed from the marketplace.") }
-            Section("On the road") {
-                Toggle("Traffic", isOn: Binding(get: { prefs.traffic }, set: { prefs.traffic = $0; prefs.objectWillChange.send() }))
-                ForEach(Prefs.layerKinds, id: \.key) { k in
-                    Toggle(isOn: Binding(get: { prefs.isChosen(k.key) },
-                                         set: { prefs.setShown(k.key, $0); model.markers.refresh(force: true) })) {
-                        Label { Text(k.label) } icon: {
-                            Image(systemName: MarkerIcons.name(k.key)).foregroundStyle(MarkerIcons.tint(k.key))
+                .accessibilityIdentifier("layers-filter")
+            } footer: {
+                Text(footer)
+            }
+            if prefs.sourceFilter != .plugins {
+                Section("Official sources") {
+                    Toggle("Traffic", isOn: Binding(get: { prefs.traffic }, set: { prefs.traffic = $0; prefs.objectWillChange.send() }))
+                    ForEach(Prefs.layerKinds.filter { $0.key != "plugin" }, id: \.key) { k in
+                        Toggle(isOn: Binding(get: { prefs.isChosen(k.key) },
+                                             set: { prefs.setShown(k.key, $0); model.markers.refresh(force: true) })) {
+                            Label { Text(k.label) } icon: {
+                                Image(systemName: MarkerIcons.name(k.key)).foregroundStyle(MarkerIcons.tint(k.key))
+                            }
                         }
                     }
+                }
+            }
+            if prefs.sourceFilter != .official {
+                Section {
+                    Toggle(isOn: Binding(get: { prefs.isChosen("plugin") },
+                                         set: { prefs.setShown("plugin", $0); model.markers.refresh(force: true) })) {
+                        Label("Show plugin alerts", systemImage: "puzzlepiece.extension.fill")
+                    }
+                    ForEach(model.sources.catalog) { p in
+                        Toggle(isOn: Binding(get: { model.sources.isOn(p.id) },
+                                             set: { model.sources.setOn(p.id, $0); model.markers.refresh(force: true) })) {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(p.name).lineLimit(2)
+                                    Text(p.kinds.isEmpty ? "Alerts" : "Loads " + p.kindsLabel)
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                PluginBadge(sourceId: p.id, category: p.oneCategory, size: 22)
+                            }
+                        }
+                    }
+                    if model.sources.catalog.isEmpty {
+                        Text("No plugin is installed. Find one in the marketplace.").foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Plugins")
+                } footer: {
+                    Text("A plugin's alerts are badges in its own color, and this says what each one puts on the map.")
                 }
             }
         }
         .navigationTitle("Map layers")
         .navigationBarTitleDisplayMode(.inline)
+        .task { await model.sources.loadCatalog() }
+    }
+
+    private var footer: String {
+        switch prefs.sourceFilter {
+        case .all: "Everything the map can show: agency data and the plugins you installed."
+        case .official: "Agency data only: state DOT and 511 feeds, cameras, signs and weather stations."
+        case .plugins: "Plugin alerts only, with what each plugin loads."
+        }
     }
 }
 
@@ -354,7 +456,7 @@ private struct OfflineMapSettings: View {
                                    value: model.mapFiles.files.isEmpty ? "None yet"
                                    : "\(model.mapFiles.files.count), \(ByteCountFormatter.string(fromByteCount: model.mapFiles.bytesOnDisk, countStyle: .file))")
                 }
-            } footer: { Text("Trip maps the app saved, and whole states you choose to download.") }
+            } footer: { Text("Trip maps the app saved, and whole states you choose to download. Each one can be opened to see where it covers and whether the file is really there.") }
         }
         .navigationTitle("Offline maps")
         .navigationBarTitleDisplayMode(.inline)

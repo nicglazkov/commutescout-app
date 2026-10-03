@@ -175,6 +175,11 @@ final class Prefs: ObservableObject {
         Self.layerKinds.filter { isShown($0.key) }.map(\.api).joined(separator: ",")
     }
 
+    /// The kind a marker comes back as, from the name it was asked by.
+    static func emittedKind(_ api: String) -> String {
+        layerKinds.first { $0.api == api }?.key ?? api
+    }
+
     /// Valhalla costing options from the route settings; empty when defaults.
     var costingOptions: [String: Any] {
         var auto: [String: Any] = [:]

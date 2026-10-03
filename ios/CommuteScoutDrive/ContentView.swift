@@ -39,9 +39,8 @@ struct ContentView: View {
             MapHook(
                 // A closure stretch and a toll corridor answer a tap the
                 // same way their dot does, which is what the website does.
-                layerIds: Set(MarkerIcons.kinds.map { "cs-m-\($0)" })
-                    .union(model.pluginBadges.map { "cs-m-plugin-\($0.key)" })
-                    .union(["cs-closure-line", "cs-toll-line"]),
+                layerIds: MapOverlay.tappable,
+                scene: model.overlayScene(),
                 trafficTiles: model.prefs.traffic ? Backend.trafficTiles : nil,
                 onTap: { _, keys in
                     if let k = keys.first { model.showMarker(key: k) } else if model.selectedMarker != nil { model.clearMarker() }
@@ -198,81 +197,19 @@ struct ContentView: View {
             .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
     }
 
+    /// Nothing: everything CommuteScout draws goes through MapOverlay,
+    /// because content given to the map view here is removed and added
+    /// again on every update, which makes it blink.
     @MapViewContentBuilder private var mapContent: [StyleLayerDefinition] {
-        let shapes = model.mapShapes()
-        // Burn footprints, underneath everything else. The fire dot
-        // marks where the fire was reported; the shape is where it has
-        // been. Each ring is its own polygon, because joining the lobes
-        // of a multi-lobed fire draws lines across open country.
-        let fires = ShapeSource(identifier: "cs-fire-area") { shapes.fires }
-        FillStyleLayer(identifier: "cs-fire-area", source: fires)
-            .fillColor(UIColor(red: 0.85, green: 0.47, blue: 0.02, alpha: 1))
-            .fillOpacity(0.25)
-        LineStyleLayer(identifier: "cs-fire-edge", source: fires)
-            .lineColor(UIColor(red: 0.85, green: 0.47, blue: 0.02, alpha: 1)).lineWidth(1.5)
-        // Closure stretches and toll corridors, both following the
-        // carriageway. These come from /api/mapdata only: the launch
-        // snapshot drops them, so they appear a moment after the dots.
-        let closures = ShapeSource(identifier: "cs-closure-line") { shapes.closures }
-        LineStyleLayer(identifier: "cs-closure-line", source: closures)
-            .lineColor(UIColor(red: 0.84, green: 0.19, blue: 0.19, alpha: 1)).lineWidth(5)
-            .lineOpacity(0.85).lineCap(.round).lineJoin(.round)
-        let tolls = ShapeSource(identifier: "cs-toll-line") { shapes.tolls }
-        LineStyleLayer(identifier: "cs-toll-line", source: tolls)
-            .lineColor(UIColor(red: 0.49, green: 0.23, blue: 0.93, alpha: 1)).lineWidth(4)
-            .lineDashPattern([2, 1.5]).lineCap(.butt).lineJoin(.round)
-        // Live road markers, one layer per kind so each has its icon.
-        let markers = ShapeSource(identifier: "cs-markers") {
-            for m in model.allMarkers where model.prefs.isShown(m.kind) && model.pluginIsOn(m) {
-                let f = MLNPointFeature(coordinate: m.coordinate)
-                f.attributes = ["key": m.key, "kind": m.kind, "geo": "dot",
-                                "badge": m.kind == "plugin" ? PluginStyle.key(m) : ""]
-                f
-            }
-        }
-        for kind in MarkerIcons.kinds where kind != "plugin" {
-            SymbolStyleLayer(identifier: "cs-m-\(kind)", source: markers)
-                .iconImage(MarkerIcons.images[kind]!)
-                .iconAllowsOverlap(true)
-                .predicate(NSPredicate(format: "kind == %@", kind))
-        }
-        // A plugin alert is a badge, not a disc: the picture is what it
-        // is, the color is which plugin (PluginStyle). One layer per badge
-        // on screen, above the official icons.
-        for badge in model.pluginBadges {
-            SymbolStyleLayer(identifier: "cs-m-plugin-\(badge.key)", source: markers)
-                .iconImage(PluginStyle.image(sourceId: badge.sourceId, category: badge.category))
-                .iconAllowsOverlap(true)
-                .predicate(NSPredicate(format: "badge == %@", badge.key))
-        }
-        // The alternative under consideration, drawn like the navigation route.
-        let line = ShapeSource(identifier: "cs-route") {
-            if let f = model.previewFeature() { f }
-        }
-        LineStyleLayer(identifier: "cs-route-border", source: line)
-            .lineColor(UIColor(red: 0.11, green: 0.31, blue: 0.66, alpha: 1)).lineWidth(9)
-            .lineCap(.round).lineJoin(.round)
-        LineStyleLayer(identifier: "cs-route", source: line)
-            .lineColor(UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1)).lineWidth(6)
-            .lineCap(.round).lineJoin(.round)
-        // The pin.
-        let pin = ShapeSource(identifier: "cs-pin") {
-            if case let .found(place) = model.state {
-                MLNPointFeature(coordinate: place.coordinate)
-            }
-        }
-        CircleStyleLayer(identifier: "cs-pin-ring", source: pin)
-            .radius(14).color(UIColor(red: 0.18, green: 0.5, blue: 0.97, alpha: 0.25))
-        CircleStyleLayer(identifier: "cs-pin", source: pin)
-            .radius(7).color(UIColor(red: 0.18, green: 0.5, blue: 0.97, alpha: 1))
-            .strokeWidth(2).strokeColor(.white)
+        // No DSL layers.
     }
 
     /// The next alert within the chosen distance: a strip, or a pill when
     /// tucked away. Placed by the navigation view's grid under the
     /// instruction card, so it never overlaps it whatever its height.
+    /// On a trip, or driving without one: the alert ahead is shown either way.
     @ViewBuilder private var alertStripOrPill: some View {
-        if isNavigating, let next = model.alerts.ahead.first,
+        if let next = model.alerts.ahead.first,
            next.alongMeters - model.alerts.hereAlong <= model.prefs.stripAheadMeters {
             if stripCollapsed {
                 // Tucked away: a pill with the icon and distance; tap to bring it back.

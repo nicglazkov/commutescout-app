@@ -33,6 +33,12 @@ data class Upcoming(val marker: RoadMarker, val alongMeters: Double) {
  *
  * Projection runs once per location update, searching a window around the
  * last segment first, so a 500-mile route costs the same as a short one.
+ *
+ * With no destination there is no route to project onto, so the road
+ * ahead is taken to be the direction of travel: a marker counts when it
+ * lies ahead inside a narrow cone, and its distance along is its
+ * distance straight ahead. The same rules and the same voice apply, so
+ * a camera or a crash is called out on the way to the store too.
  */
 class AlertsEngine(context: Context) {
     private val _ahead = MutableStateFlow<List<Upcoming>>(emptyList())
@@ -58,6 +64,11 @@ class AlertsEngine(context: Context) {
     private var all: List<Upcoming> = emptyList()
     private val announced = HashSet<String>()
     private var box: DoubleArray? = null
+    /** Free drive: no route, the markers around the car instead. */
+    private var freeDrive = false
+    private var around: List<RoadMarker> = emptyList()
+    private var aroundCenter: LatLon? = null
+    private var lastCourse: Pair<Double, Long>? = null
     private var lastSegment = 0
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var refreshJob: Job? = null
@@ -151,6 +162,64 @@ class AlertsEngine(context: Context) {
         }
     }
 
+    /** Alerts with no destination. Runs from launch and again after every trip; a trip's [start] takes over. */
+    fun startFreeDrive() {
+        stop()
+        freeDrive = true
+        refreshJob = scope.launch {
+            while (isActive) {
+                delay(REFRESH_MS)
+                refreshAround()
+            }
+        }
+    }
+
+    /** A fix with no trip running: the cone ahead of the car. */
+    fun update(position: LatLon, course: Double?, speed: Double) {
+        if (!freeDrive) return
+        val c = aroundCenter
+        if (c == null || meters(c, position) > 4000) {
+            box = doubleArrayOf(position.lat - 0.12, position.lon - 0.15, position.lat + 0.12, position.lon + 0.15)
+            aroundCenter = position
+            scope.launch { refreshAround() }
+        }
+        // At a light the course goes away; the last one holds for a while.
+        val now = System.currentTimeMillis()
+        if (course != null && speed >= 1) lastCourse = course to now
+        val heading = lastCourse?.takeIf { now - it.second < 120_000 } ?: run {
+            if (_ahead.value.isNotEmpty()) _ahead.value = emptyList()
+            return
+        }
+        val upcoming = around.mapNotNull { m ->
+            if (!(rules?.invoke(m)?.enabled ?: true) || m.tooMinorToAnnounce) return@mapNotNull null
+            val d = meters(position, LatLon(m.lat, m.lon))
+            if (d > 6000 || d <= 20) return@mapNotNull null
+            val off = angleBetween(heading.first, bearing(position, LatLon(m.lat, m.lon)))
+            // Straight ahead, or close and roughly ahead: a road bends.
+            if (!(off <= 22 || (d < 400 && off <= 55))) return@mapNotNull null
+            val along = d * Math.cos(Math.toRadians(off))
+            val offset = d * Math.sin(Math.toRadians(off))
+            if (offset > maxOf(m.corridorMeters, 120.0)) return@mapNotNull null
+            // A closure for the other direction of a divided road is not ahead of this driver.
+            val h = headingOf(m)
+            if (h != null && angleBetween(h, heading.first) > 110) return@mapNotNull null
+            Upcoming(m, along)
+        }.sortedBy { it.alongMeters }
+        _hereAlong.value = 0.0
+        if (upcoming != _ahead.value) _ahead.value = upcoming
+        announce(upcoming, 0.0)
+    }
+
+    /** What is around the car, for the cone. Without a signal the map's own markers stand in, as on a trip. */
+    private suspend fun refreshAround() {
+        if (!freeDrive) return
+        val b = box ?: return
+        around = runCatching { LiveData.markers(b[0], b[1], b[2], b[3]) }.getOrNull() ?: run {
+            val saved = fallback?.invoke() ?: return
+            ShelfLife.prune(saved.first, saved.second).filter { it.lat >= b[0] && it.lat <= b[2] && it.lon >= b[1] && it.lon <= b[3] }
+        }
+    }
+
     fun start(coordinates: List<LatLon>) {
         Log.i(TAG, "alerts start: ${coordinates.size} route points")
         stop()
@@ -173,6 +242,7 @@ class AlertsEngine(context: Context) {
     fun stop() {
         refreshJob?.cancel(); refreshJob = null
         route = emptyList(); cumulative = DoubleArray(0); all = emptyList(); box = null
+        freeDrive = false; around = emptyList(); aroundCenter = null
         _ahead.value = emptyList()
         _hereAlong.value = 0.0
     }
@@ -210,9 +280,14 @@ class AlertsEngine(context: Context) {
         _hereAlong.value = hit.along
         val upcoming = all.filter { it.alongMeters > hit.along - 100 && (rules?.invoke(it.marker)?.enabled ?: true) }
         if (upcoming != _ahead.value) _ahead.value = upcoming
+        announce(upcoming, hit.along)
+    }
+
+    /** Each marker once when it comes within its first distance, and once more within its second, by the per-kind rules. */
+    private fun announce(upcoming: List<Upcoming>, along: Double) {
         for (item in upcoming) {
             val rule = rules?.invoke(item.marker) ?: Prefs.AlertRule(true, spoken, announceAheadMeters, 0.0)
-            val gap = item.alongMeters - hit.along
+            val gap = item.alongMeters - along
             if (item.id !in announced && gap <= rule.firstMeters && gap > -100) {
                 announced.add(item.id)
                 if (rule.speak) say(item.marker, gap)

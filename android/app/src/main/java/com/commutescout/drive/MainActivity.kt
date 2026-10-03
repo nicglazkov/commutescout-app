@@ -50,6 +50,10 @@ class MainActivity : ComponentActivity(), AndroidTtsStatusListener {
             if (intent?.getBooleanExtra("csResetPrefs", false) == true) Engine.prefs.resetForTests()
             if (intent?.getBooleanExtra("csSimulate", false) == true) model.simulating.value = true
             if (intent?.getBooleanExtra("csAutoDrive", false) == true) AutoDrive.run(model)
+            // "csView" = "lat,lon,zoom" puts the camera somewhere, for screenshots.
+            intent?.getStringExtra("csView")?.split(",")?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 3 }?.let { model.wantedView = it }
+            // "csTour" zooms and pans through a set of views, for a recording.
+            if (intent?.getBooleanExtra("csTour", false) == true) model.wantedTour = true
         }
     }
 

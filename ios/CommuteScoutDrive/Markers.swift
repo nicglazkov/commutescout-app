@@ -4,18 +4,22 @@ import MapLibre
 import SwiftUI
 import UIKit
 
-/// The road markers the website draws.
+/// The road markers the website draws, held for the whole country.
 ///
-/// Two paths fill this store, and both are needed. At launch the
-/// published snapshot is fetched straight from the CDN, decoded off the
-/// main thread and painted at once: that happens in parallel with the
-/// map loading and the camera zooming to the driver, so the dots are
-/// there when the camera lands. The snapshot is slim, so as soon as the
-/// view settles the usual viewport call to /api/mapdata runs and takes
-/// over, bringing the closure stretches and toll corridors the snapshot
-/// drops. After that the viewport is refreshed every minute, filtered
-/// by the Layers sheet. Nothing is fetched while zoomed out past a
-/// state.
+/// Two paths fill this store and both keep running. At launch the
+/// published snapshot is fetched from the CDN, decoded off the main
+/// thread and painted at once: that happens in parallel with the map
+/// loading and the camera zooming to the driver, so the dots are there
+/// when the camera lands, at any zoom. As soon as the view settles the
+/// viewport call to /api/mapdata runs for the area on screen, bringing
+/// the closure stretches and toll corridors the snapshot drops, and is
+/// repeated every minute; the snapshot is read again every five.
+///
+/// Neither answer replaces the other outright. Inside the box the
+/// viewport call owns, its answer is the truth for the kinds it asked
+/// for; everywhere else the snapshot is. A marker is added or removed
+/// by key, so zooming out never empties the map and zooming back in
+/// never makes it blink.
 @MainActor
 final class MarkerStore: ObservableObject {
     @Published private(set) var markers: [RoadMarker] = []
@@ -23,15 +27,20 @@ final class MarkerStore: ObservableObject {
     /// Bumped whenever `markers` is replaced, so views can cache the
     /// shapes they build from it instead of rebuilding every frame.
     @Published private(set) var stamp = 0
-    /// How new the markers on screen are: the last viewport answer, or
-    /// the snapshot's own stamp. Shown in the offline banner.
+    /// How new the markers on screen are: the newest answer that
+    /// reached them. Shown in the offline banner.
     @Published private(set) var asOf: Date?
+
+    private enum Origin { case snapshot, viewport }
+    private struct Held { var marker: RoadMarker; var origin: Origin; var at: Date }
+    private var held: [String: Held] = [:]
     /// Bundles that painted from the network this session. One that
     /// failed or came from the saved copy is fetched again when the
     /// signal comes back.
     private var liveFeeds: Set<Snapshot.Feed> = []
     private var wantedFeeds: Set<Snapshot.Feed> = []
-    private var byKey: [String: RoadMarker] = [:]
+    private var fetchedFeeds: Set<Snapshot.Feed> = []
+    private var feedAt: [Snapshot.Feed: Date] = [:]
     private var box: (s: Double, w: Double, n: Double, e: Double)?
     private var kinds = ""
     private var fetchedAt = Date.distantPast
@@ -41,19 +50,24 @@ final class MarkerStore: ObservableObject {
     // minutes, then double each time up to ten; a success resets it.
     private var backoff: TimeInterval = 0
     private var holdUntil = Date.distantPast
-    // The launch snapshot: held only until the first viewport answer
-    // lands, and kept on screen if that answer never comes.
-    private var snapshot: [String: RoadMarker] = [:]
-    private var snapshotRetired = false
     private var bootStarted: Date?
-    private var bootBox: GeoBox?
-    private var fetchedFeeds: Set<Snapshot.Feed> = []
+
+    /// The viewport is asked again this often, and a bundle this often.
+    static let viewportEvery: TimeInterval = 60
+    static let snapshotEvery: TimeInterval = 5 * 60
+    /// Below this zoom the view is a region or the country: the
+    /// viewport call would be the whole snapshot again, so only the
+    /// snapshot runs.
+    static let viewportFromZoom = 5.5
 
     init() {
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: Self.viewportEvery, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 if !Connectivity.shared.online { self.pruneStale(); return }
+                for feed in self.wantedFeeds where Date().timeIntervalSince(self.feedAt[feed] ?? .distantPast) >= Self.snapshotEvery {
+                    self.load(feed, again: true)
+                }
                 guard Date() >= self.holdUntil else { return }
                 self.refresh(force: true)
             }
@@ -65,10 +79,12 @@ final class MarkerStore: ObservableObject {
     /// stale for its kind (a police report after half an hour) is taken
     /// off rather than shown as if it were current.
     func pruneStale() {
-        let kept = ShelfLife.prune(markers, asOf: asOf)
-        if kept.count != markers.count {
-            DriveLog.note("markers: offline, \(markers.count - kept.count) gone stale")
-            publish(kept)
+        let now = Date()
+        let before = held.count
+        held = held.filter { ShelfLife.keep($0.value.marker.kind, age: now.timeIntervalSince($0.value.at)) }
+        if held.count != before {
+            DriveLog.note("markers: offline, \(before - held.count) gone stale")
+            publish()
         }
     }
 
@@ -76,15 +92,13 @@ final class MarkerStore: ObservableObject {
     private func reconnected() {
         backoff = 0
         holdUntil = .distantPast
-        if !snapshotRetired {
-            for feed in wantedFeeds.subtracting(liveFeeds) { fetchedFeeds.remove(feed); load(feed) }
-        }
+        for feed in wantedFeeds.subtracting(liveFeeds) { load(feed, again: true) }
         refresh(force: true)
     }
 
-    func marker(for key: String) -> RoadMarker? { byKey[key] }
+    func marker(for key: String) -> RoadMarker? { held[key]?.marker }
 
-    // MARK: launch snapshot
+    // MARK: snapshot
 
     /// Start the launch fetch. Called from the app model, not from the
     /// map, so it runs while the map is still loading its style and the
@@ -93,32 +107,24 @@ final class MarkerStore: ObservableObject {
     /// Everything that is switched on by default rides in the two small
     /// bundles. Cameras are their own object, about half a megabyte, and
     /// are only asked for when that layer is on.
-    func boot(near center: CLLocationCoordinate2D, cameras: Bool) {
+    func boot(cameras: Bool) {
         guard bootStarted == nil else { return }
         bootStarted = Date()
-        let area = GeoBox.around(center)
-        bootBox = area
-        DriveLog.note("snapshot: boot around " + String(format: "%.3f,%.3f", center.latitude, center.longitude))
-        load(.live, box: area)
-        load(.signs, box: area)
-        if cameras { load(.cameras, box: area) }
+        load(.live)
+        load(.signs)
+        if cameras { load(.cameras) }
     }
 
-    /// Fetch one bundle once per session. Turning the camera layer on
-    /// later calls this; the viewport refresh that the toggle also
-    /// triggers is what keeps it current.
-    func load(_ feed: Snapshot.Feed, box: GeoBox? = nil) {
-        // Once the viewport is answering, /api/mapdata is both fresher
-        // and far smaller than a nationwide object. The snapshot's job
-        // is the first paint, and it is over.
-        guard !snapshotRetired else { return }
+    /// Fetch one bundle: once per session on its own, or again on the
+    /// snapshot period. Turning the camera layer on later calls this.
+    func load(_ feed: Snapshot.Feed, again: Bool = false) {
         wantedFeeds.insert(feed)
-        guard !fetchedFeeds.contains(feed) else { return }
+        guard again || !fetchedFeeds.contains(feed) else { return }
         fetchedFeeds.insert(feed)
-        let area = box ?? bootBox
+        feedAt[feed] = Date()
         Task { [weak self] in
             do {
-                let payload = try await Snapshot.fetch(feed, box: area)
+                let payload = try await Snapshot.fetch(feed, box: nil)
                 self?.seed(feed, payload)
             } catch {
                 self?.fetchedFeeds.remove(feed)
@@ -127,8 +133,8 @@ final class MarkerStore: ObservableObject {
         }
     }
 
-    /// Paint what a bundle brought. The bundles add up: live, signs and
-    /// cameras each carry their own kinds.
+    /// Paint what a bundle brought. The bundle is the truth for its
+    /// kinds everywhere but inside the box the viewport call owns.
     private func seed(_ feed: Snapshot.Feed, _ payload: SnapshotPayload) {
         let waited = bootStarted.map { Date().timeIntervalSince($0) } ?? 0
         let age = payload.published.map { Int(Date().timeIntervalSince($0)) }
@@ -136,34 +142,46 @@ final class MarkerStore: ObservableObject {
                       + String(format: "%.2f s after launch", waited)
                       + (age.map { ", published \($0) s ago" } ?? "")
                       + (payload.degraded ? ", publisher reports degraded feeds" : ""))
-        guard !snapshotRetired else { return }   // the viewport answer is the fresher one
         if payload.savedAt == nil { liveFeeds.insert(feed) }
         let stamp = payload.asOf ?? Date()
+        let kinds = Set(payload.markers.map(\.kind))
+        held = held.filter { _, h in
+            guard kinds.contains(h.marker.kind) else { return true }
+            // Inside the box, the viewport answer stays: it carries the
+            // road-following lines the bundle drops, and is newer.
+            return h.origin == .viewport && inBox(h.marker)
+        }
+        for m in payload.markers where held[m.key] == nil {
+            held[m.key] = Held(marker: m, origin: .snapshot, at: stamp)
+        }
         if asOf.map({ stamp > $0 }) ?? true { asOf = stamp }
-        for marker in payload.markers { snapshot[marker.key] = marker }
-        publish(Array(snapshot.values))
+        publish()
     }
 
-    private func publish(_ found: [RoadMarker]) {
-        markers = found
-        byKey = Dictionary(found.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+    private func inBox(_ m: RoadMarker) -> Bool {
+        guard let b = box else { return false }
+        return m.lat >= b.s && m.lat <= b.n && m.lon >= b.w && m.lon <= b.e
+    }
+
+    private func publish() {
+        markers = held.values.map(\.marker)
         stamp &+= 1
     }
 
+    // MARK: viewport
+
     /// The visible area changed. Fetch when it moved outside the last box
     /// or the layer set changed; the box carries a margin so small pans
-    /// do not hit the server.
+    /// do not hit the server. Zoomed out past a state nothing is fetched
+    /// and nothing is dropped: the snapshot is the map there.
     func view(bounds: MLNCoordinateBounds, zoom: Double, kinds: String) {
-        guard zoom >= 5.5, !kinds.isEmpty else {
-            if kinds.isEmpty { publish([]) }
-            return
-        }
+        guard zoom >= Self.viewportFromZoom, !kinds.isEmpty else { return }
         let latPad = (bounds.ne.latitude - bounds.sw.latitude) * 0.5
         let lonPad = (bounds.ne.longitude - bounds.sw.longitude) * 0.5
         let inside = box.map { b in
             bounds.sw.latitude >= b.s && bounds.sw.longitude >= b.w && bounds.ne.latitude <= b.n && bounds.ne.longitude <= b.e
         } ?? false
-        if inside && kinds == self.kinds && Date().timeIntervalSince(fetchedAt) < 60 { return }
+        if inside && kinds == self.kinds && Date().timeIntervalSince(fetchedAt) < Self.viewportEvery { return }
         box = (bounds.sw.latitude - latPad, bounds.sw.longitude - lonPad, bounds.ne.latitude + latPad, bounds.ne.longitude + lonPad)
         self.kinds = kinds
         refresh(force: false)
@@ -187,19 +205,28 @@ final class MarkerStore: ObservableObject {
             }
             if case let .success(found) = result, !Task.isCancelled {
                 DriveLog.note("markers: \(found.count) in box")
-                // The viewport answer carries the closure stretches and
-                // toll corridors the snapshot drops, so it replaces the
-                // snapshot outright. A failed fetch leaves the snapshot
-                // up rather than blanking the map.
-                snapshotRetired = true
-                snapshot = [:]
-                publish(found)
+                take(found, kinds: kinds, box: b)
                 fetchedAt = Date()
                 asOf = fetchedAt
                 backoff = 0
                 holdUntil = .distantPast
             }
         }
+    }
+
+    /// The viewport answer is the truth inside its box for the kinds it
+    /// asked for: what is there and not in it is gone, what is in it is
+    /// current, and everything outside the box is left alone.
+    private func take(_ found: [RoadMarker], kinds: String, box b: (s: Double, w: Double, n: Double, e: Double)) {
+        let asked = Set(kinds.split(separator: ",").map { Prefs.emittedKind(String($0)) })
+        let now = Date()
+        held = held.filter { _, h in
+            let m = h.marker
+            let inside = m.lat >= b.s && m.lat <= b.n && m.lon >= b.w && m.lon <= b.e
+            return !(inside && asked.contains(m.kind))
+        }
+        for m in found { held[m.key] = Held(marker: m, origin: .viewport, at: now) }
+        publish()
     }
 }
 
