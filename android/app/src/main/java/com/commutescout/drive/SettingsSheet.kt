@@ -77,6 +77,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.ChevronRight
 import kotlinx.coroutines.delay
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
@@ -394,19 +395,29 @@ private fun PluginsPage(model: DriveViewModel) {
     if (showMarket) MarketplaceSheet(model) { showMarket = false }
     if (showMine) SourcesSheet(model) { showMine = false }
     LaunchedEffect(Unit) { model.sources.loadCatalog() }
-    GroupTitle("Installed")
+    var statusOf by remember { mutableStateOf<String?>(null) }
+    statusOf?.let { PluginStatusSheet(model, it) { statusOf = null } }
+    GroupTitle("Plugins")
     PageGroup {
         if (catalog.isEmpty()) Text("No plugin is listed right now.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         catalog.forEach { p ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickable { statusOf = p.id }.padding(vertical = 4.dp).testTag("plugin-row-${p.id}"), verticalAlignment = Alignment.CenterVertically) {
                 PluginBadge(p.id, PluginStyle.oneCategory(p.kinds), 22.dp)
                 Spacer(Modifier.width(10.dp))
-                Text(p.name, Modifier.weight(1f), maxLines = 2)
-                Switch(p.id !in off, { on -> model.sources.setOn(p.id, on); model.markers.refresh(true) }, Modifier.testTag("plugin-switch-${p.id}"))
+                Column(Modifier.weight(1f)) {
+                    Text(p.name, maxLines = 2)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (p.ok == false) "Not answering" else "${p.count} alerts", style = MaterialTheme.typography.bodySmall,
+                            color = if (p.ok == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (p.trust == "official") Text("  Official", style = MaterialTheme.typography.labelSmall, color = Color(0xFF2E7D32))
+                    }
+                }
+                Text(if (p.id !in off) "Installed" else "Off", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Default.ChevronRight, "Open", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
-    Note("Plugins add alerts to the map. A plugin's alerts are badges in its own color.")
+    Note("Open one to see whether it is answering, what it loads, and to install or uninstall it. A plugin's alerts are badges in its own color.")
     PageGroup {
         LinkRow("Browse the marketplace") { showMarket = true }
         LinkRow("My plugins and private sources") { showMine = true }
