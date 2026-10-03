@@ -174,7 +174,7 @@ class AlertsEngine(context: Context) {
         refreshJob = scope.launch {
             while (isActive) {
                 delay(REFRESH_MS)
-                refreshAround()
+                if (Engine.awake()) refreshAround()
             }
         }
     }
