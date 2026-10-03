@@ -43,18 +43,21 @@ struct AlertBanner: View {
         // The buttons a hand can hit from the wheel: big, colored, one
         // row. Dismiss always; Still there and Gone when the plugin takes
         // confirmations (the Waze relay does), and those dismiss too.
+        // Three across, the words alone fit at any text size; the icon
+        // joins when Dismiss stands alone.
+        let votes = model.canConfirm(item.marker)
         HStack(spacing: 8) {
-            if model.canConfirm(item.marker) {
-                bigButton("Still there", "hand.thumbsup.fill", Color(red: 0.13, green: 0.55, blue: 0.24), id: "alert-confirm-up") {
+            if votes {
+                bigButton("Still there", nil, Color(red: 0.13, green: 0.55, blue: 0.24), id: "alert-confirm-up") {
                     Task { await model.vote(item.marker, "up") }
                     model.alerts.dismiss(item.id)
                 }
-                bigButton("Gone", "hand.thumbsdown.fill", Color(red: 0.78, green: 0.16, blue: 0.16), id: "alert-confirm-gone") {
+                bigButton("Gone", nil, Color(red: 0.78, green: 0.16, blue: 0.16), id: "alert-confirm-gone") {
                     Task { await model.vote(item.marker, "gone") }
                     model.alerts.dismiss(item.id)
                 }
             }
-            bigButton("Dismiss", "xmark", Color(red: 0.25, green: 0.28, blue: 0.33), id: "alert-dismiss") { model.alerts.dismiss(item.id) }
+            bigButton("Dismiss", votes ? nil : "xmark", Color(red: 0.25, green: 0.28, blue: 0.33), id: "alert-dismiss") { model.alerts.dismiss(item.id) }
         }
         .padding(.horizontal, 10).padding(.bottom, 10)
         }
@@ -68,12 +71,13 @@ struct AlertBanner: View {
         .accessibilityIdentifier("alert-banner")
     }
 
-    private func bigButton(_ label: String, _ symbol: String, _ color: Color, id: String, action: @escaping () -> Void) -> some View {
+    private func bigButton(_ label: String, _ symbol: String?, _ color: Color, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: symbol).font(.body.weight(.bold))
-                Text(label).font(.subheadline.weight(.bold)).lineLimit(1).minimumScaleFactor(0.8)
+                if let symbol { Image(systemName: symbol).font(.body.weight(.bold)) }
+                Text(label).font(.subheadline.weight(.bold)).lineLimit(1).minimumScaleFactor(0.6)
             }
+            .padding(.horizontal, 4)
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 52)
             .background(color, in: RoundedRectangle(cornerRadius: 12))

@@ -671,7 +671,7 @@ private struct AboutSettings: View {
             Section {
                 LabeledContent("Version", value: AppInfo.version)
             } footer: {
-                Text("Map tiles and routing by Stadia Maps, data (c) OpenStreetMap contributors. Road data from the agencies listed on commutescout.com. Verify before you drive.")
+                Text("Routing and address lookup by Stadia Maps. Map data (c) OpenStreetMap contributors, drawn from files CommuteScout hosts and from OpenFreeMap. Road data from the agencies listed on commutescout.com. Verify before you drive.")
             }
         }
         .navigationTitle("About")

@@ -78,8 +78,33 @@ final class PagesUITests: XCTestCase {
             back()
         }
         back()
-        open("About")
-        shot("about")
+        for row in ["Units", "Navigation", "Alerts", "Help", "About"] {
+            let cell = app.staticTexts[row].firstMatch
+            if !cell.exists || !cell.isHittable { app.swipeUp() }
+            if cell.waitForExistence(timeout: 3) { cell.tap(); shot("page-" + row.lowercased(), 1); back() }
+        }
+    }
+
+    func testToolsAndTrip() {
+        app.terminate()
+        app.launchArguments = ["-csSimulate"]
+        app.launch()
+        sleep(8)
+        shot("browse", 1)
+        app.buttons["tools"].firstMatch.tap()
+        shot("tools", 2)
+        for tool in ["tool-layers", "tool-directions", "tool-ask", "tool-watch"] {
+            let b = app.buttons[tool].firstMatch
+            if b.waitForExistence(timeout: 2) { b.tap(); shot(tool, 2); app.buttons["Done"].firstMatch.tap(); sleep(1); app.buttons["tools"].firstMatch.tap(); sleep(1) }
+        }
+        app.buttons["Done"].firstMatch.tap()
+        app.terminate()
+        app.launchArguments = ["-csSimulate", "-csAutoDrive"]
+        app.launch()
+        sleep(45)
+        shot("trip", 1)
+        sleep(20)
+        shot("trip2", 1)
     }
 
     func testAlertsNearby() {
