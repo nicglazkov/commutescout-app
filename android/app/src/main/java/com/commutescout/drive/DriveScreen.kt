@@ -99,11 +99,17 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stadiamaps.ferrostar.composeui.config.NavigationViewComponentBuilder
 import com.stadiamaps.ferrostar.composeui.config.VisualNavigationViewConfig
 import com.stadiamaps.ferrostar.composeui.config.withCustomOverlayView
-import com.stadiamaps.ferrostar.composeui.config.withSpeedLimitStyle
 import com.stadiamaps.ferrostar.composeui.runtime.KeepScreenOnDisposableEffect
 import com.stadiamaps.ferrostar.composeui.views.components.speedlimit.SignageStyle
 import com.stadiamaps.ferrostar.maplibreui.NavigationMapClickResult
@@ -184,7 +190,6 @@ fun DriveScreen(model: DriveViewModel) {
     var showSettings by remember { mutableStateOf(false) }
     var showLayers by remember { mutableStateOf(false) }
     var reportAt by remember { mutableStateOf<LatLon?>(null) }
-    var stripCollapsed by remember { mutableStateOf(false) }
     val toastText by model.toast.collectAsStateWithLifecycle()
     val isNavigating = uiState.isNavigating()
     val online by Connectivity.online.collectAsStateWithLifecycle()
@@ -245,6 +250,11 @@ fun DriveScreen(model: DriveViewModel) {
     // map that was panned away is left where it was put.
     val driving by model.driving.collectAsStateWithLifecycle()
     val course by model.course.collectAsStateWithLifecycle()
+    val speedMps by model.speedMps.collectAsStateWithLifecycle()
+    val ahead by model.alerts.ahead.collectAsStateWithLifecycle()
+    val along by model.alerts.hereAlong.collectAsStateWithLifecycle()
+    val dismissed by model.alerts.dismissed.collectAsStateWithLifecycle()
+    val bannerItem = ahead.firstOrNull { it.id !in dismissed && it.alongMeters - along <= prefs.stripAheadMeters }
     LaunchedEffect(driving) {
         if (state is DriveState.Browsing && mapState.isTrackingUser) {
             mapState.cameraMode = if (driving) NavigationCameraMode.FOLLOW_USER_WITH_BEARING else NavigationCameraMode.FOLLOW_USER
@@ -306,7 +316,7 @@ fun DriveScreen(model: DriveViewModel) {
             navigationMapState = mapState,
             navigationCameraOptions = navigationCameraOptions().copy(browsingZoom = 14.0, navigationTilt = if (prefs.is3D) 45.0 else 0.0),
             viewModel = model,
-            config = VisualNavigationViewConfig.Default().withSpeedLimitStyle(SignageStyle.MUTCD),
+            config = VisualNavigationViewConfig.Default(),
             views = NavigationViewComponentBuilder.Default().withCustomOverlayView { modifier ->
                 if (!uiState.isNavigating()) {
                     BrowsingOverlay(modifier, model, offlineNotice, onSettings = { showSettings = true }, onLayers = { showTools = true })
@@ -329,6 +339,19 @@ fun DriveScreen(model: DriveViewModel) {
             if (state is DriveState.Choosing) chosenRoute?.let { RouteLine(it) }
             // Moving with no trip: the dot becomes the same arrow a trip shows.
             if (driving && !isNavigating) here?.let { h -> ArrowPuck(h, course ?: 0.0) }
+            // The alert the banner names: a breathing ring around its marker.
+            bannerItem?.let { AlertRing(it, along) }
+        }
+
+        // The alert ahead, on a trip or driving without one, as a banner
+        // at the top: under the search bar while browsing, under the
+        // instruction card on a trip.
+        bannerItem?.let { next ->
+            // On a trip the banner leaves room for Ferrostar's buttons on the right.
+            Box(Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(start = 12.dp, end = if (isNavigating) 72.dp else 12.dp)
+                .padding(top = if (isNavigating) 132.dp else 112.dp)) {
+                AlertBanner(next, along, ahead.size - 1, onDismiss = { model.alerts.dismiss(next.id) }) { model.alerts.say(next.marker) }
+            }
         }
 
         // Map controls: 2D/3D, compass when turned, my location. While
@@ -340,12 +363,24 @@ fun DriveScreen(model: DriveViewModel) {
                     scope.launch { mapState.cameraState.animateTo(mapState.cameraState.position.copy(bearing = 0.0)) }
                 }
             }
-            RoundText(if (prefs.is3D) "2D" else "3D", tag = "perspective") { model.toggle3D() }
+            // Browsing has 3D under the menu button; on a trip the top
+            // belongs to the instruction card.
+            if (isNavigating) RoundText(if (prefs.is3D) "2D" else "3D", tag = "perspective") { model.toggle3D() }
             if (!isNavigating) RoundIcon(Icons.Default.MyLocation, "My location", tag = "locate") { mapState.recenter(isNavigating = false) }
-            // Report, like Waze: one tap from anywhere.
-            Box(Modifier.shadow(4.dp, CircleShape).background(Color(0xFFF57C00), CircleShape).size(52.dp)
-                .clickable { model.reportLatLon?.let { reportAt = it } }.testTag("report"), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Campaign, "Report", tint = Color.White)
+            // Report, like Waze: one tap from anywhere, big enough to hit
+            // at a glance from the wheel.
+            Column(Modifier.shadow(6.dp, CircleShape).background(Color(0xFFF57C00), CircleShape).size(64.dp)
+                .clickable { model.reportLatLon?.let { reportAt = it } }.testTag("report"),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Icon(Icons.Default.Campaign, "Report", tint = Color.White, modifier = Modifier.size(28.dp))
+                Text("Report", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, lineHeight = 12.sp)
+            }
+        }
+        // The speedometer, above the trip bar and left of the side buttons.
+        if (prefs.showSpeedLimit && (speedMps >= 0 || isNavigating)) {
+            Box(Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = 12.dp,
+                bottom = if (isNavigating) 124.dp else bottomCardHeight(state, selected, resumable != null) + 12.dp)) {
+                Speedometer(speedMps, model.limitKmh(uiState))
             }
         }
         toastText?.let {
@@ -369,31 +404,6 @@ fun DriveScreen(model: DriveViewModel) {
             }
         }
 
-        // Above the trip bar and left of the side controls, as on iOS: the
-        // instruction card can be any height, so the strip never sits under it.
-        // On a trip, or driving without one: the alert ahead shows either way.
-        run {
-            val ahead by model.alerts.ahead.collectAsStateWithLifecycle()
-            val along by model.alerts.hereAlong.collectAsStateWithLifecycle()
-            ahead.firstOrNull()?.takeIf { it.alongMeters - along <= prefs.stripAheadMeters }?.let { next ->
-                if (stripCollapsed) {
-                    // Tucked away: a pill with the icon and distance; tap to bring it back.
-                    Row(Modifier.align(Alignment.BottomEnd).padding(end = 76.dp, bottom = 124.dp)
-                        .shadow(4.dp, RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp))
-                        .clickable { stripCollapsed = false }.padding(horizontal = 10.dp, vertical = 8.dp).testTag("alert-pill"),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        MarkerGlyph(next.marker, 18.dp)
-                        Spacer(Modifier.width(6.dp))
-                        Text(Units.distance(max(0.0, next.alongMeters - along)), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                        if (ahead.size > 1) Text(" +${ahead.size - 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                } else {
-                    Box(Modifier.align(Alignment.BottomStart).padding(end = 64.dp, bottom = 124.dp)) {
-                        AlertStrip(next, along, ahead.size - 1, onCollapse = { stripCollapsed = true }) { model.alerts.say(next.marker) }
-                    }
-                }
-            }
-        }
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
             if (isNavigating) {
                 // Ferrostar's trip bar owns the bottom while navigating.
@@ -476,15 +486,21 @@ private fun MarkerLayers(markers: List<RoadMarker>, onTap: (String) -> Unit) {
     val badgeScale = interpolate(linear(), zoom(), 3 to const(0.22f), 7.5 to const(0.42f), 9.5 to const(0.55f), 11.5 to const(0.8f), 13 to const(1f))
     // Shapes first so a dot is never hidden under the line it belongs to.
     ShapeLayers(markers, onTap)
-    for (kind in MarkerIcons.kinds) {
+    for (kind in MarkerIcons.kinds + "camera_live") {
         if (kind == "plugin") continue
-        val ofKind = markers.filter { it.kind == kind }
+        // A camera with live video wears a red ring, so the map says
+        // which cameras can be watched and which are stills.
+        val ofKind = when (kind) {
+            "camera" -> markers.filter { it.kind == "camera" && it.stream.isNullOrBlank() }
+            "camera_live" -> markers.filter { it.kind == "camera" && !it.stream.isNullOrBlank() }
+            else -> markers.filter { it.kind == kind }
+        }
         val source = rememberGeoJsonSource(GeoJsonData.Features(FeatureCollection(ofKind.map { m ->
             Feature(geometry = Point(Position(m.lon, m.lat)), properties = buildJsonObject { put("key", JsonPrimitive(m.key)) })
         })))
         CircleLayer(
-            id = "cs-m-$kind", source = source, color = const(MarkerIcons.color(kind)), radius = dotRadius,
-            strokeColor = const(Color.White), strokeWidth = dotStroke,
+            id = "cs-m-$kind", source = source, color = const(MarkerIcons.color(if (kind == "camera_live") "camera" else kind)), radius = dotRadius,
+            strokeColor = const(if (kind == "camera_live") Color(0xFFD32F2F) else Color.White), strokeWidth = dotStroke,
             onClick = { features -> tapped(features.firstOrNull()?.properties, onTap) },
         )
     }
@@ -596,6 +612,29 @@ private fun ArrowPuck(here: LatLon, course: Double) {
         iconAllowOverlap = const(true), iconIgnorePlacement = const(true))
 }
 
+/**
+ * The alert the banner names, marked on the map: a breathing ring in
+ * the kind's color around its marker, with the distance beside it.
+ */
+@Composable
+@MaplibreComposable
+private fun AlertRing(item: Upcoming, along: Double) {
+    val m = item.marker
+    val color = if (m.kind == "plugin") PluginStyle.color(PluginStyle.sourceId(m)) else MarkerIcons.color(m.kind)
+    val pulse = rememberInfiniteTransition(label = "alert-ring")
+    val radius by pulse.animateFloat(18f, 34f, infiniteRepeatable(tween(1100, easing = LinearOutSlowInEasing), RepeatMode.Reverse), label = "r")
+    val alpha by pulse.animateFloat(0.5f, 0.15f, infiniteRepeatable(tween(1100, easing = LinearOutSlowInEasing), RepeatMode.Reverse), label = "a")
+    val source = rememberGeoJsonSource(GeoJsonData.Features(FeatureCollection(
+        Feature(geometry = Point(Position(m.lon, m.lat)), properties = buildJsonObject {
+            put("label", JsonPrimitive(Units.distance(max(0.0, item.alongMeters - along))))
+        })
+    )))
+    CircleLayer(id = "cs-alert-ring", source = source, color = const(color), radius = const(radius.dp), opacity = const(alpha),
+        strokeColor = const(color), strokeWidth = const(2.dp))
+    CircleLayer(id = "cs-alert-core", source = source, color = const(Color.Transparent), radius = const(20.dp),
+        strokeColor = const(color), strokeWidth = const(3.dp))
+}
+
 /** The alternative under consideration, drawn like the navigation route. */
 @Composable
 @MaplibreComposable
@@ -620,6 +659,7 @@ private fun BrowsingOverlay(modifier: Modifier, model: DriveViewModel, offline: 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 RoundIcon(Icons.Default.Settings, "Settings", tag = "settings", onClick = onSettings)
                 RoundIcon(Icons.Default.Menu, "Tools", tag = "tools", onClick = onLayers)
+                RoundText(if (model.prefs.is3D) "2D" else "3D", tag = "perspective") { model.toggle3D() }
             }
         }
         offline?.let { (title, detail) ->
@@ -1180,24 +1220,6 @@ private fun RoutesCard(routes: List<Route>, place: Place, model: DriveViewModel,
     }
 }
 
-/** The next road event on the route, above the trip bar. Tap to hear it again. */
-@Composable
-private fun AlertStrip(item: Upcoming, along: Double, more: Int, onCollapse: (() -> Unit)? = null, onTap: () -> Unit) {
-    Card(Modifier.padding(horizontal = 12.dp).fillMaxWidth().clickable(onClick = onTap).testTag("alert-strip"), elevation = CardDefaults.cardElevation(6.dp)) {
-        Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            MarkerGlyph(item.marker)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(item.marker.displayTitle, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("in ${Units.distance(max(0.0, item.alongMeters - along))}" + (if (more > 0) ", $more more ahead" else ""),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            if (onCollapse != null) IconButton(onCollapse, Modifier.size(32.dp).testTag("alert-collapse")) {
-                Icon(Icons.Default.KeyboardArrowUp, "Hide", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
 
 /** What the map shows: the same layers as the website's Layers tool. */
 @OptIn(ExperimentalMaterial3Api::class)

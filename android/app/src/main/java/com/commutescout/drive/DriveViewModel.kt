@@ -245,6 +245,9 @@ object Engine {
     }
 }
 
+@kotlinx.serialization.Serializable
+private data class SpeedLimitAnswer(val kmh: Double? = null, val mph: Double? = null)
+
 class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedOSRMAnnotationPublisher()) {
     private val _state = MutableStateFlow<DriveState>(DriveState.Browsing)
     val state = _state.asStateFlow()
@@ -319,6 +322,15 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     val course = _course.asStateFlow()
     private var movingSince = 0L
     private var stillSince = 0L
+    /** The last fix's speed in m/s (negative when unknown), for the speedometer. */
+    private val _speedMps = MutableStateFlow(-1.0)
+    val speedMps = _speedMps.asStateFlow()
+    /** The posted limit on the road ahead with no trip, km/h, asked once a minute at most. */
+    private val _postedLimitKmh = MutableStateFlow<Double?>(null)
+    val postedLimitKmh = _postedLimitKmh.asStateFlow()
+    private var limitAskedAt = 0L
+    private var limitAskedAtPoint: LatLon? = null
+    private var lastFixForSpeed: Pair<LatLon, Long>? = null
     override val navigationUiState: StateFlow<NavigationUiState> =
         combine(super.navigationUiState, browsingLocation) { ui, loc ->
             if (ui.isNavigating() || loc == null) ui else ui.copy(location = loc)
@@ -370,11 +382,17 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
      */
     private fun noteFix(l: android.location.Location) {
         val now = System.currentTimeMillis()
-        val speed = if (l.hasSpeed()) l.speed.toDouble() else -1.0
+        var speed = if (l.hasSpeed()) l.speed.toDouble() else -1.0
+        // A fix without a speed: the pace since the last fix stands in.
+        val here = LatLon(l.latitude, l.longitude)
+        lastFixForSpeed?.let { (p, t) -> if (speed < 0 && now - t > 300) speed = AlertsEngine.meters(p, here) / ((now - t) / 1000.0) }
+        lastFixForSpeed = here to now
         val course = if (l.hasBearing() && speed >= 1) l.bearing.toDouble() else null
         if (course != null) _course.value = course
+        _speedMps.value = speed
         if (!navigationUiState.value.isNavigating()) {
-            Engine.alerts.update(LatLon(l.latitude, l.longitude), course, speed)
+            Engine.alerts.update(here, course, speed)
+            askPostedLimit(here, course, speed)
         }
         if (speed >= 3) {                        // about 7 mph
             stillSince = 0L
@@ -403,6 +421,32 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     fun dismissResume() {
         _resumable.value = null
         TripStore.clear()
+    }
+
+    /**
+     * The limit on the road ahead, once a minute or every 500 m while
+     * moving with no trip (a trip's route carries its own). An unknown
+     * answer clears the sign rather than leaving a stale one.
+     */
+    private fun askPostedLimit(p: LatLon, course: Double?, speed: Double) {
+        if (speed < 4 || course == null || !Connectivity.online.value) return
+        val now = System.currentTimeMillis()
+        val moved = limitAskedAtPoint?.let { AlertsEngine.meters(it, p) } ?: Double.MAX_VALUE
+        if (now - limitAskedAt < 45_000 && moved < 500) return
+        limitAskedAt = now; limitAskedAtPoint = p
+        viewModelScope.launch {
+            val q = mapOf("lat" to "%.5f".format(p.lat), "lon" to "%.5f".format(p.lon), "heading" to "%.0f".format(course))
+            _postedLimitKmh.value = runCatching { Backend.get<SpeedLimitAnswer>("/api/speedlimit", q).kmh }.getOrNull()
+        }
+    }
+
+    /** The limit to show: the trip's own while navigating, else the posted one. */
+    fun limitKmh(ui: NavigationUiState): Double? {
+        if (ui.isNavigating()) {
+            val sl = runCatching { ui.currentAnnotation?.speedLimit }.getOrNull() ?: return null
+            return sl.value(com.stadiamaps.ferrostar.core.measurement.MeasurementSpeedUnit.KilometersPerHour)
+        }
+        return _postedLimitKmh.value
     }
 
     fun applyPrefs() {

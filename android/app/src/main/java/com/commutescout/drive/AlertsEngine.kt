@@ -43,6 +43,10 @@ data class Upcoming(val marker: RoadMarker, val alongMeters: Double) {
 class AlertsEngine(context: Context) {
     private val _ahead = MutableStateFlow<List<Upcoming>>(emptyList())
     val ahead = _ahead.asStateFlow()
+    /** Alerts the driver swiped away; off the banner until the next trip or free drive. */
+    private val _dismissed = MutableStateFlow<Set<String>>(emptySet())
+    val dismissed = _dismissed.asStateFlow()
+    fun dismiss(id: String) { _dismissed.value = _dismissed.value + id }
     private val _hereAlong = MutableStateFlow(0.0)
     val hereAlong = _hereAlong.asStateFlow()
     var spoken = true
@@ -165,6 +169,7 @@ class AlertsEngine(context: Context) {
     /** Alerts with no destination. Runs from launch and again after every trip; a trip's [start] takes over. */
     fun startFreeDrive() {
         stop()
+        _dismissed.value = emptySet()
         freeDrive = true
         refreshJob = scope.launch {
             while (isActive) {
@@ -226,6 +231,7 @@ class AlertsEngine(context: Context) {
         route = coordinates
         cumulative = cumulativeDistances(coordinates)
         lastSegment = 0
+        _dismissed.value = emptySet()
         val lats = coordinates.map { it.lat }; val lons = coordinates.map { it.lon }
         if (lats.isEmpty()) return
         box = doubleArrayOf(lats.min() - 0.05, lons.min() - 0.05, lats.max() + 0.05, lons.max() + 0.05)

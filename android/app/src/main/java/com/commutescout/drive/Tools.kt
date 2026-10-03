@@ -69,6 +69,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -96,6 +97,8 @@ fun MarketplaceSheet(model: DriveViewModel, onClose: () -> Unit) {
     val catalog by model.sources.catalog.collectAsStateWithLifecycle()
     val hidden by model.sources.hidden.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var statusOf by remember { mutableStateOf<FlareSource?>(null) }
+    statusOf?.let { PluginStatusSheet(model, it.id) { statusOf = null } }
     LaunchedEffect(Unit) { model.sources.loadCatalog() }
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("marketplace-sheet")) {
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 32.dp).fillMaxHeight(0.92f)) {
@@ -106,7 +109,7 @@ fun MarketplaceSheet(model: DriveViewModel, onClose: () -> Unit) {
             LazyVerticalGrid(columns = GridCells.Adaptive(320.dp), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
                 items(catalog, key = { it.id }) { s ->
                     val installed = s.id !in hidden
-                    PluginListing(s, installed) { on -> model.sources.setOn(s.id, on); model.markers.refresh(true) }
+                    PluginListing(s, installed, onStatus = { statusOf = it }) { on -> model.sources.setOn(s.id, on); model.markers.refresh(true) }
                 }
             }
             LinkRow("Write a plugin") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://commutescout.com/plugins"))) }
@@ -127,7 +130,7 @@ private fun pluginIcon(kinds: List<String>): Pair<ImageVector, List<Color>> = wh
 /** One marketplace listing: icon, name, operator and the install button
  *  on one line, then what it does and a strip of figures. */
 @Composable
-private fun PluginListing(s: FlareSource, installed: Boolean, onToggle: (Boolean) -> Unit) {
+private fun PluginListing(s: FlareSource, installed: Boolean, onStatus: (FlareSource) -> Unit, onToggle: (Boolean) -> Unit) {
     val (icon, colors) = pluginIcon(s.kinds)
     // An operator named the same as its plugin says nothing twice.
     val operator = s.attribution?.takeIf { it.isNotBlank() && it != s.name } ?: "Run by its community"
@@ -143,7 +146,7 @@ private fun PluginListing(s: FlareSource, installed: Boolean, onToggle: (Boolean
                     Text(operator, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Spacer(Modifier.width(8.dp))
-                if (installed) FilledTonalButton({ onToggle(false) }, Modifier.testTag("install-${s.id}")) { Text("Installed") }
+                if (installed) FilledTonalButton({ onToggle(false) }, Modifier.testTag("install-${s.id}")) { Text("Uninstall") }
                 else Button({ onToggle(true) }, Modifier.testTag("install-${s.id}")) { Text("Install") }
             }
             Text(s.summary ?: if (s.kindsLabel.isEmpty()) "Community alerts for the map." else "Shows ${s.kindsLabel}.",
@@ -156,9 +159,13 @@ private fun PluginListing(s: FlareSource, installed: Boolean, onToggle: (Boolean
                 ListingStat("Price", "Free", Modifier.weight(0.8f))
             }
             HorizontalDivider()
-            Text(if (s.tier == "approved") "Approved by CommuteScout" else "Public, not reviewed. It never speaks unless you turn voice on for it.",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (s.tier == "approved") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (s.trust == "official") "Official CommuteScout plugin" else if (s.tier == "approved") "Reviewed by CommuteScout"
+                     else "Public, not reviewed. It never speaks unless you turn voice on for it.",
+                    Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
+                    color = if (s.tier == "approved") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
+                TextButton({ onStatus(s) }, Modifier.testTag("status-${s.id}")) { Text("Status") }
+            }
         }
     }
 }
@@ -206,13 +213,31 @@ fun AlertsListSheet(model: DriveViewModel, mapState: NavigationMapState, onClose
     val direct by model.sources.directMarkers.collectAsStateWithLifecycle()
     val here by model.here.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    val sorted = (markers + direct).filter { model.prefs.isShown(it.kind) }.sortedBy { m -> here?.let { AlertsEngine.meters(it, LatLon(m.lat, m.lon)) } ?: 0.0 }
+    // The nearest hundred events, ranked off the main thread: the whole
+    // country's markers are held now, and sorting them all on every
+    // redraw froze the sheet for a second. One row per thing.
+    var sorted by remember { mutableStateOf<List<RoadMarker>?>(null) }
+    LaunchedEffect(markers, direct, here) {
+        val shown = (markers + direct).filter { model.prefs.isShown(it.kind) && it.kind != "camera" && it.kind != "rwis" }
+        val h = here
+        sorted = withContext(kotlinx.coroutines.Dispatchers.Default) {
+            if (h == null) shown.take(100) else {
+                val seen = HashSet<String>()
+                shown.map { it to AlertsEngine.meters(h, LatLon(it.lat, it.lon)) }.filter { it.second <= 160_000 }
+                    .sortedBy { it.second }
+                    .filter { seen.add(it.first.kind + "|" + it.first.displayTitle + "|" + (it.second / 300).toInt()) }
+                    .take(100).map { it.first }
+            }
+        }
+    }
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("alerts-sheet")) {
         Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 24.dp)) {
             Text("Alerts nearby", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(8.dp))
-            if (sorted.isEmpty()) Text("Nothing reported in the area on screen. Zoom out or move the map to see more.", Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val list = sorted
+            if (list == null) Text("Looking around you", Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else if (list.isEmpty()) Text("Nothing reported within 100 miles of you.", Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             LazyColumn(Modifier.height(420.dp)) {
-                items(sorted, key = { it.key }) { m ->
+                items(list ?: emptyList(), key = { it.key }) { m ->
                     Row(Modifier.fillMaxWidth().clickable {
                         model.showMarker(m.key)
                         scope.launch {
@@ -413,7 +438,7 @@ fun AskSheet(model: DriveViewModel, onClose: () -> Unit) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Ask", style = MaterialTheme.typography.titleLarge)
             Column(Modifier.height(300.dp).verticalScroll(rememberScrollState())) {
-                if (answer.isEmpty() && !running) Text("Ask about closures, chain controls, fires or traffic, for example \"Is 80 over Donner open?\" or \"Anything between here and Tahoe?\"", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (answer.isEmpty() && !running) Text("Ask about closures, chain controls, fires or traffic anywhere in the country, for example \"Is I-70 open through the Eisenhower Tunnel?\", \"Any crashes on I-95 near Richmond?\" or \"Chains on US-2 over Stevens Pass?\"", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (answer.isNotEmpty()) Text(answer.replace("**", "").replace(Regex("(?m)^#+ "), ""))
                 if (running) CircularProgressIndicator(Modifier.padding(8.dp))
@@ -492,5 +517,108 @@ fun SourcesSheet(model: DriveViewModel, onClose: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+
+/**
+ * One plugin, checked: whether it is answering, how many alerts it
+ * holds, when it last answered, what it says about itself, and a
+ * button that asks again now. The page for "is this thing working".
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PluginStatusSheet(model: DriveViewModel, sourceId: String, onClose: () -> Unit) {
+    val catalog by model.sources.catalog.collectAsStateWithLifecycle()
+    val mine by model.sources.mine.collectAsStateWithLifecycle()
+    val hidden by model.sources.hidden.collectAsStateWithLifecycle()
+    val s = catalog.firstOrNull { it.id == sourceId } ?: mine.firstOrNull { it.id == sourceId }
+    var checking by remember { mutableStateOf(false) }
+    var checkedAt by remember { mutableStateOf<Long?>(null) }
+    var reach by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("plugin-status")) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (s == null) { Text("This plugin is no longer listed.", color = MaterialTheme.colorScheme.onSurfaceVariant); return@Column }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PluginBadge(s.id, PluginStyle.oneCategory(s.kinds), 40.dp)
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(s.name, style = MaterialTheme.typography.titleLarge)
+                    Text(if (s.trust == "official") "Official CommuteScout plugin" else if (s.tier == "approved") "Reviewed by CommuteScout"
+                         else if (s.tier == "private") "Private, read from this phone only" else "Public, not reviewed",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (s.tier == "approved") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            val installed = s.id !in hidden
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (installed) "Installed" else "Not installed", Modifier.weight(1f))
+                Switch(installed, { on -> model.sources.setOn(s.id, on); model.markers.refresh(true) }, Modifier.testTag("plugin-installed"))
+            }
+            Text(if (installed) "Turn off to uninstall: its alerts leave the map at once and it is not asked again."
+                 else "Turn on to install: its alerts join the map within a minute.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            Heading("Status")
+            StatusFact("Answering", if (s.ok == false) "No" else if (s.ok == true) "Yes" else "Not asked yet",
+                if (s.ok == false) MaterialTheme.colorScheme.error else if (s.ok == true) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant)
+            StatusFact("Alerts on the map now", "%,d".format(s.count))
+            s.lastOk?.let { StatusFact("Last good answer", agoText(it)) }
+            if (s.ok == false) s.lastError?.let { StatusFact("Last error", it, MaterialTheme.colorScheme.error) }
+            if (s.fails > 0) StatusFact("Failures in a row", "${s.fails}")
+            reach?.let { StatusFact("Reached from this phone", it) }
+            Button({
+                checking = true
+                scope.launch {
+                    model.sources.loadCatalog()
+                    s.base?.let { base ->
+                        val t0 = System.currentTimeMillis()
+                        reach = runCatching {
+                            Backend.http.newCall(okhttp3.Request.Builder().url("$base/flare/v1/handshake").build()).execute().use { r ->
+                                if (r.isSuccessful) "Yes, ${System.currentTimeMillis() - t0} ms" else "Answered ${r.code}"
+                            }
+                        }.getOrDefault("No")
+                    }
+                    checkedAt = System.currentTimeMillis()
+                    checking = false
+                }
+            }, enabled = !checking, modifier = Modifier.testTag("plugin-check")) { Text(if (checking) "Checking" else "Check now") }
+            checkedAt?.let { Text("Checked " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(it)),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+
+            Heading("What it says about itself")
+            s.version?.let { StatusFact("Version", it) }
+            s.protocolName?.let { StatusFact("Protocol", it) }
+            StatusFact("Asks for new alerts every", Units.duration(s.refreshS.toDouble()))
+            StatusFact("Shows", s.kindsLabel.ifEmpty { "alerts" })
+            StatusFact("Coverage", s.coverageLabel)
+            StatusFact("Shared data", if (s.shared) "Yes: the same for everyone, at every zoom" else "No: served around you only")
+            StatusFact("Accepts reports", if (s.acceptsReports) "Yes" else "No")
+            s.attribution?.let { StatusFact("Data from", it) }
+            s.contact?.let { StatusFact("Contact", it) }
+            s.base?.let { StatusFact("Address", it) }
+        }
+    }
+}
+
+/** "5 min ago" for an ISO timestamp from the server. */
+private fun agoText(iso: String): String {
+    val t = runCatching { java.time.Instant.parse(iso).toEpochMilli() }.getOrNull()
+        ?: runCatching { java.time.OffsetDateTime.parse(iso).toInstant().toEpochMilli() }.getOrNull() ?: return iso
+    val s = (System.currentTimeMillis() - t) / 1000
+    return when {
+        s < 60 -> "just now"
+        s < 3600 -> "${s / 60} min ago"
+        s < 86400 -> "${s / 3600} h ago"
+        else -> java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(t))
+    }
+}
+
+@Composable
+private fun StatusFact(label: String, value: String, color: Color = MaterialTheme.colorScheme.onSurface) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, Modifier.weight(1.4f), color = color, textAlign = androidx.compose.ui.text.style.TextAlign.End, style = MaterialTheme.typography.bodyMedium)
     }
 }

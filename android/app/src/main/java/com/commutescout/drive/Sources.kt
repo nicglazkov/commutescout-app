@@ -53,6 +53,14 @@ data class FlareSource(
     val summary: String? = null,
     val coverage: List<Double>? = null,
     val kinds: List<String> = emptyList(),
+    // For the status page.
+    val lastOk: String? = null,
+    val lastError: String? = null,
+    val fails: Int = 0,
+    val version: String? = null,
+    val protocolName: String? = null,
+    val contact: String? = null,
+    val shared: Boolean = false,
     val acceptsReports: Boolean = false,
     // A catalog plugin that offers each signed-in person their own session
     // (handshake extensions.user_sessions): the path the phone polls itself.
@@ -87,7 +95,9 @@ data class FlareSource(
 @Serializable private data class Attribution(val name: String? = null, val url: String? = null)
 @Serializable private data class PublicSource(val id: String, val name: String, val attribution: Attribution? = null, val trust: String? = null, val tier: String? = null, val count: Int? = null, val ok: Boolean? = null,
                                               val description: String? = null, val coverage: List<Double>? = null, val kinds: List<String>? = null, val capabilities: Map<String, Boolean>? = null,
-                                              val base: String? = null)
+                                              val base: String? = null, val last_ok: String? = null, val last_error: String? = null,
+                                              val fails: Int? = null, val version: String? = null, val protocol: String? = null,
+                                              val refresh_s: Int? = null, val contact: String? = null, val shared: Boolean? = null)
 @Serializable private data class UserSessions(val path: String? = null, val auth: String? = null, val idle_s: Int? = null, val poll_s: Int? = null)
 @Serializable private data class Extensions(val user_sessions: UserSessions? = null)
 @Serializable private data class SourcesResponse(val sources: List<PublicSource> = emptyList())
@@ -196,7 +206,9 @@ class SourcesStore(context: Context) {
     suspend fun loadCatalog() {
         val r = runCatching { Backend.get<SourcesResponse>("/api/flare/sources", emptyMap()) }.getOrNull() ?: return
         _catalog.value = r.sources.map { FlareSource(it.id, it.name, attribution = it.attribution?.name, trust = it.trust, tier = it.tier ?: "unreviewed", count = it.count ?: 0, ok = it.ok,
-            summary = it.description, coverage = it.coverage, kinds = it.kinds ?: emptyList(), acceptsReports = it.capabilities?.get("report") == true) }
+            summary = it.description, coverage = it.coverage, kinds = it.kinds ?: emptyList(), acceptsReports = it.capabilities?.get("report") == true,
+            refreshS = it.refresh_s ?: 60, lastOk = it.last_ok, lastError = it.last_error, fails = it.fails ?: 0, version = it.version,
+            protocolName = it.protocol, contact = it.contact, shared = it.shared ?: false) }
         discoverOwnSessions(r.sources.mapNotNull { s -> s.base?.let { s.id to it } })
     }
 
