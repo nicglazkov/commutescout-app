@@ -73,9 +73,34 @@ final class LocationSource: LocationProviding {
     }
 }
 
+/// Sits between the location provider and the routing core. The core
+/// ignores a fix unless a trip is running; the app wants every one, for
+/// driving mode and for alerts on a drive with no destination.
+final class LocationRelay: LocationManagingDelegate {
+    weak var core: FerrostarCore?
+    var onFix: ((UserLocation) -> Void)?
+
+    func locationManager(_ manager: LocationProviding, didUpdateLocations locations: [UserLocation]) {
+        core?.locationManager(manager, didUpdateLocations: locations)
+        if let last = locations.last { onFix?(last) }
+    }
+
+    func locationManager(_ manager: LocationProviding, didUpdateHeading newHeading: Heading) {
+        core?.locationManager(manager, didUpdateHeading: newHeading)
+    }
+
+    func locationManager(_ manager: LocationProviding, didFailWithError error: Error) {
+        core?.locationManager(manager, didFailWithError: error)
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published var state: DriveState = .browsing
+    /// Driving mode: the phone is moving at road speed with no trip
+    /// running. The map turns to face the way the car is pointed and
+    /// the dot becomes an arrow, as it does on a trip.
+    @Published private(set) var driving = false
     @Published var camera: MapViewCamera = .default()
     @Published var coreState: NavigationState?
     @Published var errorMessage: String?
@@ -112,6 +137,10 @@ final class AppModel: ObservableObject {
     private var coreSink: AnyCancellable?
     private var builtFor = ""
     private var previewCache: (key: String, feature: MLNPolylineFeature)?
+    private let relay = LocationRelay()
+    private var movingSince: Date?
+    private var stillSince: Date?
+    private var sceneCache: (key: String, scene: MapOverlay.Scene)?
 
     init() {
         core = Self.makeCore(location: location, prefs: prefs)
@@ -129,6 +158,8 @@ final class AppModel: ObservableObject {
         // free of the model and follows a simulated drive too.
         LiveData.position = { [weak self] in self?.here }
         LiveData.routeAhead = { [weak self] in self?.alerts.stretchAhead() ?? [] }
+        relay.onFix = { [weak self] loc in Task { @MainActor in self?.noteFix(loc) } }
+        alerts.startFreeDrive()
         mapFiles.position = { [weak self] in self?.here ?? self?.viewCenter }
         camera = .center(Self.defaultCenter, zoom: 8)
         // Every dot has to be on the map by the time the camera finishes
@@ -136,7 +167,7 @@ final class AppModel: ObservableObject {
         // launch snapshot is asked for here, while the map is still
         // loading its style and the camera is still moving, instead of
         // waiting for the map's view callback to ask for a viewport.
-        markers.boot(near: Self.bootCenter(), cameras: prefs.isShown("camera"))
+        markers.boot(cameras: prefs.isShown("camera"))
         prefs.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.prefsChanged() }
         }.store(in: &cancellables)
@@ -246,17 +277,6 @@ final class AppModel: ObservableObject {
     /// Where the map opens before the first fix arrives.
     static let defaultCenter = CLLocationCoordinate2D(latitude: 37.5, longitude: -121.9)
 
-    /// The best guess at where the phone is at the moment the app
-    /// starts. Core Location keeps the last fix and hands it over
-    /// without waiting for a new one; reading it does not ask for
-    /// permission, and it is nil when permission was never given.
-    private static func bootCenter() -> CLLocationCoordinate2D {
-        if let fix = CLLocationManager().location?.coordinate, CLLocationCoordinate2DIsValid(fix) {
-            return fix
-        }
-        return defaultCenter
-    }
-
     // MARK: core
 
     private static func makeCore(location: LocationSource, prefs: Prefs) -> FerrostarCore {
@@ -291,6 +311,8 @@ final class AppModel: ObservableObject {
     }
 
     private func wireCore() {
+        relay.core = core
+        location.delegate = relay
         sources.tokenProvider = { [weak self] in await self?.account.token() }
         places.tokenProvider = { [weak self] in await self?.account.token() }
         account.beforeSignOut = { [weak self] in await self?.push.forget() }
@@ -379,9 +401,14 @@ final class AppModel: ObservableObject {
     }
 
     /// Keep the map on the driver, like a maps app at rest: north up in
-    /// 2D, tilted in 3D.
+    /// 2D, tilted in 3D. Moving, the map faces the way the car points
+    /// and the dot is an arrow, with or without a destination.
     func follow() {
-        camera = .trackUserLocation(zoom: 14, pitch: prefs.is3D ? 45 : 0)
+        if driving {
+            camera = .trackUserLocationWithCourse(zoom: 15, pitch: prefs.is3D ? 45 : 0)
+        } else {
+            camera = .trackUserLocation(zoom: 14, pitch: prefs.is3D ? 45 : 0)
+        }
     }
 
     /// The camera used while navigating, in 2D or 3D.
@@ -634,15 +661,84 @@ final class AppModel: ObservableObject {
         // Ferrostar stops location updates with the trip; start them again so
         // the puck stays live and the next route starts from where the phone is.
         location.startUpdating()
-        alerts.stop()
+        alerts.startFreeDrive()
         UIApplication.shared.isIdleTimerDisabled = false
         state = .browsing
         follow()
     }
 
+    // MARK: driving mode
+
+    /// Every fix, on a trip or not. Road speed for a few seconds turns
+    /// driving mode on; a stop of a minute turns it off. A trip has its
+    /// own camera and its own alerts, so neither changes during one.
+    private func noteFix(_ loc: UserLocation) {
+        let cl = loc.clLocation
+        let now = Date()
+        let speed = cl.speed            // m/s, negative when unknown
+        let course = cl.course >= 0 ? cl.course : nil
+        if !state.isNavigating {
+            alerts.update(position: cl.coordinate, course: course, speed: speed)
+        }
+        if speed >= 3 {                 // about 7 mph
+            stillSince = nil
+            if movingSince == nil { movingSince = now }
+            if !driving, now.timeIntervalSince(movingSince ?? now) >= 3 { setDriving(true) }
+        } else if speed >= 0, speed < 1 {
+            movingSince = nil
+            if stillSince == nil { stillSince = now }
+            if driving, now.timeIntervalSince(stillSince ?? now) >= 60 { setDriving(false) }
+        }
+    }
+
+    private func setDriving(_ on: Bool) {
+        driving = on
+        DriveLog.note(on ? "driving mode on" : "driving mode off")
+        guard case .browsing = state else { return }
+        // Only when the map is still on the driver: a map that was
+        // panned away is left where it was put.
+        switch camera.state {
+        case .trackingUserLocation, .trackingUserLocationWithCourse, .trackingUserLocationWithHeading: follow()
+        default: break
+        }
+    }
+
     func toggleMute() {
         core.spokenInstructionObserver.toggleMute()
         muted = core.spokenInstructionObserver.isMuted
+    }
+
+    /// Everything drawn over the base map, built once per change and
+    /// handed to the overlay, which touches only the parts that changed.
+    func overlayScene() -> MapOverlay.Scene {
+        let dataKey = "\(markers.stamp)|\(prefs.layersOff)|\(prefs.sourceFilterRaw)|\(sources.directMarkers.count)|\(sources.hidden.sorted().joined(separator: ","))"
+        let previewKey: String = {
+            guard case .choosing = state, let r = preview else { return "" }
+            return "\(r.geometry.count)|\(r.distance)"
+        }()
+        let pinKey: String = { if case let .found(p) = state { return p.id }; return "" }()
+        let key = dataKey + "#" + previewKey + "#" + pinKey
+        if let c = sceneCache, c.key == key { return c.scene }
+        var scene = sceneCache?.scene ?? MapOverlay.Scene()
+        if scene.markersVersion != dataKey {
+            scene.markers = allMarkers.filter { prefs.isShown($0.kind) && pluginIsOn($0) }.map(MapOverlay.feature(for:))
+            scene.markersVersion = dataKey
+            let shapes = mapShapes()
+            scene.closures = shapes.closures
+            scene.tolls = shapes.tolls
+            scene.fires = shapes.fires
+            scene.shapesVersion = dataKey
+        }
+        if scene.previewVersion != previewKey {
+            scene.preview = previewFeature()
+            scene.previewVersion = previewKey
+        }
+        if scene.pinVersion != pinKey {
+            if case let .found(p) = state { scene.pin = p.coordinate } else { scene.pin = nil }
+            scene.pinVersion = pinKey
+        }
+        sceneCache = (key, scene)
+        return scene
     }
 
     /// The preview route as one polyline feature, built once per route.

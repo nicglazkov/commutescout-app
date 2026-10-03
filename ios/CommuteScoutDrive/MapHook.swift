@@ -9,6 +9,8 @@ import UIKit
 /// overlay, and the standard touch gestures (rotate, tilt, quick zoom).
 struct MapHook: UIViewRepresentable {
     let layerIds: Set<String>
+    /// What CommuteScout draws over the base map; see MapOverlay.
+    var scene: MapOverlay.Scene
     var trafficTiles: String?
     var onTap: (CLLocationCoordinate2D, [String]) -> Void      // coordinate, marker keys hit
     var onLongPress: (CLLocationCoordinate2D) -> Void
@@ -32,6 +34,7 @@ struct MapHook: UIViewRepresentable {
         c.onView = onView
         c.trafficTiles = trafficTiles
         c.applyTraffic()
+        c.overlay.apply(scene)
     }
 
     final class HookView: UIView {
@@ -59,6 +62,7 @@ struct MapHook: UIViewRepresentable {
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         weak var mapView: MLNMapView?
+        let overlay = MapOverlay()
         var layerIds: Set<String> = []
         var trafficTiles: String?
         var onTap: ((CLLocationCoordinate2D, [String]) -> Void)?
@@ -70,6 +74,7 @@ struct MapHook: UIViewRepresentable {
         func attach(_ mv: MLNMapView) {
             guard mapView !== mv else { return }
             mapView = mv
+            overlay.attach(mv)
             NSLog("CS hook attached to map view")
             // The gestures a maps app is expected to have.
             mv.allowsRotating = true
@@ -87,7 +92,7 @@ struct MapHook: UIViewRepresentable {
             press.delegate = self
             mv.addGestureRecognizer(press)
             timer?.invalidate()
-            timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in self?.poll() }
+            timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in self?.poll(); self?.restore() }
             applyTraffic()
         }
 
@@ -125,7 +130,13 @@ struct MapHook: UIViewRepresentable {
             }
             last = (b.sw, b.ne, z, h)
             onView?(b, z, h, mv.centerCoordinate)
-            applyTraffic()   // a style reload drops the overlay; put it back
+        }
+
+        /// A style reload (a new base map) drops everything drawn on
+        /// it. Put it back; the check is cheap and runs with the poll.
+        private func restore() {
+            applyTraffic()
+            overlay.restoreIfNeeded()
         }
 
         /// The traffic raster from the site, on or off, surviving style reloads.

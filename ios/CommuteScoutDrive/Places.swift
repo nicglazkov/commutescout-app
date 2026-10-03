@@ -55,12 +55,12 @@ final class PlaceStore: ObservableObject {
 
     func remove(_ place: Place) {
         places.removeAll { $0.id == place.id }
-        persist()
+        persist(removal: true)
     }
 
     func removeAll() {
         places = []
-        persist()
+        persist(removal: true)
     }
 
     func touch(_ place: Place) {
@@ -90,11 +90,11 @@ final class PlaceStore: ObservableObject {
         }
     }
 
-    private func persist() {
+    private func persist(removal: Bool = false) {
         if let data = try? JSONEncoder().encode(places) {
             UserDefaults.standard.set(data, forKey: key)
         }
-        pushToAccount()
+        pushToAccount(replace: removal)
     }
 
     // MARK: account sync (Home, Work, favorites and recents follow the account)
@@ -102,6 +102,11 @@ final class PlaceStore: ObservableObject {
     /// Set by the app model: the signed-in account's ID token, or nil.
     var tokenProvider: (() async -> String?)?
     private var pushTask: Task<Void, Never>?
+    /// Whether this phone has taken the account's list this session.
+    /// Until it has, its own list is partial, and must never replace
+    /// the account's: a new phone saving Home once wiped Work and every
+    /// favorite saved on the website.
+    private var synced = false
 
     private struct Wire: Codable {
         let id: String
@@ -135,17 +140,28 @@ final class PlaceStore: ObservableObject {
         guard let (status, data) = try? await Backend.send("PUT", "api/me/places", token: token, body: ["places": wire()]),
               status == 200, let body = try? JSONDecoder().decode(Body.self, from: data) else { return }
         apply(body.places)
+        synced = true
         DriveLog.note("places: synced \(places.count) with the account")
     }
 
-    /// After a change: the account gets this phone's list (replace, so a
-    /// removal here is a removal everywhere), debounced.
-    private func pushToAccount() {
+    /// After a change: the account gets this phone's list, debounced.
+    /// An addition merges, so nothing saved elsewhere is lost. A removal
+    /// replaces, so it is a removal everywhere, but only once this phone
+    /// holds the account's whole list; before that it merges too, and the
+    /// removal lands on the next sync.
+    private func pushToAccount(replace: Bool) {
         pushTask?.cancel()
         pushTask = Task {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled, let token = await tokenProvider?() else { return }
-            _ = try? await Backend.send("PUT", "api/me/places", token: token, body: ["places": wire(), "replace": true])
+            var body: [String: Any] = ["places": wire()]
+            if replace && synced { body["replace"] = true }
+            guard let (status, data) = try? await Backend.send("PUT", "api/me/places", token: token, body: body),
+                  status == 200, !Task.isCancelled,
+                  let merged = try? JSONDecoder().decode(Body.self, from: data) else { return }
+            // What came back is the account's whole list, this phone included.
+            apply(merged.places)
+            synced = true
         }
     }
 }

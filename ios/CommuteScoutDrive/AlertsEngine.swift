@@ -9,6 +9,12 @@ import Foundation
 /// route, and announces each one once when it is about a minute ahead.
 /// The same list feeds the strip under the maneuver card.
 ///
+/// With no destination there is no route to project onto, so the road
+/// ahead is taken to be the direction of travel: a marker counts when
+/// it lies ahead inside a narrow cone, and its distance along is its
+/// distance straight ahead. The same rules and the same voice apply, so
+/// a camera or a crash is called out on the way to the store too.
+///
 /// Projection is done once per location update and cached in
 /// `hereAlong`; nothing here runs per frame, so a 500-mile route with
 /// tens of thousands of vertices costs the same as a short one on screen.
@@ -41,6 +47,11 @@ final class AlertsEngine: ObservableObject {
     private var route: [CLLocationCoordinate2D] = []
     private var cumulative: [Double] = []
     private var all: [Upcoming] = []
+    /// Free drive: no route, the markers around the car instead.
+    private var freeDrive = false
+    private var around: [RoadMarker] = []
+    private var aroundCenter: CLLocationCoordinate2D?
+    private var lastCourse: (degrees: Double, at: Date)?
     private var announced: Set<String> = []
     private var repeated: Set<String> = []
     private var timer: Timer?
@@ -49,6 +60,16 @@ final class AlertsEngine: ObservableObject {
     private let synth = AVSpeechSynthesizer()
 
     static let refreshSeconds = 60.0
+
+    /// Alerts with no destination. Runs from launch and again after
+    /// every trip; a trip's `start` takes over from it.
+    func startFreeDrive() {
+        stop()
+        freeDrive = true
+        timer = Timer.scheduledTimer(withTimeInterval: Self.refreshSeconds, repeats: true) { [weak self] _ in
+            Task { await self?.refreshAround() }
+        }
+    }
 
     func start(route coordinates: [CLLocationCoordinate2D]) {
         stop()
@@ -99,6 +120,59 @@ final class AlertsEngine: ObservableObject {
         ahead = []
         hereAlong = 0
         box = nil
+        freeDrive = false
+        around = []
+        aroundCenter = nil
+    }
+
+    /// A fix with no trip running: the cone ahead of the car.
+    func update(position: CLLocationCoordinate2D, course: Double?, speed: Double) {
+        guard freeDrive else { return }
+        // Moving away from where the markers were fetched for: fetch again.
+        if let c = aroundCenter, Self.meters(c, position) > 4000 { aroundCenter = nil }
+        if aroundCenter == nil, box == nil || Self.meters(box.map { CLLocationCoordinate2D(latitude: ($0.south + $0.north) / 2, longitude: ($0.west + $0.east) / 2) } ?? position, position) > 4000 {
+            box = (position.latitude - 0.12, position.longitude - 0.15, position.latitude + 0.12, position.longitude + 0.15)
+            aroundCenter = position
+            Task { await refreshAround() }
+        }
+        // At a light the course goes away; the last one holds for a while.
+        let now = Date()
+        if let course, speed >= 1 { lastCourse = (course, now) }
+        guard let heading = lastCourse, now.timeIntervalSince(heading.at) < 120 else {
+            if !ahead.isEmpty { ahead = [] }
+            return
+        }
+        let upcoming: [Upcoming] = around.compactMap { m in
+            guard rules?(m).enabled ?? true, !m.tooMinorToAnnounce else { return nil }
+            let d = Self.meters(position, m.coordinate)
+            guard d <= 6000, d > 20 else { return nil }
+            let off = Self.angleBetween(heading.degrees, Self.bearing(position, m.coordinate))
+            // Straight ahead, or close and roughly ahead: a road bends.
+            guard off <= 22 || (d < 400 && off <= 55) else { return nil }
+            let along = d * cos(off * .pi / 180)
+            let offset = d * sin(off * .pi / 180)
+            guard offset <= max(m.corridorMeters, 120) else { return nil }
+            // A closure for the other direction of a divided road is not ahead of this driver.
+            if let h = Self.heading(of: m), Self.angleBetween(h, heading.degrees) > 110 { return nil }
+            return Upcoming(marker: m, alongMeters: along, offsetMeters: offset)
+        }.sorted { $0.alongMeters < $1.alongMeters }
+        hereAlong = 0
+        if upcoming != ahead { ahead = upcoming }
+        announce(upcoming, from: 0)
+    }
+
+    /// What is around the car, for the cone. Without a signal the map's
+    /// own markers stand in, as they do on a trip.
+    private func refreshAround() async {
+        guard freeDrive, let box else { return }
+        do {
+            around = try await LiveData.markers(in: box, kinds: LiveData.kinds)
+        } catch {
+            guard let saved = fallback?(), !saved.markers.isEmpty else { return }
+            around = ShelfLife.prune(saved.markers, asOf: saved.asOf).filter {
+                $0.lat >= box.south && $0.lat <= box.north && $0.lon >= box.west && $0.lon <= box.east
+            }
+        }
     }
 
     /// Called with each snapped location while navigating.
@@ -109,9 +183,15 @@ final class AlertsEngine: ObservableObject {
         hereAlong = hit.along
         let upcoming = all.filter { $0.alongMeters > hit.along - 100 && (rules?($0.marker).enabled ?? true) }
         if upcoming != ahead { ahead = upcoming }
+        announce(upcoming, from: hit.along)
+    }
+
+    /// Each marker once when it comes within its first distance, and
+    /// once more within its second, by the per-kind rules.
+    private func announce(_ upcoming: [Upcoming], from along: Double) {
         for item in upcoming {
             let rule = rules?(item.marker) ?? Prefs.AlertRule(enabled: true, speak: spoken, firstMeters: announceAheadMeters, repeatMeters: 0)
-            let gap = item.alongMeters - hit.along
+            let gap = item.alongMeters - along
             if !announced.contains(item.id), gap <= rule.firstMeters, gap > -100 {
                 announced.insert(item.id)
                 if rule.speak { announce(item.marker, in: gap) }

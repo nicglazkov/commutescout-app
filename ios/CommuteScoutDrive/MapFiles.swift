@@ -241,7 +241,25 @@ final class MapFiles: ObservableObject {
 
     // MARK: files
 
-    private func path(for f: LocalFile) -> URL { folder.appendingPathComponent("\(f.id).pmtiles") }
+    func path(for f: LocalFile) -> URL { folder.appendingPathComponent("\(f.id).pmtiles") }
+
+    /// What the disk says about a saved map, for the detail page: a
+    /// double check on the record the app kept.
+    struct Check {
+        let exists: Bool
+        let bytesOnDisk: Int64
+        let header: PMTilesHeader?
+    }
+
+    func check(_ f: LocalFile) async -> Check {
+        let url = path(for: f)
+        return await Task.detached(priority: .utility) {
+            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+            guard attrs != nil else { return Check(exists: false, bytesOnDisk: 0, header: nil) }
+            let bytes = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+            return Check(exists: true, bytesOnDisk: bytes, header: PMTilesHeader.read(url))
+        }.value
+    }
 
     private func persist() {
         if let data = try? JSONEncoder().encode(files) { try? data.write(to: folder.appendingPathComponent("files.json")) }

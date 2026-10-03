@@ -26,15 +26,12 @@ struct OfflineMapsView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 ForEach(corridors) { c in
-                    HStack {
+                    NavigationLink { SavedMapDetail(file: c) } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(c.name)
                             Text("\(c.sizeText), saved \(c.savedAt.formatted(date: .abbreviated, time: .shortened))")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        Spacer()
-                        Button(role: .destructive) { files.delete(c) } label: { Image(systemName: "trash") }
-                            .buttonStyle(.borderless)
                     }
                 }
             }
@@ -75,16 +72,26 @@ struct OfflineMapsView: View {
 
     @ViewBuilder private func stateRow(_ s: MapFiles.Manifest.StateFile) -> some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(s.name)
-                Text(files.has(state: s.code).map { "Saved, \($0.sizeText)" } ?? sizeText(s))
-                    .font(.caption).foregroundStyle(.secondary)
+            if let saved = files.has(state: s.code) {
+                NavigationLink { SavedMapDetail(file: saved) } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(s.name)
+                        Label("Saved, \(saved.sizeText)", systemImage: "checkmark.circle.fill")
+                            .font(.caption).foregroundStyle(.green)
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(s.name)
+                    Text(files.progress["state-\(s.code)"].map { "Downloading, \(Int($0 * 100))%" } ?? sizeText(s))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
             if let p = files.progress["state-\(s.code)"] {
                 ProgressView(value: p).frame(width: 90)
-            } else if let saved = files.has(state: s.code) {
-                Button(role: .destructive) { files.delete(saved) } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
+            } else if files.has(state: s.code) != nil {
+                EmptyView()
             } else {
                 Button { confirming = s } label: { Image(systemName: "arrow.down.circle") }.buttonStyle(.borderless)
                     .disabled(!model.online)

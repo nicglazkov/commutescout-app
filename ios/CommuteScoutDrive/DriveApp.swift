@@ -68,6 +68,24 @@ enum AutoDrive {
             model.prefs.objectWillChange.send()
         }
         if args.contains("-csSimulate") { model.simulating = true }
+        // "-csView lat,lon,zoom" puts the camera somewhere, for screenshots.
+        if let i = args.firstIndex(of: "-csView"), i + 1 < args.count {
+            let p = args[i + 1].split(separator: ",").compactMap { Double($0) }
+            if p.count == 3 {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                model.camera = .center(CLLocationCoordinate2D(latitude: p[0], longitude: p[1]), zoom: p[2], pitch: 0, direction: 0)
+            }
+        }
+        // "-csTour" zooms and pans through a set of views, for a recording.
+        if args.contains("-csTour") {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            let stops: [(Double, Double, Double)] = [(37.78, -122.42, 13.5), (37.78, -122.42, 11), (37.6, -122.2, 8.5),
+                                                      (39, -98, 4.5), (41.88, -87.68, 11.5), (41.88, -87.68, 14)]
+            for (lat, lon, z) in stops {
+                model.camera = .center(CLLocationCoordinate2D(latitude: lat, longitude: lon), zoom: z, pitch: 0, direction: 0)
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+            }
+        }
         if args.contains("-csFocusMarker") {
             // Center on the closest live marker so a UI test can tap it.
             try? await Task.sleep(nanoseconds: 3_000_000_000)
