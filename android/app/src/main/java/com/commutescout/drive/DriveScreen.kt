@@ -45,6 +45,10 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -923,43 +927,106 @@ private fun Reading(label: String, value: String) {
 }
 
 /**
- * The camera's latest still.
- *
- * The image is fetched straight from the agency, as the website does.
- * OkHttp sends no Referer, which matters because some state camera
- * hosts refuse a request that carries a foreign one. A timestamp is
- * added to the address so a reopened camera shows a new picture rather
- * than a cached one, and the app loads the bitmap itself instead of
- * taking on an image library for one screen.
+ * The camera: a still the agency replaces every minute or so, or live
+ * video, and it says which. The still is fetched straight from the
+ * agency (OkHttp sends no Referer, which some state hosts require) with
+ * a timestamp on the address so it is never the cached one, and again
+ * every minute while the card is open. Its Last-Modified header is
+ * when the picture was taken. Video plays in the card on a tap.
  */
 @Composable
 private fun CameraShot(marker: RoadMarker) {
     val url = marker.image
+    val video = marker.stream?.takeIf { it.endsWith(".m3u8", ignoreCase = true) }
     var shot by remember(url) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var failed by remember(url) { mutableStateOf(false) }
-    LaunchedEffect(url) {
+    var takenAt by remember(url) { mutableStateOf<Long?>(null) }
+    var tick by remember(url) { mutableStateOf(0) }
+    var playing by remember(url) { mutableStateOf(false) }
+    LaunchedEffect(url, tick) {
         if (url.isNullOrBlank()) { failed = true; return@LaunchedEffect }
-        val bitmap = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val result = withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
                 val fresh = url + (if ('?' in url) "&" else "?") + "t=" + System.currentTimeMillis()
                 val request = okhttp3.Request.Builder().url(fresh).build()
                 Backend.http.newCall(request).execute().use { r ->
-                    if (r.isSuccessful) android.graphics.BitmapFactory.decodeStream(r.body.byteStream()) else null
+                    if (r.isSuccessful) android.graphics.BitmapFactory.decodeStream(r.body.byteStream()) to r.header("Last-Modified") else null
                 }
             }.getOrNull()
         }
-        if (bitmap == null) failed = true else shot = bitmap.asImageBitmap()
+        val bitmap = result?.first
+        if (bitmap == null) failed = true else {
+            shot = bitmap.asImageBitmap()
+            takenAt = result.second?.let { runCatching { java.time.ZonedDateTime.parse(it, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() }.getOrNull() }
+        }
+    }
+    // The agency replaces the still every minute or so: ask again while the card is open.
+    LaunchedEffect(url) { while (true) { delay(60_000); if (!playing) tick++ } }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (marker.stream != null) {
+            Text("LIVE VIDEO", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
+                modifier = Modifier.background(Color(0xFFD32F2F), RoundedCornerShape(10.dp)).padding(horizontal = 7.dp, vertical = 2.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (playing) "Streaming from the agency" else "Tap the picture to play", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Text("STILL PICTURE", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
+                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp)).padding(horizontal = 7.dp, vertical = 2.dp))
+            Spacer(Modifier.width(8.dp))
+            val t = takenAt
+            val age = if (t == null) null else (System.currentTimeMillis() - t) / 1000
+            Text(when {
+                t == null -> "Updated when you open it"
+                age!! < 90 -> "Taken just now"
+                age < 3600 -> "Taken ${age / 60} min ago"
+                else -> "Taken " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(t))
+            }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.weight(1f))
+        if (!playing) IconButton({ tick++ }, Modifier.size(28.dp)) { Icon(Icons.Default.Refresh, "Refresh", Modifier.size(18.dp)) }
     }
     when {
-        shot != null -> Image(shot!!, null, Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.FillWidth)
+        playing && video != null -> CameraVideo(video)
+        shot != null -> Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).then(if (video != null) Modifier.clickable { playing = true } else Modifier)) {
+            Image(shot!!, null, Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
+            if (video != null) Icon(Icons.Default.PlayCircle, "Play", Modifier.align(Alignment.Center).size(56.dp), tint = Color.White)
+        }
         failed -> Note(if (Connectivity.online.value) "The snapshot is not available right now." else OfflineText.CAMERA)
         else -> Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
             Spacer(Modifier.width(8.dp)); Note("Loading the snapshot")
         }
     }
-    Note(if (marker.stream.isNullOrBlank()) "Still image, not video. A new image loads each time you open this camera."
-         else "This camera also carries live video on the website.")
+    if (marker.stream == null) Note("Not video: the agency replaces this picture every minute or so, and the app fetches it again every minute while this card is open.")
+}
+
+/**
+ * The agency's live stream, played in the card. HLS is what every
+ * state DOT publishes. A stream that is down says so after a few
+ * seconds instead of staying a black box.
+ */
+@Composable
+private fun CameraVideo(url: String) {
+    val context = LocalContext.current
+    var failed by remember(url) { mutableStateOf(false) }
+    val player = remember(url) {
+        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            setMediaItem(androidx.media3.common.MediaItem.fromUri(url))
+            volume = 0f
+            addListener(object : androidx.media3.common.Player.Listener {
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) { failed = true }
+            })
+            prepare()
+            playWhenReady = true
+        }
+    }
+    DisposableEffect(player) { onDispose { player.release() } }
+    Box(Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black)) {
+        AndroidView(factory = { ctx -> androidx.media3.ui.PlayerView(ctx).apply { this.player = player; useController = false } },
+            modifier = Modifier.fillMaxSize())
+        if (failed) Text("The agency's stream is not answering right now. Streams come and go; the still picture is current.",
+            Modifier.align(Alignment.Center).padding(16.dp), color = Color.White, style = MaterialTheme.typography.bodySmall)
+    }
 }
 
 /** The sign's board, read the way a driver reads it. */

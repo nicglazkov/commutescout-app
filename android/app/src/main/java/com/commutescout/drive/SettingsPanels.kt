@@ -68,6 +68,7 @@ import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.compose.style.BaseStyle
 import org.maplibre.spatialk.geojson.Feature
 import org.maplibre.spatialk.geojson.FeatureCollection
+import org.maplibre.spatialk.geojson.LineString
 import org.maplibre.spatialk.geojson.Polygon
 import org.maplibre.spatialk.geojson.Position
 import java.io.File
@@ -172,8 +173,13 @@ fun areaText(s: Double, w: Double, n: Double, e: Double): String {
 fun SavedMapDetailSheet(model: DriveViewModel, file: MapFiles.LocalFile, onClose: () -> Unit) {
     var check by remember { mutableStateOf<MapFileCheck?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
+    // The ground the file really covers: a state's outline or a corridor's route; the box is the fallback.
+    var outline by remember { mutableStateOf<List<List<Pair<Double, Double>>>?>(null) }
     val usingLocal by MapFiles.usingLocal.collectAsStateWithLifecycle()
-    LaunchedEffect(file.id) { check = MapFiles.check(file) }
+    LaunchedEffect(file.id) {
+        check = MapFiles.check(file)
+        if (file.kind == "state") outline = MapFiles.stateOutline(file.name)
+    }
 
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("saved-map-sheet")) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -190,14 +196,24 @@ fun SavedMapDetailSheet(model: DriveViewModel, file: MapFiles.LocalFile, onClose
         options = MapOptions(renderOptions = RenderOptions(renderMode = RenderOptions.RenderMode.TextureView),
             gestureOptions = GestureOptions.AllDisabled, ornamentOptions = OrnamentOptions.AllDisabled),
             ) {
-                val area = rememberGeoJsonSource(GeoJsonData.Features(FeatureCollection(
-                    Feature(geometry = Polygon(listOf(listOf(
-                        Position(file.west, file.south), Position(file.east, file.south), Position(file.east, file.north),
-                        Position(file.west, file.north), Position(file.west, file.south)))), properties = buildJsonObject { put("k", JsonPrimitive("area")) }))))
-                FillLayer(id = "cs-saved-fill", source = area, color = const(Color(0x2E2E80F7)))
-                LineLayer(id = "cs-saved-edge", source = area, color = const(Color(0xFF2E80F7)), width = const(2.dp))
+                val path = file.path
+                if (file.kind == "corridor" && path != null && path.size > 1) {
+                    // The road, drawn as wide as the buffer the file was cut with.
+                    val road = rememberGeoJsonSource(GeoJsonData.Features(FeatureCollection(
+                        Feature(geometry = LineString(path.map { Position(it[1], it[0]) }), properties = buildJsonObject { put("k", JsonPrimitive("road")) }))))
+                    LineLayer(id = "cs-saved-buffer", source = road, color = const(Color(0x402E80F7)), width = const(22.dp))
+                    LineLayer(id = "cs-saved-road", source = road, color = const(Color(0xFF2E80F7)), width = const(3.dp))
+                } else {
+                    val rings = outline ?: listOf(listOf(file.west to file.south, file.east to file.south, file.east to file.north, file.west to file.north, file.west to file.south))
+                    val area = rememberGeoJsonSource(GeoJsonData.Features(FeatureCollection(rings.map { r ->
+                        Feature(geometry = Polygon(listOf(r.map { Position(it.first, it.second) })), properties = buildJsonObject { put("k", JsonPrimitive("area")) })
+                    })))
+                    FillLayer(id = "cs-saved-fill", source = area, color = const(Color(0x2E2E80F7)))
+                    LineLayer(id = "cs-saved-edge", source = area, color = const(Color(0xFF2E80F7)), width = const(2.dp))
+                }
             }
-            Text(if (file.kind == "state") "The whole state, at every zoom." else "The road and a few miles either side of it.",
+            Text(if (file.kind == "state") "The state inside its border, at every zoom. The file is cut to the outline, not to a box."
+                 else if (file.path == null) "The road and a few miles either side of it." else "The road, and about a mile and a half either side of it.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Heading("Status")

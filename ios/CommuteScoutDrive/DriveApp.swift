@@ -86,6 +86,16 @@ enum AutoDrive {
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
             }
         }
+        // "-csOpenCamera video|still" opens a camera card, for screenshots.
+        if let i = args.firstIndex(of: "-csOpenCamera"), i + 1 < args.count {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            let wantVideo = args[i + 1] == "video"
+            if let all = try? await LiveData.markers(in: (33.9, -118.4, 34.2, -118.0), kinds: "camera"),
+               let m = all.first(where: { ($0.stream != nil) == wantVideo && $0.image != nil && ($0.stream ?? "").contains("CCTV-196") == wantVideo }) {
+                model.camera = .center(m.coordinate, zoom: 15, pitch: 0, direction: 0)
+                model.selectedMarker = m
+            }
+        }
         if args.contains("-csFocusMarker") {
             // Center on the closest live marker so a UI test can tap it.
             try? await Task.sleep(nanoseconds: 3_000_000_000)

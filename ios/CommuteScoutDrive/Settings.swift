@@ -465,33 +465,166 @@ private struct OfflineMapSettings: View {
 
 private struct PlaceSettings: View {
     @EnvironmentObject var model: AppModel
+    @State private var picking: Place.Kind?
 
     var body: some View {
         Form {
-            if model.places.places.isEmpty {
-                Section { Text("Search a place, then save it as Home, Work or a favorite.").foregroundStyle(.secondary) }
-            } else {
+            Section {
+                slot("Home", "house.fill", model.places.home, kind: .home)
+                slot("Work", "briefcase.fill", model.places.work, kind: .work)
+            } footer: {
+                Text("Home and Work are one each; setting a new one replaces the old.")
+            }
+            Section {
+                ForEach(model.places.saved) { p in row(p.name, "star.fill", p) }
+                Button { picking = .saved } label: { Label("Add a favorite", systemImage: "plus.circle.fill") }
+                    .accessibilityIdentifier("add-favorite")
+            } header: { Text("Favorites") }
+            if !model.places.recents.isEmpty {
                 Section {
-                    if let home = model.places.home { row("Home", "house.fill", home) }
-                    if let work = model.places.work { row("Work", "briefcase.fill", work) }
-                    ForEach(model.places.saved) { p in row("Saved", "star.fill", p) }
-                } footer: { Text("Signed in, these follow your account to the website and your other phone.") }
+                    ForEach(model.places.recents) { p in row(p.name, "clock", p) }
+                } header: { Text("Recent destinations") } footer: {
+                    Text("The last twenty places you navigated to. Swipe to remove one.")
+                }
+            }
+            Section {
+                Text(model.account.user == nil
+                     ? "Sign in and these follow your account to the website and your other phone."
+                     : "Signed in: these follow your account to the website and your other phone.")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Saved places")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $picking) { kind in PlacePickerSheet(kind: kind) }
     }
 
-    private func row(_ label: String, _ symbol: String, _ p: Place) -> some View {
+    /// Home or Work: the place, or the way to set it.
+    @ViewBuilder private func slot(_ label: String, _ symbol: String, _ p: Place?, kind: Place.Kind) -> some View {
+        if let p {
+            HStack {
+                Image(systemName: symbol).foregroundStyle(.secondary).frame(width: 24)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label)
+                    Text(p.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+                Button("Change") { picking = kind }.font(.subheadline).buttonStyle(.borderless)
+            }
+            .swipeActions { Button(role: .destructive) { model.places.remove(p) } label: { Label("Remove", systemImage: "trash") } }
+        } else {
+            Button { picking = kind } label: {
+                Label("Set \(label)", systemImage: symbol)
+            }
+            .accessibilityIdentifier("set-\(label.lowercased())")
+        }
+    }
+
+    private func row(_ title: String, _ symbol: String, _ p: Place) -> some View {
         HStack {
             Image(systemName: symbol).foregroundStyle(.secondary).frame(width: 24)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(p.shortName).lineLimit(1)
-                Text(label).font(.caption).foregroundStyle(.secondary)
-            }
+            Text(title).lineLimit(2)
             Spacer()
-            Button(role: .destructive) { model.places.remove(p) } label: { Image(systemName: "trash") }
-                .buttonStyle(.borderless)
+        }
+        .swipeActions { Button(role: .destructive) { model.places.remove(p) } label: { Label("Remove", systemImage: "trash") } }
+    }
+}
+
+extension Place.Kind: Identifiable {
+    public var id: String { rawValue }
+}
+
+/// Find a place and save it as Home, Work or a favorite, from Settings.
+/// The same lookup the search bar uses: saved places match at once,
+/// the server is asked after a pause, coordinates are accepted as typed.
+struct PlacePickerSheet: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let kind: Place.Kind
+    @State private var text = ""
+    @State private var results: [Suggestion] = []
+    @State private var searching = false
+    @State private var seq = 0
+    @State private var task: Task<Void, Never>?
+    @FocusState private var focused: Bool
+
+    private var title: String {
+        switch kind { case .home: "Set Home"; case .work: "Set Work"; default: "Add a favorite" }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    TextField("Search a place or address", text: $text)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .focused($focused).submitLabel(.search)
+                        .onChange(of: text) { new in schedule(new) }
+                        .accessibilityIdentifier("place-search")
+                }
+                if let here = model.here, kind != .saved {
+                    Section {
+                        Button { pick(Place(name: here.pretty, coordinate: here, kind: kind)) } label: {
+                            Label("Use my current location", systemImage: "location.fill")
+                        }
+                    }
+                }
+                if searching { Section { HStack { ProgressView(); Text("Searching").foregroundStyle(.secondary) } } }
+                if !results.isEmpty {
+                    Section("Results") {
+                        ForEach(results) { r in
+                            Button { pick(Place(name: r.name, coordinate: r.coordinate, kind: kind)) } label: {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(r.name.split(separator: ",").first.map(String.init) ?? r.name)
+                                    Text(r.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                    }
+                }
+                let recents = model.places.recents.filter { text.isEmpty || $0.name.lowercased().contains(text.lowercased()) }
+                if !recents.isEmpty, results.isEmpty {
+                    Section("Recent destinations") {
+                        ForEach(recents) { p in
+                            Button { pick(Place(name: p.name, coordinate: p.coordinate, kind: kind)) } label: {
+                                Label(p.name, systemImage: "clock").lineLimit(2)
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .onAppear { focused = true }
+        }
+    }
+
+    private func pick(_ p: Place) {
+        model.places.set(kind, name: p.name, coordinate: p.coordinate)
+        dismiss()
+    }
+
+    private func schedule(_ q: String) {
+        task?.cancel()
+        let trimmed = q.trimmingCharacters(in: .whitespaces)
+        if let coord = SearchBar.parseCoordinates(trimmed) {
+            results = [Suggestion(name: coord.pretty, lat: coord.latitude, lon: coord.longitude)]
+            return
+        }
+        guard trimmed.count >= 2 else { results = []; return }
+        seq += 1
+        let mine = seq
+        task = Task {
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled else { return }
+            searching = true
+            defer { if mine == seq { searching = false } }
+            if let found = try? await Search.suggest(trimmed, near: model.here ?? model.viewCenter), mine == seq {
+                results = found
+            }
         }
     }
 }
@@ -508,6 +641,12 @@ private struct HelpSettings: View {
                 Link(destination: URL(string: "https://commutescout.com/developers")!) { Label("Developers and API", systemImage: "chevron.left.forwardslash.chevron.right") }
                 Link(destination: URL(string: "https://commutescout.com/about")!) { Label("About CommuteScout", systemImage: "info.circle") }
                 Link(destination: URL(string: "https://commutescout.com/privacy")!) { Label("Privacy", systemImage: "hand.raised") }
+            }
+            Section {
+                ShareLink(item: DriveLog.url) { Label("Share the drive log", systemImage: "doc.text") }
+                    .disabled(!FileManager.default.fileExists(atPath: DriveLog.url.path))
+            } footer: {
+                Text("What the app noted while driving: fixes, alerts, reroutes, fetches. No account details. Send it along with a report of something that went wrong.")
             }
         }
         .navigationTitle("Help")

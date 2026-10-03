@@ -33,7 +33,8 @@ android {
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
         targetSdk = 36
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
-        versionName = "0.3.0"
+        // One version for both apps: VERSION at the repo root.
+        versionName = rootProject.file("../VERSION").readText().trim()
     }
 
     signingConfigs {
@@ -106,6 +107,10 @@ dependencies {
     implementation(libs.credentials.play)
     implementation(libs.googleid)
     implementation(libs.androidx.security.crypto)
+    // Live camera video: the agencies publish HLS.
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.exoplayer.hls)
+    implementation(libs.media3.ui)
     // Instrumented UI tests (app/src/androidTest): every control on the emulator or a phone.
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

@@ -1,3 +1,4 @@
+import AVKit
 import Combine
 import CoreLocation
 import MapLibre
@@ -503,27 +504,72 @@ struct MarkerCard: View {
 struct CameraView: View {
     let marker: RoadMarker
     @State private var still: URL?
+    @State private var takenAt: Date?
+    @State private var playing = false
+    @State private var tick = 0
+
+    /// Live video the app can play: the agencies publish HLS.
+    private var videoURL: URL? {
+        guard let s = marker.stream, let u = URL(string: s), u.pathExtension.lowercased() == "m3u8" else { return nil }
+        return u
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let url = still {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case let .success(image):
-                        image.resizable().aspectRatio(contentMode: .fit)
-                    case .failure:
-                        Text(Connectivity.shared.online ? "This camera has no picture right now." : OfflineText.camera)
-                            .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 60)
-                    default:
-                        ProgressView().frame(maxWidth: .infinity, minHeight: 60)
+        VStack(alignment: .leading, spacing: 8) {
+            // What this is, before the picture: a still that the agency
+            // replaces every so often, or a live stream.
+            HStack(spacing: 8) {
+                if marker.stream != nil {
+                    Text("LIVE VIDEO").font(.caption2.weight(.bold)).padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Color.red, in: Capsule()).foregroundStyle(.white)
+                    Text(playing ? "Streaming from the agency" : "Tap the picture to play").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("STILL PICTURE").font(.caption2.weight(.bold)).padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Color.secondary.opacity(0.2), in: Capsule())
+                    Text(takenText).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if marker.stream == nil || !playing {
+                    Button { reload() } label: { Image(systemName: "arrow.clockwise") }
+                        .buttonStyle(.borderless).font(.caption)
+                        .accessibilityIdentifier("camera-refresh")
+                }
+            }
+            if playing, let url = videoURL {
+                CameraVideo(url: url)
+                    .frame(height: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .accessibilityIdentifier("camera-video")
+            } else if let url = still {
+                ZStack {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case let .success(image):
+                            image.resizable().aspectRatio(contentMode: .fit)
+                        case .failure:
+                            Text(Connectivity.shared.online ? "This camera has no picture right now." : OfflineText.camera)
+                                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 60)
+                        default:
+                            ProgressView().frame(maxWidth: .infinity, minHeight: 60)
+                        }
+                    }
+                    if videoURL != nil {
+                        Image(systemName: "play.circle.fill").font(.system(size: 44)).foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.5), radius: 6)
                     }
                 }
-                .frame(maxHeight: 170)
+                .frame(maxHeight: 200)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+                .contentShape(Rectangle())
+                .onTapGesture { if videoURL != nil { playing = true } }
                 .accessibilityIdentifier("camera-image")
             }
+            if marker.stream == nil {
+                Text("Not video: the agency replaces this picture every minute or so, and the app fetches it again every minute while this card is open.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
             HStack(spacing: 10) {
-                if let stream = marker.stream, let url = URL(string: stream) {
+                if let stream = marker.stream, let url = URL(string: stream), videoURL == nil {
                     Link("Watch the live video", destination: url).font(.caption)
                 }
                 if let image = marker.image, let url = URL(string: image) {
@@ -534,7 +580,43 @@ struct CameraView: View {
                 Text("Source: \(src)").font(.caption2).foregroundStyle(.secondary)
             }
         }
-        .task(id: marker.key) { still = Self.fresh(marker.image) }
+        .task(id: marker.key) {
+            playing = false
+            reload()
+            // A still is replaced by the agency every minute or so: ask
+            // again while the card is open, so it is never stale.
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                if !playing { reload() }
+            }
+        }
+    }
+
+    private var takenText: String {
+        guard let t = takenAt else { return "Updated when you open it" }
+        let s = Int(Date().timeIntervalSince(t))
+        if s < 90 { return "Taken just now" }
+        if s < 3600 { return "Taken \(s / 60) min ago" }
+        return "Taken " + t.formatted(date: .omitted, time: .shortened)
+    }
+
+    private func reload() {
+        still = Self.fresh(marker.image)
+        tick += 1
+        takenAt = nil
+        guard let url = still else { return }
+        // The agency's Last-Modified header is when the picture was taken.
+        Task {
+            var req = URLRequest(url: url)
+            req.httpMethod = "HEAD"
+            if let (_, resp) = try? await Backend.session.data(for: req), let http = resp as? HTTPURLResponse,
+               let lm = http.value(forHTTPHeaderField: "Last-Modified") {
+                let f = DateFormatter()
+                f.locale = Locale(identifier: "en_US_POSIX")
+                f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+                if let d = f.date(from: lm) { takenAt = d }
+            }
+        }
     }
 
     /// The agency's own URL with the time appended, so opening a camera
@@ -544,6 +626,38 @@ struct CameraView: View {
         comps.queryItems = (comps.queryItems ?? [])
             + [URLQueryItem(name: "t", value: String(Int(Date().timeIntervalSince1970)))]
         return comps.url
+    }
+}
+
+/// The agency's live stream, played in the card. HLS is what every
+/// state DOT publishes, and the system player handles it.
+struct CameraVideo: View {
+    let url: URL
+    @State private var player: AVPlayer?
+    @State private var failed = false
+
+    var body: some View {
+        ZStack {
+            VideoPlayer(player: player)
+            if failed {
+                Text("The agency's stream is not answering right now. Streams come and go; the still picture above it is current.")
+                    .font(.caption).multilineTextAlignment(.center).foregroundStyle(.white).padding(12)
+                    .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8)).padding(12)
+            }
+        }
+        .onAppear {
+            let item = AVPlayerItem(url: url)
+            let p = AVPlayer(playerItem: item)
+            p.isMuted = true
+            p.play()
+            player = p
+            // A dead stream fails within a few seconds; say so instead of a black box.
+            Task {
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                if item.status == .failed || (item.status != .readyToPlay && p.timeControlStatus != .playing) { failed = true }
+            }
+        }
+        .onDisappear { player?.pause(); player = nil }
     }
 }
 

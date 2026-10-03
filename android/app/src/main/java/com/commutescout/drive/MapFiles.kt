@@ -10,6 +10,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonArray
@@ -54,6 +59,8 @@ object MapFiles {
         val id: String, val kind: String, val name: String, val bytes: Long,
         val south: Double, val west: Double, val north: Double, val east: Double,
         val savedAt: Long, val build: String? = null,
+        /** A corridor's route, thinned, so the detail sheet can draw the ground the file really covers. */
+        val path: List<List<Double>>? = null,
     ) {
         fun covers(p: LatLon) = p.lat in south..north && p.lon in west..east
         val sizeText: String get() = Units.bytes(bytes)
@@ -178,7 +185,8 @@ object MapFiles {
                         write(r.body.byteStream(), r.body.contentLength(), path(file), id)
                     }
             }
-            val done = file.copy(bytes = written)
+            val thin = maxOf(1, route.size / 300 + 1)
+            val done = file.copy(bytes = written, path = (route.indices step thin).map { listOf(route[it].lat, route[it].lon) })
             _files.value = _files.value + done
             persist(); pruneCorridors()
             Log.i(TAG, "corridor saved, ${done.sizeText}")
@@ -231,6 +239,35 @@ object MapFiles {
     // ---------------------------------------------------------------- files
 
     fun path(f: LocalFile) = File(folder, "${f.id}.pmtiles")
+
+    /**
+     * The outline of a state, from the site's us-states.json (the file
+     * the map build cuts the state files with), cached on the phone.
+     * Each ring is a list of lon,lat positions.
+     */
+    suspend fun stateOutline(name: String): List<List<Pair<Double, Double>>>? = withContext(Dispatchers.IO) {
+        val local = File(app.cacheDir, "us-states.json")
+        val text = runCatching { if (local.exists()) local.readText() else null }.getOrNull() ?: runCatching {
+            Backend.http.newCall(Request.Builder().url("https://commutescout.com/static/us-states.json").build()).execute().use { r ->
+                if (!r.isSuccessful) null else r.body.string().also { local.writeText(it) }
+            }
+        }.getOrNull() ?: return@withContext null
+        val features = runCatching { Backend.json.parseToJsonElement(text).jsonObject["features"]!!.jsonArray }.getOrNull() ?: return@withContext null
+        for (f in features) {
+            val obj = f.jsonObject
+            if (obj["properties"]?.jsonObject?.get("NAME")?.jsonPrimitive?.content != name) continue
+            val geom = obj["geometry"]?.jsonObject ?: continue
+            val type = geom["type"]?.jsonPrimitive?.content
+            val coords = geom["coordinates"]?.jsonArray ?: continue
+            fun ring(r: JsonElement) = r.jsonArray.map { p -> p.jsonArray[0].jsonPrimitive.double to p.jsonArray[1].jsonPrimitive.double }
+            return@withContext when (type) {
+                "Polygon" -> listOf(ring(coords[0]))
+                "MultiPolygon" -> coords.map { ring(it.jsonArray[0]) }
+                else -> null
+            }
+        }
+        null
+    }
 
     /** What the disk says about a saved map, for the detail sheet: a double check on the record the app kept. */
     suspend fun check(f: LocalFile): MapFileCheck = withContext(Dispatchers.IO) {

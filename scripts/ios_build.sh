@@ -13,6 +13,10 @@ export PATH="/opt/homebrew/bin:$PATH" LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 DD="$HOME/src/csdrive-dd"
 SIM="${SIM:-iPhone 17}"
 
+# The app version lives in VERSION at the repo root (both apps read it);
+# the build number is the minute the build started.
+VERSION="$(tr -d '[:space:]' < ../VERSION)"
+sed -i '' "s/^    MARKETING_VERSION: \".*\"/    MARKETING_VERSION: \"$VERSION\"/" project.yml
 xcodegen generate --quiet
 case "${1:-sim}" in
   sim)
