@@ -126,7 +126,7 @@ object Snapshot {
         if (center != null) runCatching { Engine.prefs.lastCenter = center }
         syncNow(wanted)
         if (ticker == null) ticker = scope.launch {
-            while (isActive) { delay(MAX_AGE_MS); syncNow(wanted) }
+            while (isActive) { delay(MAX_AGE_MS); if (Engine.awake()) syncNow(wanted) }
         }
     }
 

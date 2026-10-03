@@ -87,6 +87,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -188,13 +190,14 @@ fun DriveScreen(model: DriveViewModel) {
     val pluginsOff by model.sources.hidden.collectAsStateWithLifecycle()
     val allMarkers = (siteMarkers.filter { m -> ownIds.none { m.id?.startsWith("$it:") == true } } + directMarkers)
         .filter { (it.source ?: "") !in hiddenSources }
-    var tool by remember { mutableStateOf<Tool?>(null) }
+    // Saved across a recreate (a font-size change, a theme switch at dusk): an open sheet stays open.
+    var tool by rememberSaveable { mutableStateOf<Tool?>(null) }
     var showTools by remember { mutableStateOf(false) }
     val mapState = rememberNavigationMapState()
     val scope = rememberCoroutineScope()
-    var showSettings by remember { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
     var showLayers by remember { mutableStateOf(false) }
-    var reportAt by remember { mutableStateOf<LatLon?>(null) }
+    var reportAt by rememberSaveable(stateSaver = latLonSaver) { mutableStateOf<LatLon?>(null) }
     val toastText by model.toast.collectAsStateWithLifecycle()
     val isNavigating = uiState.isNavigating()
     val online by Connectivity.online.collectAsStateWithLifecycle()
@@ -1294,3 +1297,9 @@ private fun exampleCoords(here: LatLon?): String {
     val p = here ?: LatLon(39.74, -104.99)
     return String.format(java.util.Locale.US, "%.2f, %.2f", Math.round(p.lat * 100) / 100.0 + 0.01, Math.round(p.lon * 100) / 100.0 - 0.01)
 }
+
+/** A spot kept through an activity recreate: two doubles, or nothing. */
+private val latLonSaver = Saver<LatLon?, List<Double>>(
+    save = { it?.let { p -> listOf(p.lat, p.lon) } },
+    restore = { LatLon(it[0], it[1]) },
+)

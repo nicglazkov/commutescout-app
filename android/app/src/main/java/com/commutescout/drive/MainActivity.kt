@@ -5,7 +5,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
+import android.content.Intent
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -15,6 +17,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import com.stadiamaps.ferrostar.core.AndroidTtsStatusListener
@@ -40,10 +44,15 @@ class MainActivity : ComponentActivity(), AndroidTtsStatusListener {
             val scheme = if (dark) darkColorScheme(primary = Color(0xFF8AB4F8), surface = Color(0xFF16181C), background = Color(0xFF16181C))
                          else lightColorScheme(primary = Color(0xFF1F5FCF))
             SideEffect { model.isDark = dark }
+            // A stray back gesture from a mount must not end the trip's
+            // screen; the app steps aside and the trip keeps going.
+            val state by model.state.collectAsStateWithLifecycle()
+            BackHandler(enabled = state is DriveState.Navigating) { moveTaskToBack(true) }
             MaterialTheme(colorScheme = scheme) {
                 Surface { DriveScreen(model) }
             }
         }
+        intent?.getStringExtra("csUrl")?.let { model.open(it) }
         // Test hooks, debug builds only: the same flags as the iOS app.
         if (BuildConfig.DEBUG) {
             if (intent?.getBooleanExtra("csResetPlaces", false) == true) Engine.places.removeAll()
@@ -55,6 +64,12 @@ class MainActivity : ComponentActivity(), AndroidTtsStatusListener {
             // "csTour" zooms and pans through a set of views, for a recording.
             if (intent?.getBooleanExtra("csTour", false) == true) model.wantedTour = true
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra("csUrl")?.let { model.open(it) }
     }
 
     override fun onStart() {
