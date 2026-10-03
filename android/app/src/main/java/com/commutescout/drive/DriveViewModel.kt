@@ -285,6 +285,9 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     /** Where a report goes: the pin while browsing one, else the driver. */
     /** Where the map is looking, kept by the screen; the report fallback before a fix. */
     var viewCenter: LatLon? = null
+    /** A camera the screen moves to once the map is up (debug hook "csView"). */
+    var wantedView: List<Double>? = null
+    var wantedTour = false
 
     val reportLatLon: LatLon?
         get() = (_state.value as? DriveState.Found)?.place?.let { LatLon(it.lat, it.lon) } ?: _here.value ?: viewCenter
@@ -304,6 +307,18 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     // While browsing the puck follows the phone's own fix; Ferrostar only
     // reports a location during a trip.
     private val browsingLocation = MutableStateFlow<UserLocation?>(null)
+    /**
+     * Driving mode: the phone is moving at road speed with no trip
+     * running. The map turns to face the way the car is pointed and the
+     * dot becomes an arrow, as it does on a trip.
+     */
+    private val _driving = MutableStateFlow(false)
+    val driving = _driving.asStateFlow()
+    /** The car's course and speed from the last fix, for the arrow. */
+    private val _course = MutableStateFlow<Double?>(null)
+    val course = _course.asStateFlow()
+    private var movingSince = 0L
+    private var stillSince = 0L
     override val navigationUiState: StateFlow<NavigationUiState> =
         combine(super.navigationUiState, browsingLocation) { ui, loc ->
             if (ui.isNavigating() || loc == null) ui else ui.copy(location = loc)
@@ -314,6 +329,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         viewModelScope.launch { Engine.notice.collect { n -> if (n != null) { toast(n); Engine.notice.value = null } } }
         viewModelScope.launch { MapFiles.notice.collect { n -> if (n != null) { toast(n); MapFiles.notice.value = null } } }
         MapFiles.position = { _here.value ?: viewCenter }
+        Engine.alerts.startFreeDrive()
         viewModelScope.launch { Engine.flushReports()?.let { toast(it) } }
         viewModelScope.launch {
             navigationUiState.collect { s ->
@@ -340,7 +356,34 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     fun setLocationPermission(granted: Boolean) {
         _hasPermission.value = granted
         if (granted) viewModelScope.launch {
-            Engine.location.locationUpdates(3000L).collect { l -> browsingLocation.value = l.toUserLocation() }
+            Engine.location.locationUpdates(1000L).collect { l ->
+                browsingLocation.value = l.toUserLocation()
+                noteFix(l)
+            }
+        }
+    }
+
+    /**
+     * Every fix while browsing. Road speed for a few seconds turns
+     * driving mode on; a stop of a minute turns it off. A trip has its
+     * own camera and its own alerts, so neither changes during one.
+     */
+    private fun noteFix(l: android.location.Location) {
+        val now = System.currentTimeMillis()
+        val speed = if (l.hasSpeed()) l.speed.toDouble() else -1.0
+        val course = if (l.hasBearing() && speed >= 1) l.bearing.toDouble() else null
+        if (course != null) _course.value = course
+        if (!navigationUiState.value.isNavigating()) {
+            Engine.alerts.update(LatLon(l.latitude, l.longitude), course, speed)
+        }
+        if (speed >= 3) {                        // about 7 mph
+            stillSince = 0L
+            if (movingSince == 0L) movingSince = now
+            if (!_driving.value && now - movingSince >= 3000) { _driving.value = true; Log.i("DriveViewModel", "driving mode on") }
+        } else if (speed >= 0 && speed < 1) {
+            movingSince = 0L
+            if (stillSince == 0L) stillSince = now
+            if (_driving.value && now - stillSince >= 60_000) { _driving.value = false; Log.i("DriveViewModel", "driving mode off") }
         }
     }
 
@@ -491,7 +534,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
                 }
             }
         }
-        Engine.alerts.stop()
+        Engine.alerts.startFreeDrive()
         _state.value = DriveState.Browsing
     }
 

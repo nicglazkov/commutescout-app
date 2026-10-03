@@ -266,7 +266,14 @@ private fun AccountPage(model: DriveViewModel) {
 private fun AppearancePage(model: DriveViewModel) {
     val prefs = model.prefs
     PageGroup { Choice("Theme", Prefs.Theme.entries.map { it.label }, prefs.theme.ordinal) { prefs.theme = Prefs.Theme.entries[it] } }
-    PageGroup { Choice("Base map", Prefs.MapStyle.entries.map { it.label }, prefs.mapStyle.ordinal) { prefs.mapStyle = Prefs.MapStyle.entries[it] } }
+    GroupTitle("Base map")
+    PageGroup {
+        // The map as it will look, in the chosen style, with the styles
+        // as pictures: no need to close Settings to see the choice.
+        BaseMapPreview(model)
+        BaseMapCards(prefs.mapStyle, model.isDark) { prefs.mapStyle = it }
+    }
+    Note("Match theme follows the Theme setting above: Light by day, Dark at night.")
     PageGroup { ToggleRow("3D perspective", prefs.is3D) { model.toggle3D() } }
     Note("Tilts the map while you drive, so more of the road ahead is in view.")
 }
@@ -333,11 +340,42 @@ private fun LayersPage(model: DriveViewModel) {
             prefs.sourceFilter = Prefs.SourceFilter.entries[it]; model.layersChanged()
         }
     }
-    Note("Official is agency data. Plugins are the sources you installed from the marketplace.")
-    GroupTitle("On the road")
-    PageGroup {
-        ToggleRow("Traffic", prefs.traffic) { prefs.traffic = it }
-        Prefs.layerKinds.forEach { k -> ToggleRow(k.label, prefs.isChosen(k.key)) { prefs.setShown(k.key, it); model.layersChanged() } }
+    Note(when (prefs.sourceFilter) {
+        Prefs.SourceFilter.ALL -> "Everything the map can show: agency data and the plugins you installed."
+        Prefs.SourceFilter.OFFICIAL -> "Agency data only: state DOT and 511 feeds, cameras, signs and weather stations."
+        Prefs.SourceFilter.PLUGINS -> "Plugin alerts only, with what each plugin loads."
+    })
+    if (prefs.sourceFilter != Prefs.SourceFilter.PLUGINS) {
+        GroupTitle("Official sources")
+        PageGroup {
+            ToggleRow("Traffic", prefs.traffic) { prefs.traffic = it }
+            Prefs.layerKinds.filter { it.key != "plugin" }.forEach { k ->
+                ToggleRow(k.label, prefs.isChosen(k.key)) { prefs.setShown(k.key, it); model.layersChanged() }
+            }
+        }
+    }
+    if (prefs.sourceFilter != Prefs.SourceFilter.OFFICIAL) {
+        val catalog by model.sources.catalog.collectAsStateWithLifecycle()
+        val off by model.sources.hidden.collectAsStateWithLifecycle()
+        LaunchedEffect(Unit) { model.sources.loadCatalog() }
+        GroupTitle("Plugins")
+        PageGroup {
+            ToggleRow("Show plugin alerts", prefs.isChosen("plugin")) { prefs.setShown("plugin", it); model.layersChanged() }
+            if (catalog.isEmpty()) Text("No plugin is installed. Find one in the marketplace.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            catalog.forEach { p ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    PluginBadge(p.id, PluginStyle.oneCategory(p.kinds), 22.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(p.name, maxLines = 2)
+                        Text(if (p.kinds.isEmpty()) "Alerts" else "Loads " + p.kindsLabel,
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(p.id !in off, { model.sources.setOn(p.id, it); model.layersChanged() }, Modifier.testTag("switch-${p.name}"))
+                }
+            }
+        }
+        Note("A plugin's alerts are badges in its own color, and this says what each one puts on the map.")
     }
 }
 
@@ -381,7 +419,7 @@ private fun OfflinePage(model: DriveViewModel) {
         LinkRow(if (mapFiles.isEmpty()) "Maps saved on this phone: none yet"
                 else "Maps saved on this phone: ${mapFiles.size}, ${Units.bytes(MapFiles.bytesOnDisk)}") { showOfflineMaps = true }
     }
-    Note("Trip maps the app saved, and whole states you choose to download.")
+    Note("Trip maps the app saved, and whole states you choose to download. Each one can be opened to see where it covers and whether the file is really there.")
 }
 
 @Composable

@@ -103,6 +103,7 @@ import com.stadiamaps.ferrostar.composeui.config.withSpeedLimitStyle
 import com.stadiamaps.ferrostar.composeui.runtime.KeepScreenOnDisposableEffect
 import com.stadiamaps.ferrostar.composeui.views.components.speedlimit.SignageStyle
 import com.stadiamaps.ferrostar.maplibreui.NavigationMapClickResult
+import org.maplibre.compose.expressions.value.IconRotationAlignment
 import com.stadiamaps.ferrostar.maplibreui.runtime.NavigationCameraMode
 import com.stadiamaps.ferrostar.maplibreui.runtime.NavigationMapState
 import com.stadiamaps.ferrostar.maplibreui.runtime.navigationCameraOptions
@@ -118,6 +119,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import org.maplibre.compose.camera.CameraPosition
 import org.maplibre.compose.expressions.dsl.const
+import org.maplibre.compose.expressions.dsl.interpolate
+import org.maplibre.compose.expressions.dsl.linear
+import org.maplibre.compose.expressions.dsl.zoom
 import org.maplibre.compose.expressions.value.LineCap
 import org.maplibre.compose.expressions.value.LineJoin
 import androidx.compose.material3.Switch
@@ -225,8 +229,38 @@ fun DriveScreen(model: DriveViewModel) {
                     zoom = zoomFor(r.bbox.ne.lat - r.bbox.sw.lat, r.bbox.ne.lng - r.bbox.sw.lng),
                     padding = PaddingValues(top = 120.dp, bottom = 340.dp)))
             }
-            is DriveState.Browsing -> mapState.recenter(isNavigating = false)
+            is DriveState.Browsing -> {
+                mapState.recenter(isNavigating = false)
+                if (model.driving.value) mapState.cameraMode = NavigationCameraMode.FOLLOW_USER_WITH_BEARING
+            }
             else -> {}
+        }
+    }
+    // Driving mode: moving at road speed with no trip, the map faces the
+    // way the car points. Only while the map is still on the driver: a
+    // map that was panned away is left where it was put.
+    val driving by model.driving.collectAsStateWithLifecycle()
+    val course by model.course.collectAsStateWithLifecycle()
+    LaunchedEffect(driving) {
+        if (state is DriveState.Browsing && mapState.isTrackingUser) {
+            mapState.cameraMode = if (driving) NavigationCameraMode.FOLLOW_USER_WITH_BEARING else NavigationCameraMode.FOLLOW_USER
+        }
+    }
+    LaunchedEffect(Unit) {
+        model.wantedView?.let { v ->
+            delay(3000)
+            mapState.cameraMode = NavigationCameraMode.FREE
+            mapState.cameraState.position = CameraPosition(target = Position(v[1], v[0]), zoom = v[2], tilt = 0.0, bearing = 0.0)
+        }
+        if (model.wantedTour) {
+            delay(3000)
+            mapState.cameraMode = NavigationCameraMode.FREE
+            val stops = listOf(Triple(37.78, -122.42, 13.5), Triple(37.78, -122.42, 11.0), Triple(37.6, -122.2, 8.5),
+                Triple(39.0, -98.0, 4.5), Triple(41.88, -87.68, 11.5), Triple(41.88, -87.68, 14.0))
+            for ((lat, lon, z) in stops) {
+                runCatching { mapState.cameraState.animateTo(CameraPosition(target = Position(lon, lat), zoom = z, tilt = 0.0, bearing = 0.0)) }
+                delay(4000)
+            }
         }
     }
     // 2D or 3D, applied to whatever the camera is doing now.
@@ -289,6 +323,8 @@ fun DriveScreen(model: DriveViewModel) {
                 (it.kind != "plugin" || PluginStyle.sourceId(it) !in pluginsOff) }) { key -> model.showMarker(key) }
             (state as? DriveState.Found)?.let { PinLayer(it.place) }
             if (state is DriveState.Choosing) chosenRoute?.let { RouteLine(it) }
+            // Moving with no trip: the dot becomes the same arrow a trip shows.
+            if (driving && !isNavigating) here?.let { h -> ArrowPuck(h, course ?: 0.0) }
         }
 
         // Map controls: 2D/3D, compass when turned, my location. While
@@ -331,7 +367,8 @@ fun DriveScreen(model: DriveViewModel) {
 
         // Above the trip bar and left of the side controls, as on iOS: the
         // instruction card can be any height, so the strip never sits under it.
-        if (isNavigating) {
+        // On a trip, or driving without one: the alert ahead shows either way.
+        run {
             val ahead by model.alerts.ahead.collectAsStateWithLifecycle()
             val along by model.alerts.hereAlong.collectAsStateWithLifecycle()
             ahead.firstOrNull()?.takeIf { it.alongMeters - along <= prefs.stripAheadMeters }?.let { next ->
@@ -421,10 +458,18 @@ private fun tapped(properties: JsonObject?, onTap: (String) -> Unit): ClickResul
     return ClickResult.Consume
 }
 
-/** Live road markers: one source and layer per kind, colored like the website. */
+/**
+ * Live road markers: one source and layer per kind, colored like the
+ * website. Dots and badges scale with zoom, like the website: full size
+ * on a street, small over a region, specks over the country. Nothing is
+ * held back by zoom, so a dot is on the map at any zoom the map reaches.
+ */
 @Composable
 @MaplibreComposable
 private fun MarkerLayers(markers: List<RoadMarker>, onTap: (String) -> Unit) {
+    val dotRadius = interpolate(linear(), zoom(), 3 to const(2.dp), 7 to const(3.5.dp), 10 to const(5.5.dp), 13 to const(8.dp))
+    val dotStroke = interpolate(linear(), zoom(), 3 to const(0.5.dp), 8 to const(1.dp), 13 to const(2.dp))
+    val badgeScale = interpolate(linear(), zoom(), 3 to const(0.22f), 7.5 to const(0.42f), 9.5 to const(0.55f), 11.5 to const(0.8f), 13 to const(1f))
     // Shapes first so a dot is never hidden under the line it belongs to.
     ShapeLayers(markers, onTap)
     for (kind in MarkerIcons.kinds) {
@@ -434,8 +479,8 @@ private fun MarkerLayers(markers: List<RoadMarker>, onTap: (String) -> Unit) {
             Feature(geometry = Point(Position(m.lon, m.lat)), properties = buildJsonObject { put("key", JsonPrimitive(m.key)) })
         })))
         CircleLayer(
-            id = "cs-m-$kind", source = source, color = const(MarkerIcons.color(kind)), radius = const(8.dp),
-            strokeColor = const(Color.White), strokeWidth = const(2.dp),
+            id = "cs-m-$kind", source = source, color = const(MarkerIcons.color(kind)), radius = dotRadius,
+            strokeColor = const(Color.White), strokeWidth = dotStroke,
             onClick = { features -> tapped(features.firstOrNull()?.properties, onTap) },
         )
     }
@@ -453,7 +498,7 @@ private fun MarkerLayers(markers: List<RoadMarker>, onTap: (String) -> Unit) {
             })))
             SymbolLayer(
                 id = "cs-m-plugin-$badge", source = source,
-                iconImage = image(painter, DpSize(28.dp, 28.dp)),
+                iconImage = image(painter, DpSize(28.dp, 28.dp)), iconSize = badgeScale,
                 iconAllowOverlap = const(true), iconIgnorePlacement = const(true),
                 onClick = { features -> tapped(features.firstOrNull()?.properties, onTap) },
             )
@@ -526,6 +571,25 @@ private fun PinLayer(place: Place) {
     CircleLayer(id = "cs-pin-ring", source = source, color = const(Color(0x402E80F7)), radius = const(14.dp))
     CircleLayer(id = "cs-pin", source = source, color = const(Color(0xFF2E80F7)), radius = const(7.dp),
         strokeColor = const(Color.White), strokeWidth = const(2.dp))
+}
+
+/**
+ * Driving with no trip: the dot becomes an arrow pointed the way the
+ * car is going, like the one a trip shows. Drawn over the dot.
+ */
+@Composable
+@MaplibreComposable
+private fun ArrowPuck(here: LatLon, course: Double) {
+    val source = rememberGeoJsonSource(GeoJsonData.Features(FeatureCollection(
+        Feature(geometry = Point(Position(here.lon, here.lat)), properties = buildJsonObject {})
+    )))
+    val arrow = rememberVectorPainter(Icons.Default.Navigation)
+    CircleLayer(id = "cs-arrow-ring", source = source, color = const(Color.White), radius = const(15.dp),
+        strokeColor = const(Color(0x332E80F7)), strokeWidth = const(2.dp))
+    SymbolLayer(id = "cs-arrow", source = source, iconImage = image(arrow, DpSize(22.dp, 22.dp)),
+        iconColor = const(Color(0xFF2E80F7)), iconRotate = const(course.toFloat()),
+        iconRotationAlignment = const(IconRotationAlignment.Map),
+        iconAllowOverlap = const(true), iconIgnorePlacement = const(true))
 }
 
 /** The alternative under consideration, drawn like the navigation route. */

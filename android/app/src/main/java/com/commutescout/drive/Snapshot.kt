@@ -47,9 +47,13 @@ object Snapshot {
     private const val TAG = "Snapshot"
     private const val BASE = "https://data.commutescout.com"
 
-    /** How far either side of the driver a snapshot is kept, in degrees. */
-    private const val LAT_PAD = 2.5
-    private const val LON_PAD = 3.0
+    /**
+     * The whole country is held, so zooming out never empties the map:
+     * about 19,000 markers with the default layers, 36,000 with cameras,
+     * which the phone draws without trouble. Markers outside it (a
+     * plugin's test alert abroad) are dropped on read.
+     */
+    private val COUNTRY = doubleArrayOf(17.0, -170.0, 72.0, -65.0)
 
     /** A held bundle is re-read at this age, so signs and prices stay live. */
     private const val MAX_AGE_MS = 300_000L
@@ -117,21 +121,9 @@ object Snapshot {
     }
 
     private fun primeNow(center: LatLon?) {
-        if (center != null && !wellInside(center)) {
-            box = doubleArrayOf(center.lat - LAT_PAD, center.lon - LON_PAD, center.lat + LAT_PAD, center.lon + LON_PAD)
-            // The held markers were cut to the old area, so every
-            // bundle is read again against the new one. A load already
-            // running is for the area just left: its answer would be
-            // thrown away on arrival, and leaving it running would make
-            // the reload below look unnecessary and skip itself.
-            jobs.values.forEach { it.cancel() }
-            jobs.clear()
-            loadedAt.clear()
-            // Remembered so the next launch can start loading before it
-            // has a fix, rather than waiting for one.
-            runCatching { Engine.prefs.lastCenter = center }
-        }
-        if (box == null) return
+        if (box == null) box = COUNTRY
+        // Remembered so the next launch opens where the phone was.
+        if (center != null) runCatching { Engine.prefs.lastCenter = center }
         syncNow(wanted)
         if (ticker == null) ticker = scope.launch {
             while (isActive) { delay(MAX_AGE_MS); syncNow(wanted) }
@@ -205,13 +197,6 @@ object Snapshot {
     private fun publish() {
         _markers.value = held.values.flatten()
         _asOf.value = asOfMs[Bundle.LIVE] ?: asOfMs.values.maxOrNull()
-    }
-
-    /** True when the area held still has room around [center] to pan into. */
-    private fun wellInside(center: LatLon): Boolean {
-        val b = box ?: return false
-        return center.lat - b[0] > LAT_PAD / 2 && b[2] - center.lat > LAT_PAD / 2 &&
-            center.lon - b[1] > LON_PAD / 2 && b[3] - center.lon > LON_PAD / 2
     }
 
     private class Loaded(val markers: List<RoadMarker>, val asOf: Long, val saved: Boolean)

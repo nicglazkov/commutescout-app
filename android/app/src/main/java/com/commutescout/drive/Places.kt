@@ -44,8 +44,8 @@ class PlaceStore(context: Context) {
         save(rest + Place(name = name, lat = lat, lon = lon, kind = kind))
     }
 
-    fun remove(place: Place) = save(_places.value.filter { it.id != place.id })
-    fun removeAll() = save(emptyList())
+    fun remove(place: Place) = save(_places.value.filter { it.id != place.id }, removal = true)
+    fun removeAll() = save(emptyList(), removal = true)
 
     fun noteRecent(name: String, lat: Double, lon: Double) {
         val others = _places.value.filter { !(it.kind == PlaceKind.recent && near(it, lat, lon)) }
@@ -56,16 +56,21 @@ class PlaceStore(context: Context) {
     private fun near(p: Place, lat: Double, lon: Double) =
         Math.abs(p.lat - lat) < 0.0005 && Math.abs(p.lon - lon) < 0.0005
 
-    private fun save(list: List<Place>, push: Boolean = true) {
+    private fun save(list: List<Place>, push: Boolean = true, removal: Boolean = false) {
         _places.value = list
         prefs.edit().putString("v1", Backend.json.encodeToString(list)).apply()
-        if (push) pushToAccount()
+        if (push) pushToAccount(replace = removal)
     }
 
     // Account sync: Home, Work, favorites and recents follow the account.
     var tokenProvider: (suspend () -> String?)? = null
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
     private var pushJob: kotlinx.coroutines.Job? = null
+    /** Whether this phone has taken the account's list this session.
+     *  Until it has, its own list is partial, and must never replace the
+     *  account's: a new phone saving Home once wiped Work and every
+     *  favorite saved on the website. */
+    private var synced = false
 
     @kotlinx.serialization.Serializable
     private data class Wire(val id: String, val kind: String, val name: String, val lat: Double, val lon: Double, val used_at: Double)
@@ -88,16 +93,25 @@ class PlaceStore(context: Context) {
         val body = Backend.json.encodeToString(WireBody(wire()))
         val (status, text) = runCatching { Backend.send("PUT", "/api/me/places", token, body) }.getOrNull() ?: return
         if (status != 200) return
-        runCatching { Backend.json.decodeFromString<WireBody>(text) }.getOrNull()?.let { apply(it.places) }
+        runCatching { Backend.json.decodeFromString<WireBody>(text) }.getOrNull()?.let { apply(it.places); synced = true }
     }
 
-    private fun pushToAccount() {
+    /** After a change: the account gets this phone's list, debounced. An
+     *  addition merges, so nothing saved elsewhere is lost. A removal
+     *  replaces, so it is a removal everywhere, but only once this phone
+     *  holds the account's whole list; before that it merges too, and the
+     *  removal lands on the next sync. */
+    private fun pushToAccount(replace: Boolean) {
         pushJob?.cancel()
         pushJob = scope.launch {
             kotlinx.coroutines.delay(1500)
             val token = tokenProvider?.invoke() ?: return@launch
-            val body = Backend.json.encodeToString(WireBody(wire())).dropLast(1) + ",\"replace\":true}"
-            runCatching { Backend.send("PUT", "/api/me/places", token, body) }
+            var body = Backend.json.encodeToString(WireBody(wire()))
+            if (replace && synced) body = body.dropLast(1) + ",\"replace\":true}"
+            val (status, text) = runCatching { Backend.send("PUT", "/api/me/places", token, body) }.getOrNull() ?: return@launch
+            if (status != 200) return@launch
+            // What came back is the account's whole list, this phone included.
+            runCatching { Backend.json.decodeFromString<WireBody>(text) }.getOrNull()?.let { apply(it.places); synced = true }
         }
     }
 

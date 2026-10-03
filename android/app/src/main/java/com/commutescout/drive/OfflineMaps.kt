@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,6 +56,8 @@ fun OfflineMapsSheet(model: DriveViewModel, onClose: () -> Unit) {
     val online by Connectivity.online.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var confirming by remember { mutableStateOf<MapFiles.StateFile?>(null) }
+    var opened by remember { mutableStateOf<MapFiles.LocalFile?>(null) }
+    opened?.let { SavedMapDetailSheet(model, it) { opened = null } }
     LaunchedEffect(Unit) { MapFiles.refreshManifest() }
 
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("offline-maps-sheet")) {
@@ -68,13 +72,13 @@ fun OfflineMapsSheet(model: DriveViewModel, onClose: () -> Unit) {
             if (corridors.isEmpty()) Text("None yet. A trip's map is saved when it starts, on Wi-Fi, or from the route card on mobile data.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             corridors.forEach { c ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clickable { opened = c }.testTag("saved-${c.id}"), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(c.name)
                         Text("${c.sizeText}, saved ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(c.savedAt))}",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    IconButton({ MapFiles.delete(c) }) { Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
+                    Icon(Icons.Default.ChevronRight, "Open", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -87,17 +91,17 @@ fun OfflineMapsSheet(model: DriveViewModel, onClose: () -> Unit) {
             m?.states?.forEach { s ->
                 val saved = MapFiles.has(s.code)
                 val p = progress["state-${s.code}"]
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().then(if (saved != null) Modifier.clickable { opened = saved } else Modifier), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(s.name)
-                        Text(saved?.let { "Saved, ${it.sizeText}" } ?: s.bytes?.let(Units::bytes) ?: "size unknown",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(saved?.let { "Saved, ${it.sizeText}" } ?: p?.let { "Downloading, ${(it * 100).toInt()}%" } ?: s.bytes?.let(Units::bytes) ?: "size unknown",
+                            style = MaterialTheme.typography.bodySmall, color = if (saved != null) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant)
                         if (p != null) LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
                     }
                     Spacer(Modifier.width(8.dp))
                     when {
                         p != null -> {}
-                        saved != null -> IconButton({ MapFiles.delete(saved) }) { Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
+                        saved != null -> Icon(Icons.Default.ChevronRight, "Open", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         else -> IconButton({ confirming = s }, enabled = online, modifier = Modifier.testTag("download-${s.code}")) { Icon(Icons.Default.Download, "Download") }
                     }
                 }

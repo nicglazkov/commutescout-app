@@ -147,10 +147,9 @@ class MarkerStore {
         // The drawing window is wider than the screen so a short pan has
         // something to show before the next fetch settles.
         _view.value = doubleArrayOf(south - latPad, west - lonPad, north + latPad, east + lonPad)
-        if (zoom < 5.5 || kinds.isEmpty()) {
-            if (kinds.isEmpty()) { _live.value = emptyList() }
-            return
-        }
+        // Zoomed out past a state the viewport call would be the whole
+        // snapshot again, so only the snapshot runs; nothing is dropped.
+        if (zoom < 5.5 || kinds.isEmpty()) return
         val b = box
         val inside = b != null && south >= b[0] && west >= b[1] && north <= b[2] && east <= b[3]
         if (inside && kinds == this.kinds && System.currentTimeMillis() - fetchedAt < 60_000) return

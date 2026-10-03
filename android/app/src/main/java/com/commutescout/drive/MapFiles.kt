@@ -230,7 +230,13 @@ object MapFiles {
 
     // ---------------------------------------------------------------- files
 
-    private fun path(f: LocalFile) = File(folder, "${f.id}.pmtiles")
+    fun path(f: LocalFile) = File(folder, "${f.id}.pmtiles")
+
+    /** What the disk says about a saved map, for the detail sheet: a double check on the record the app kept. */
+    suspend fun check(f: LocalFile): MapFileCheck = withContext(Dispatchers.IO) {
+        val file = path(f)
+        if (!file.exists()) MapFileCheck(false, 0, null) else MapFileCheck(true, file.length(), PMTilesHeader.read(file))
+    }
 
     private fun persist() {
         runCatching { File(folder, "files.json").writeText(Backend.json.encodeToString(ListSerializer(LocalFile.serializer()), _files.value)) }
