@@ -28,6 +28,17 @@ final class AlertsEngine: ObservableObject {
     }
 
     @Published private(set) var ahead: [Upcoming] = []
+    /// Alerts the driver swiped away; they stay off the banner until a
+    /// new trip or free drive starts, and still get spoken on schedule.
+    @Published private(set) var dismissed: Set<String> = []
+
+    func dismiss(_ id: String) { dismissed.insert(id) }
+
+    /// What the banner shows: the nearest alert ahead that was not
+    /// dismissed and is within `within` metres.
+    func banner(within: Double) -> Upcoming? {
+        ahead.first { !dismissed.contains($0.id) && $0.alongMeters - hereAlong <= within }
+    }
     @Published private(set) var hereAlong: Double = 0
     @Published private(set) var lastAnnounced: String?
     /// Identical text is not repeated within this window: several markers can
@@ -65,6 +76,7 @@ final class AlertsEngine: ObservableObject {
     /// every trip; a trip's `start` takes over from it.
     func startFreeDrive() {
         stop()
+        dismissed = []
         freeDrive = true
         timer = Timer.scheduledTimer(withTimeInterval: Self.refreshSeconds, repeats: true) { [weak self] _ in
             Task { await self?.refreshAround() }
@@ -76,6 +88,7 @@ final class AlertsEngine: ObservableObject {
         route = coordinates
         cumulative = Self.cumulativeDistances(coordinates)
         lastSegment = 0
+        dismissed = []
         let lats = coordinates.map(\.latitude), lons = coordinates.map(\.longitude)
         guard let s = lats.min(), let n = lats.max(), let w = lons.min(), let e = lons.max() else { return }
         box = (s - 0.05, w - 0.05, n + 0.05, e + 0.05)

@@ -11,6 +11,10 @@ import UserNotifications
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
     /// Set by the registrar: called with every fresh FCM token.
     static var onToken: ((String) -> Void)?
+    /// The newest token, kept here because Firebase hands it over at
+    /// launch, before the registrar exists to hear about it. A phone
+    /// whose token never changed was never registered for that reason.
+    static var latestToken: String?
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -31,6 +35,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         guard let fcmToken else { return }
+        Self.latestToken = fcmToken
         Self.onToken?(fcmToken)
     }
 
@@ -68,7 +73,18 @@ final class PushRegistrar {
     /// The current token goes to the signed-in account.
     func register(_ fresh: String? = nil) async {
         if let fresh { UserDefaults.standard.set(fresh, forKey: tokenKey) }
-        guard let token = UserDefaults.standard.string(forKey: tokenKey), let auth = await account.token() else { return }
+        // The token Firebase already handed over, or the one it holds now,
+        // or the one saved last time: in that order, whichever exists.
+        var token = fresh ?? AppDelegate.latestToken
+        if token == nil { token = try? await Messaging.messaging().token() }
+        if token == nil { token = UserDefaults.standard.string(forKey: tokenKey) }
+        guard let token, let auth = await account.token() else {
+            DriveLog.note("push: nothing to register yet (token \(token == nil ? "missing" : "ok"))")
+            return
+        }
+        UserDefaults.standard.set(token, forKey: tokenKey)
+        // Already on the account with this very token: nothing to say.
+        if UserDefaults.standard.string(forKey: registeredKey) == token, fresh == nil { return }
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         guard let (status, _) = try? await Backend.send("POST", "api/me/devices", token: auth,
                                                         body: ["platform": "ios", "token": token, "app_version": version])

@@ -28,6 +28,14 @@ struct FlareSource: Codable, Identifiable, Hashable {
     // A catalog plugin that offers each signed-in person their own session
     // (handshake extensions.user_sessions): the path the phone polls itself.
     var ownSessionPath: String? = nil
+    // For the status page.
+    var lastOk: String? = nil
+    var lastError: String? = nil
+    var fails: Int = 0
+    var version: String? = nil
+    var protocolName: String? = nil
+    var contact: String? = nil
+    var shared = false
 
     var isDirect: Bool { base != nil && ownSessionPath == nil }
 
@@ -77,7 +85,19 @@ private struct PublicSource: Decodable {
     let kinds: [String]?
     let capabilities: [String: Bool]?
     let base: String?
+    let last_ok: String?
+    let last_error: String?
+    let fails: Int?
+    let version: String?
+    let protocolName: String?
+    let refresh_s: Int?
+    let contact: String?
+    let shared: Bool?
     struct Attribution: Decodable { let name: String?; let url: String? }
+    enum CodingKeys: String, CodingKey {
+        case id, name, attribution, trust, tier, count, ok, description, coverage, kinds, capabilities, base
+        case last_ok, last_error, fails, version, protocolName = "protocol", refresh_s, contact, shared
+    }
 }
 
 private struct Handshake: Decodable {
@@ -227,10 +247,12 @@ final class SourcesStore: ObservableObject {
     func loadCatalog() async {
         guard let r = try? await Backend.get("api/flare/sources", as: SourcesResponse.self) else { return }
         catalog = r.sources.map {
-            FlareSource(id: $0.id, name: $0.name, base: nil, token: nil, refreshS: 60, canReport: false, canConfirm: false,
+            FlareSource(id: $0.id, name: $0.name, base: nil, token: nil, refreshS: $0.refresh_s ?? 60, canReport: false, canConfirm: false,
                         attribution: $0.attribution?.name, trust: $0.trust, tier: $0.tier ?? "unreviewed", count: $0.count ?? 0, ok: $0.ok,
                         summary: $0.description, coverage: $0.coverage, kinds: $0.kinds ?? [],
-                        acceptsReports: $0.capabilities?["report"] ?? false)
+                        acceptsReports: $0.capabilities?["report"] ?? false,
+                        lastOk: $0.last_ok, lastError: $0.last_error, fails: $0.fails ?? 0, version: $0.version,
+                        protocolName: $0.protocolName, contact: $0.contact, shared: $0.shared ?? false)
         }
         await discoverOwnSessions(r.sources.compactMap { s in s.base.map { (s.id, $0) } })
     }
@@ -500,7 +522,7 @@ struct PluginCard: View {
                     model.sources.setOn(source.id, !installed)
                     model.markers.refresh(force: true)
                 } label: {
-                    Text(installed ? "Installed" : "Install").font(.subheadline.weight(.bold))
+                    Text(installed ? "Uninstall" : "Install").font(.subheadline.weight(.bold))
                         .padding(.horizontal, 14).padding(.vertical, 6)
                         .foregroundStyle(installed ? Color.primary : Color.white)
                         .background(installed ? Color(.tertiarySystemFill) : Color.accentColor, in: Capsule())
@@ -522,8 +544,16 @@ struct PluginCard: View {
             }
             .fixedSize(horizontal: false, vertical: true)
             Divider()
-            Text(source.tier == "approved" ? "Approved by CommuteScout" : "Public, not reviewed. It never speaks unless you turn voice on for it.")
-                .font(.caption2).foregroundStyle(source.tier == "approved" ? Color.green : Color.orange)
+            HStack {
+                Text(source.trust == "official" ? "Official CommuteScout plugin" : source.tier == "approved" ? "Reviewed by CommuteScout"
+                     : "Public, not reviewed. It never speaks unless you turn voice on for it.")
+                    .font(.caption2).foregroundStyle(source.tier == "approved" ? Color.green : Color.orange)
+                Spacer()
+                NavigationLink { PluginStatusView(sourceId: source.id) } label: {
+                    Text("Status").font(.caption2.weight(.semibold))
+                }
+                .accessibilityIdentifier("status-\(source.id)")
+            }
         }
         .padding(16)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))

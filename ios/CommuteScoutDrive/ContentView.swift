@@ -16,7 +16,6 @@ struct ContentView: View {
     @State private var showLayers = false
     @State private var showReport = false
     @State private var showTools = false
-    @State private var stripCollapsed = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -32,9 +31,15 @@ struct ContentView: View {
                 onTapExit: { model.stop() },
                 makeMapContent: { mapContent }
             )
-            .navigationSpeedLimit(speedLimit: model.prefs.showSpeedLimit ? model.core.annotation?.speedLimit : nil,
-                                  speedLimitStyle: .mutcdStyle)
-            .navigationViewInnerGrid(topCenter: { reroutingBanner })
+            .navigationViewInnerGrid(topCenter: {
+                // The grid's middle column is narrow; the banner takes
+                // the width the instruction card has.
+                VStack(spacing: 8) {
+                    reroutingBanner
+                    alertBanner
+                }
+                .frame(width: UIScreen.main.bounds.width - 24)
+            })
 
             MapHook(
                 // A closure stretch and a toll corridor answer a tap the
@@ -66,6 +71,8 @@ struct ContentView: View {
                                 .accessibilityIdentifier("settings")
                             Button { showTools = true } label: { roundIcon("line.3.horizontal") }
                                 .accessibilityIdentifier("tools")
+                            Button { model.toggle3D() } label: { roundText(model.prefs.is3D ? "2D" : "3D") }
+                                .accessibilityIdentifier("perspective")
                         }
                     }
                     .padding(.horizontal, 12)
@@ -74,6 +81,7 @@ struct ContentView: View {
                         OfflineBanner(title: n.title, detail: n.detail)
                             .padding(.horizontal, 12).padding(.top, 8)
                     }
+                    alertBanner.padding(.horizontal, 12).padding(.top, 8)
                     Spacer()
                 }
             }
@@ -89,21 +97,28 @@ struct ContentView: View {
                             Button { model.faceNorth() } label: { compass }
                                 .accessibilityIdentifier("compass")
                         }
-                        Button { model.toggle3D() } label: { roundText(model.prefs.is3D ? "2D" : "3D") }
-                            .accessibilityIdentifier("perspective")
+                        if isNavigating {
+                            // Browsing has this under the menu button; on a
+                            // trip the top belongs to the instruction card.
+                            Button { model.toggle3D() } label: { roundText(model.prefs.is3D ? "2D" : "3D") }
+                                .accessibilityIdentifier("perspective")
+                        }
                         if !isNavigating {
                             Button { model.follow() } label: { roundIcon("location.fill") }
                                 .accessibilityIdentifier("locate")
                         }
-                        // Report, like Waze: one tap from anywhere.
+                        // Report, like Waze: one tap from anywhere, big enough
+                        // to hit at a glance from the wheel.
                         Button { if model.reportCoordinate != nil { showReport = true } } label: {
-                            Image(systemName: "exclamationmark.bubble.fill")
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 26, height: 26)
-                                .padding(13)
-                                .background(Color.orange, in: Circle())
-                                .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+                            VStack(spacing: 1) {
+                                Image(systemName: "exclamationmark.bubble.fill")
+                                    .font(.system(size: 26, weight: .semibold))
+                                Text("Report").font(.system(size: 11, weight: .bold))
+                            }
+                            .foregroundStyle(.white)
+                            .frame(width: 64, height: 64)
+                            .background(Color.orange, in: Circle())
+                            .shadow(color: .black.opacity(0.22), radius: 8, y: 3)
                         }
                         .accessibilityIdentifier("report")
                     }
@@ -112,12 +127,17 @@ struct ContentView: View {
                 }
             }
 
-            // The next alert sits above the trip bar, left of the side
+            // The speedometer sits above the trip bar, left of the side
             // buttons: clear of the instruction card whatever its height.
-            VStack {
-                Spacer()
-                alertStripOrPill
-                    .padding(.leading, 12).padding(.trailing, 76).padding(.bottom, 124)
+            if model.prefs.showSpeedLimit, model.speedMps >= 0 || isNavigating {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Speedometer(speedMps: model.speedMps, limitKmh: model.limitKmh)
+                        Spacer()
+                    }
+                    .padding(.leading, 12).padding(.bottom, isNavigating ? 124 : bottomCardHeight + 12)
+                }
             }
             VStack {
                 Spacer()
@@ -207,33 +227,13 @@ struct ContentView: View {
     /// The next alert within the chosen distance: a strip, or a pill when
     /// tucked away. Placed by the navigation view's grid under the
     /// instruction card, so it never overlaps it whatever its height.
-    /// On a trip, or driving without one: the alert ahead is shown either way.
-    @ViewBuilder private var alertStripOrPill: some View {
-        if let next = model.alerts.ahead.first,
-           next.alongMeters - model.alerts.hereAlong <= model.prefs.stripAheadMeters {
-            if stripCollapsed {
-                // Tucked away: a pill with the icon and distance; tap to bring it back.
-                HStack {
-                    Spacer()
-                    Button { withAnimation { stripCollapsed = false } } label: {
-                        HStack(spacing: 6) {
-                            MarkerGlyph(marker: next.marker, size: 18)
-                            Text(Units.distance(max(0, next.alongMeters - model.alerts.hereAlong))).font(.caption.weight(.semibold))
-                            if model.alerts.ahead.count > 1 { Text("+\(model.alerts.ahead.count - 1)").font(.caption2).foregroundStyle(.secondary) }
-                        }
-                        .padding(.horizontal, 10).padding(.vertical, 8)
-                        .background(.regularMaterial, in: Capsule())
-                        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-                    }
-                    .accessibilityIdentifier("alert-pill")
-                }
-                .padding(.horizontal, 12)
-            } else {
-                AlertStrip(item: next, along: model.alerts.hereAlong, onCollapse: { withAnimation { stripCollapsed = true } })
-                    .padding(.horizontal, 12)
-            }
+    /// The alert ahead, on a trip or driving without one, as a banner
+    /// at the top. Nothing when it was swiped away or is behind.
+    @ViewBuilder private var alertBanner: some View {
+        if let next = model.alerts.banner(within: model.prefs.stripAheadMeters) {
+            AlertBanner(item: next, along: model.alerts.hereAlong)
+                .animation(.spring(duration: 0.35), value: next.id)
         }
-
     }
 
     /// Under the instruction card while navigating: the offline notice
@@ -325,37 +325,6 @@ struct ResumeCard: View {
 
 /// The next road event on the route: what it is and how far ahead.
 /// Tap to hear it again.
-struct AlertStrip: View {
-    @EnvironmentObject var model: AppModel
-    let item: AlertsEngine.Upcoming
-    let along: Double
-    var onCollapse: (() -> Void)? = nil
-
-    var body: some View {
-        HStack(spacing: 10) {
-            MarkerGlyph(marker: item.marker, size: 24)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.marker.displayTitle).font(.subheadline.weight(.semibold)).lineLimit(2)
-                Text("in \(Units.distance(max(0, item.alongMeters - along)))" +
-                     (model.alerts.ahead.count > 1 ? ", \(model.alerts.ahead.count - 1) more ahead" : ""))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-            if let onCollapse {
-                Button(action: onCollapse) {
-                    Image(systemName: "chevron.up").font(.caption.weight(.bold)).foregroundStyle(.secondary).padding(6)
-                }
-                .accessibilityIdentifier("alert-collapse")
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-        .onTapGesture { model.alerts.say(item.marker) }
-        .accessibilityIdentifier("alert-strip")
-    }
-}
-
 /// The pin's card: what it is, how far, Navigate, Save as Home, Work or a star.
 struct PlaceCard: View {
     @EnvironmentObject var model: AppModel
