@@ -350,7 +350,8 @@ fun DriveScreen(model: DriveViewModel) {
             // On a trip the banner leaves room for Ferrostar's buttons on the right.
             Box(Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(start = 12.dp, end = if (isNavigating) 72.dp else 12.dp)
                 .padding(top = if (isNavigating) 132.dp else 112.dp)) {
-                AlertBanner(next, along, ahead.size - 1, onDismiss = { model.alerts.dismiss(next.id) }) { model.alerts.say(next.marker) }
+                AlertBanner(next, along, ahead.size - 1, canConfirm = model.canConfirm(next.marker),
+                    onVote = { v -> model.vote(next.marker, v) }, onDismiss = { model.alerts.dismiss(next.id) }) { model.alerts.say(next.marker) }
             }
         }
 

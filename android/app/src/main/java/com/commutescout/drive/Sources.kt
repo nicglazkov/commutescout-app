@@ -207,6 +207,7 @@ class SourcesStore(context: Context) {
         val r = runCatching { Backend.get<SourcesResponse>("/api/flare/sources", emptyMap()) }.getOrNull() ?: return
         _catalog.value = r.sources.map { FlareSource(it.id, it.name, attribution = it.attribution?.name, trust = it.trust, tier = it.tier ?: "unreviewed", count = it.count ?: 0, ok = it.ok,
             summary = it.description, coverage = it.coverage, kinds = it.kinds ?: emptyList(), acceptsReports = it.capabilities?.get("report") == true,
+            canConfirm = it.capabilities?.get("confirm") == true,
             refreshS = it.refresh_s ?: 60, lastOk = it.last_ok, lastError = it.last_error, fails = it.fails ?: 0, version = it.version,
             protocolName = it.protocol, contact = it.contact, shared = it.shared ?: false) }
         discoverOwnSessions(r.sources.mapNotNull { s -> s.base?.let { s.id to it } })

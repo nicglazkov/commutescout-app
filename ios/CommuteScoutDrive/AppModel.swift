@@ -727,6 +727,28 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Whether a marker's plugin takes confirmations (Still there / Gone).
+    func canConfirm(_ m: RoadMarker) -> Bool {
+        guard m.kind == "plugin", m.id != nil else { return false }
+        let sid = PluginStyle.sourceId(m)
+        return (sources.catalog.first { $0.id == sid } ?? sources.mine.first { $0.id == sid })?.canConfirm ?? false
+    }
+
+    /// A vote on a community report, from the banner: no sheets while
+    /// driving, a toast says what happened or what is needed.
+    func vote(_ m: RoadMarker, _ v: String) async {
+        guard let id = m.id else { return }
+        guard online else { toast = "No signal: the vote did not go through."; return }
+        guard let token = await account.token() else { toast = "Sign in (Settings) to confirm reports."; return }
+        do {
+            try await reporter.confirm(alertId: id, vote: v, token: token)
+            toast = v == "up" ? "Thanks, confirmed." : "Thanks, marked as gone."
+            DriveLog.note("confirm \(v) from banner: \(id)")
+        } catch {
+            toast = Connectivity.isOffline(error) ? "No signal: the vote did not go through." : "Could not record that."
+        }
+    }
+
     /// The limit to show: the trip's own while navigating, else the posted one.
     var limitKmh: Double? {
         if state.isNavigating, let m = core.annotation?.speedLimit { return m.converted(to: .kilometersPerHour).value }
