@@ -74,8 +74,17 @@ data class FlareSource(
         if (b.size != 4) return "Coverage not stated"
         val h = b[2] - b[0]; val w = b[3] - b[1]
         if (h >= 20 && w >= 50) return "Whole country"
-        if (b[0] >= 32 && b[2] <= 36 && b[1] >= -121 && b[3] <= -114) return "Southern California"
-        if (b[0] >= 32 && b[2] <= 42.5 && b[1] >= -125 && b[3] <= -114) return "California"
+        // The states the box takes in, whichever they are.
+        val states = StateBounds.within(b.toDoubleArray())
+        if (states.isNotEmpty()) {
+            val names = states.map { code -> MapFiles.manifest.value?.states?.firstOrNull { it.code == code }?.name ?: code }
+            return when (names.size) {
+                1 -> names[0]
+                2 -> "${names[0]} and ${names[1]}"
+                3 -> "${names[0]}, ${names[1]} and ${names[2]}"
+                else -> "${names[0]}, ${names[1]} and ${names.size - 2} more states"
+            }
+        }
         return "${Math.round(h)}\u00B0 by ${Math.round(w)}\u00B0 area"
     }
 

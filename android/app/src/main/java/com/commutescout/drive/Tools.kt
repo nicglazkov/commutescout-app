@@ -235,7 +235,7 @@ fun AlertsListSheet(model: DriveViewModel, mapState: NavigationMapState, onClose
             Text("Alerts nearby", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(8.dp))
             val list = sorted
             if (list == null) Text("Looking around you", Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            else if (list.isEmpty()) Text("Nothing reported within 100 miles of you.", Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else if (list.isEmpty()) Text("Nothing reported within ${Units.distance(160_000.0)} of you.", Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             LazyColumn(Modifier.height(420.dp)) {
                 items(list ?: emptyList(), key = { it.key }) { m ->
                     Row(Modifier.fillMaxWidth().clickable {

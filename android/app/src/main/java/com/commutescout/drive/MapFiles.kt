@@ -334,4 +334,11 @@ object StateBounds {
         "WI" to doubleArrayOf(42.4, -92.9, 47.2, -86.7), "WY" to doubleArrayOf(40.9, -111.1, 45.1, -104.0), "DC" to doubleArrayOf(38.7, -77.2, 39.1, -76.8),
     )
     fun of(code: String): DoubleArray = T[code] ?: doubleArrayOf(24.0, -125.0, 50.0, -66.0)
+
+    /** The states a box (south, west, north, east) takes in nearly whole, largest first. */
+    fun within(b: DoubleArray): List<String> {
+        val slack = 0.5
+        return T.filter { (_, s) -> s[0] >= b[0] - slack && s[1] >= b[1] - slack && s[2] <= b[2] + slack && s[3] <= b[3] + slack }
+            .entries.sortedByDescending { (_, s) -> (s[2] - s[0]) * (s[3] - s[1]) }.map { it.key }
+    }
 }

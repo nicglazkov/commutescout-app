@@ -88,7 +88,8 @@ import kotlin.math.ln
 @Composable
 fun BaseMapPreview(model: DriveViewModel, height: Int = 180) {
     val here by model.here.collectAsStateWithLifecycle()
-    val center = here ?: model.viewCenter ?: LatLon(37.5, -121.9)
+    // Before a fix: where the phone last was, then the middle of the country.
+    val center = here ?: model.viewCenter ?: model.prefs.lastCenter ?: LatLon(39.5, -98.4)
     val camera = rememberCameraState(firstPosition = CameraPosition(target = Position(center.lon, center.lat), zoom = 13.0))
     MaplibreMap(
         modifier = Modifier.fillMaxWidth().height(height.dp).clip(RoundedCornerShape(10.dp)).testTag("basemap-preview"),
