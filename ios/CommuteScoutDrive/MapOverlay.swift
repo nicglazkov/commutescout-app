@@ -30,6 +30,16 @@ final class MapOverlay {
         var previewVersion = ""
         var pin: CLLocationCoordinate2D?
         var pinVersion = ""
+        var alert: AlertRing?
+        var alertVersion = ""
+    }
+
+    /// The alert the banner names, marked on the map: a pulsing ring in
+    /// the kind's color around its marker, with the distance beside it.
+    struct AlertRing {
+        let coordinate: CLLocationCoordinate2D
+        let tint: UIColor
+        let label: String
     }
 
     /// Layers a tap looks in, dots before lines.
@@ -64,6 +74,17 @@ final class MapOverlay {
             source("cs-pin", in: style)?.shape = scene.pin.map { MLNShapeCollectionFeature(shapes: [MLNPointFeature(coordinate: $0)]) }
                 ?? MLNShapeCollectionFeature(shapes: [])
         }
+        if scene.alertVersion != applied.alertVersion {
+            if let a = scene.alert {
+                let f = MLNPointFeature(coordinate: a.coordinate)
+                f.attributes = ["tint": a.tint.hex, "label": a.label]
+                source("cs-alert", in: style)?.shape = MLNShapeCollectionFeature(shapes: [f])
+                startPulse(in: style)
+            } else {
+                source("cs-alert", in: style)?.shape = MLNShapeCollectionFeature(shapes: [])
+                stopPulse()
+            }
+        }
         applied = scene
     }
 
@@ -79,6 +100,33 @@ final class MapOverlay {
 
     private func source(_ id: String, in style: MLNStyle) -> MLNShapeSource? {
         style.source(withIdentifier: id) as? MLNShapeSource
+    }
+
+    // MARK: alert ring pulse
+
+    private var pulse: Timer?
+    private var pulseOut = false
+
+    /// The ring breathes: its radius swings between two sizes, and the
+    /// style's own transition makes the swing smooth. Nothing runs when
+    /// there is no alert.
+    private func startPulse(in style: MLNStyle) {
+        guard pulse == nil, let ring = style.layer(withIdentifier: "cs-alert-ring") as? MLNCircleStyleLayer else { return }
+        ring.circleRadiusTransition = MLNTransition(duration: 1.0, delay: 0)
+        ring.circleOpacityTransition = MLNTransition(duration: 1.0, delay: 0)
+        pulse = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self, let style = self.mapView?.style,
+                  let ring = style.layer(withIdentifier: "cs-alert-ring") as? MLNCircleStyleLayer else { return }
+            self.pulseOut.toggle()
+            ring.circleRadius = NSExpression(forConstantValue: self.pulseOut ? 34 : 18)
+            ring.circleOpacity = NSExpression(forConstantValue: self.pulseOut ? 0.15 : 0.5)
+        }
+        pulse?.fire()
+    }
+
+    private func stopPulse() {
+        pulse?.invalidate()
+        pulse = nil
     }
 
     // MARK: layers
@@ -171,12 +219,42 @@ final class MapOverlay {
         line.lineJoin = NSExpression(forConstantValue: "round")
         place(line)
 
+        // The alert ahead: a breathing ring, a solid core on the marker,
+        // and the distance beside it. Above the dots, under the pin.
+        let alert = add("cs-alert")
+        let ring = MLNCircleStyleLayer(identifier: "cs-alert-ring", source: alert)
+        ring.circleRadius = NSExpression(forConstantValue: 18)
+        ring.circleColor = NSExpression(forKeyPath: "tint")
+        ring.circleOpacity = NSExpression(forConstantValue: 0.5)
+        ring.circleStrokeColor = NSExpression(forKeyPath: "tint")
+        ring.circleStrokeWidth = NSExpression(forConstantValue: 2)
+        ring.circlePitchAlignment = NSExpression(forConstantValue: "map")
+        place(ring)
+        let core = MLNCircleStyleLayer(identifier: "cs-alert-core", source: alert)
+        core.circleRadius = NSExpression(forConstantValue: 20)
+        core.circleColor = NSExpression(forConstantValue: UIColor.clear)
+        core.circleStrokeColor = NSExpression(forKeyPath: "tint")
+        core.circleStrokeWidth = NSExpression(forConstantValue: 3)
+        place(core)
+        let text = MLNSymbolStyleLayer(identifier: "cs-alert-text", source: alert)
+        text.text = NSExpression(forKeyPath: "label")
+        text.textFontSize = NSExpression(forConstantValue: 14)
+        text.textColor = NSExpression(forConstantValue: UIColor.black)
+        text.textHaloColor = NSExpression(forConstantValue: UIColor.white)
+        text.textHaloWidth = NSExpression(forConstantValue: 2)
+        text.textAnchor = NSExpression(forConstantValue: "left")
+        text.textOffset = NSExpression(forConstantValue: NSValue(cgVector: CGVector(dx: 1.9, dy: 0)))
+        text.textAllowsOverlap = on
+        text.textIgnoresPlacement = on
+        text.textFontNames = NSExpression(forConstantValue: ["Noto Sans Bold"])
+        place(text)
+
         // The pin.
         let pin = add("cs-pin")
-        let ring = MLNCircleStyleLayer(identifier: "cs-pin-ring", source: pin)
-        ring.circleRadius = NSExpression(forConstantValue: 14)
-        ring.circleColor = NSExpression(forConstantValue: UIColor(red: 0.18, green: 0.5, blue: 0.97, alpha: 0.25))
-        place(ring)
+        let halo = MLNCircleStyleLayer(identifier: "cs-pin-ring", source: pin)
+        halo.circleRadius = NSExpression(forConstantValue: 14)
+        halo.circleColor = NSExpression(forConstantValue: UIColor(red: 0.18, green: 0.5, blue: 0.97, alpha: 0.25))
+        place(halo)
         let dot = MLNCircleStyleLayer(identifier: "cs-pin", source: pin)
         dot.circleRadius = NSExpression(forConstantValue: 7)
         dot.circleColor = NSExpression(forConstantValue: UIColor(red: 0.18, green: 0.5, blue: 0.97, alpha: 1))
@@ -225,7 +303,9 @@ final class MapOverlay {
             icon = "badge:\(sid)|\(PluginStyle.category(m.flareKind))"
             tint = PluginStyle.color(sid)
         } else {
-            icon = "icon:\(m.kind)"
+            // A camera with live video wears a red ring, so the map says
+            // which cameras can be watched and which are stills.
+            icon = m.kind == "camera" && m.stream != nil ? "icon:camera_live" : "icon:\(m.kind)"
             tint = MarkerIcons.color[m.kind] ?? .gray
         }
         f.attributes = ["key": m.key, "kind": m.kind, "geo": "dot", "icon": icon, "tint": tint.hex]

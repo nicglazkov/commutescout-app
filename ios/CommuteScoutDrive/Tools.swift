@@ -72,22 +72,39 @@ struct AlertsListView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dismissTools) private var dismissTools
+    @State private var sorted: [RoadMarker] = []
+    @State private var ready = false
 
-    private var sorted: [RoadMarker] {
+    /// The nearest hundred events, worked out off the main thread. The
+    /// whole country's markers are held now, and sorting them all by
+    /// distance on every redraw froze the sheet for a second.
+    private func rank() async {
         let here = model.here ?? model.viewCenter
         // Cameras and weather stations are on the map to look at, not
         // things that happened, so they stay out of this list.
-        return model.allMarkers.filter { model.prefs.isShown($0.kind) && $0.isEvent }.sorted {
-            guard let here else { return false }
-            return AlertsEngine.meters(here, $0.coordinate) < AlertsEngine.meters(here, $1.coordinate)
-        }
+        let shown = model.allMarkers.filter { model.prefs.isShown($0.kind) && $0.isEvent }
+        let ranked: [RoadMarker] = await Task.detached(priority: .userInitiated) {
+            guard let here else { return Array(shown.prefix(100)) }
+            // One row per thing: a closure recorded per lane, or a sign
+            // per panel, shows once, nearest copy first.
+            var seen = Set<String>()
+            return shown.map { ($0, AlertsEngine.meters(here, $0.coordinate)) }
+                .filter { $0.1 <= 160_000 }
+                .sorted { $0.1 < $1.1 }
+                .filter { seen.insert("\($0.0.kind)|\($0.0.displayTitle)|\(Int($0.1 / 300))").inserted }
+                .prefix(100).map(\.0)
+        }.value
+        sorted = ranked
+        ready = true
     }
 
     var body: some View {
         NavigationStack {
             List {
-                if sorted.isEmpty {
-                    Text("Nothing reported in the area on screen. Zoom out or move the map to see more.").foregroundStyle(.secondary)
+                if !ready {
+                    HStack { ProgressView(); Text("Looking around you").foregroundStyle(.secondary) }
+                } else if sorted.isEmpty {
+                    Text("Nothing reported within 100 miles of you.").foregroundStyle(.secondary)
                 }
                 ForEach(sorted) { m in
                     Button {
@@ -111,6 +128,7 @@ struct AlertsListView: View {
             }
             .navigationTitle("Alerts nearby")
             .toolbar { Button("Done") { dismiss() } }
+            .task(id: model.markers.stamp) { await rank() }
         }
     }
 }
@@ -323,7 +341,7 @@ struct AskView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
                         if answer.isEmpty, !running {
-                            Text("Ask about closures, chain controls, fires or traffic, for example \"Is 80 over Donner open?\" or \"Anything between here and Tahoe?\"")
+                            Text("Ask about closures, chain controls, fires or traffic anywhere in the country, for example \"Is I-70 open through the Eisenhower Tunnel?\", \"Any crashes on I-95 near Richmond?\" or \"Chains on US-2 over Stevens Pass?\"")
                                 .foregroundStyle(.secondary)
                         }
                         if !status.isEmpty { Text(status).font(.caption).foregroundStyle(.secondary) }

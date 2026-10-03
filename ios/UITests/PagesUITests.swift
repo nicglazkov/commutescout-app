@@ -68,8 +68,31 @@ final class PagesUITests: XCTestCase {
         shot("places-picker", 3)
         app.buttons["Cancel"].firstMatch.tap()
         back()
+        open("Plugins")
+        shot("plugins", 3)
+        if app.staticTexts["Speed and red light cameras"].firstMatch.waitForExistence(timeout: 5) {
+            app.staticTexts["Speed and red light cameras"].firstMatch.tap()
+            shot("plugin-status", 3)
+            app.buttons["plugin-check"].firstMatch.tap()
+            shot("plugin-checked", 5)
+            back()
+        }
+        back()
         open("About")
         shot("about")
+    }
+
+    func testAlertsNearby() {
+        app.terminate()
+        app.launchArguments = ["-csSimulate"]
+        app.launch()
+        sleep(8)
+        app.buttons["tools"].firstMatch.tap()
+        let t0 = Date()
+        app.buttons["Alerts nearby"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Alerts nearby"].waitForExistence(timeout: 5))
+        shot("alerts-nearby", 2)
+        print("CS alerts nearby opened in \(Int(Date().timeIntervalSince(t0) * 1000)) ms")
     }
 
     func testCameraCards() {

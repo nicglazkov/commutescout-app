@@ -427,6 +427,17 @@ enum MarkerIcons {
             }
             out[k] = img
         }
+        // A live camera: the camera disc with a red ring, the map's sign
+        // that the picture moves.
+        if let cam = out["camera"] {
+            let size = cam.size
+            out["camera_live"] = UIGraphicsImageRenderer(size: size).image { ctx in
+                cam.draw(in: CGRect(origin: .zero, size: size))
+                ctx.cgContext.setStrokeColor(UIColor(red: 0.86, green: 0.15, blue: 0.15, alpha: 1).cgColor)
+                ctx.cgContext.setLineWidth(3)
+                ctx.cgContext.strokeEllipse(in: CGRect(origin: .zero, size: size).insetBy(dx: 1.5, dy: 1.5))
+            }
+        }
         return out
     }()
 }

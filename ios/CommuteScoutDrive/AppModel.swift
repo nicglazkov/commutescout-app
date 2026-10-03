@@ -101,6 +101,15 @@ final class AppModel: ObservableObject {
     /// running. The map turns to face the way the car is pointed and
     /// the dot becomes an arrow, as it does on a trip.
     @Published private(set) var driving = false
+    /// The last fix's speed in m/s (negative when unknown), for the speedometer.
+    @Published private(set) var speedMps: Double = -1
+    /// The posted limit on the road ahead while driving with no trip,
+    /// km/h, asked of the server once a minute at most. A trip carries
+    /// its own limit in the route's annotations.
+    @Published private(set) var postedLimitKmh: Double?
+    private var limitAskedAt = Date.distantPast
+    private var limitAskedAtPoint: CLLocationCoordinate2D?
+    private var lastFixForSpeed: (CLLocationCoordinate2D, Date)?
     @Published var camera: MapViewCamera = .default()
     @Published var coreState: NavigationState?
     @Published var errorMessage: String?
@@ -675,10 +684,18 @@ final class AppModel: ObservableObject {
     private func noteFix(_ loc: UserLocation) {
         let cl = loc.clLocation
         let now = Date()
-        let speed = cl.speed            // m/s, negative when unknown
+        var speed = cl.speed            // m/s, negative when unknown
+        // A fix without a speed (the simulator, some chipsets): the pace
+        // between this fix and the last one stands in.
+        if speed < 0, let (p, t) = lastFixForSpeed, cl.timestamp.timeIntervalSince(t) > 0.3 {
+            speed = AlertsEngine.meters(p, cl.coordinate) / cl.timestamp.timeIntervalSince(t)
+        }
+        lastFixForSpeed = (cl.coordinate, cl.timestamp)
         let course = cl.course >= 0 ? cl.course : nil
+        speedMps = speed
         if !state.isNavigating {
             alerts.update(position: cl.coordinate, course: course, speed: speed)
+            askPostedLimit(at: cl.coordinate, course: course, speed: speed)
         }
         if speed >= 3 {                 // about 7 mph
             stillSince = nil
@@ -689,6 +706,31 @@ final class AppModel: ObservableObject {
             if stillSince == nil { stillSince = now }
             if driving, now.timeIntervalSince(stillSince ?? now) >= 60 { setDriving(false) }
         }
+    }
+
+    /// The limit on the road ahead, once a minute or every 500 m while
+    /// moving, with no trip running (a trip's route carries its own).
+    /// An unknown answer clears the sign rather than leaving a stale one.
+    private func askPostedLimit(at p: CLLocationCoordinate2D, course: Double?, speed: Double) {
+        guard speed >= 4, online, let course else { return }
+        let now = Date()
+        let moved = limitAskedAtPoint.map { AlertsEngine.meters($0, p) } ?? .infinity
+        guard now.timeIntervalSince(limitAskedAt) >= 45 || moved >= 500 else { return }
+        limitAskedAt = now
+        limitAskedAtPoint = p
+        Task { [weak self] in
+            struct Limit: Decodable { let kmh: Double? }
+            let q = ["lat": String(format: "%.5f", p.latitude), "lon": String(format: "%.5f", p.longitude),
+                     "heading": String(format: "%.0f", course)]
+            let got = try? await Backend.get("api/speedlimit", query: q, as: Limit.self)
+            await MainActor.run { self?.postedLimitKmh = got?.kmh }
+        }
+    }
+
+    /// The limit to show: the trip's own while navigating, else the posted one.
+    var limitKmh: Double? {
+        if state.isNavigating, let m = core.annotation?.speedLimit { return m.converted(to: .kilometersPerHour).value }
+        return state.isNavigating ? nil : postedLimitKmh
     }
 
     private func setDriving(_ on: Bool) {
@@ -717,7 +759,9 @@ final class AppModel: ObservableObject {
             return "\(r.geometry.count)|\(r.distance)"
         }()
         let pinKey: String = { if case let .found(p) = state { return p.id }; return "" }()
-        let key = dataKey + "#" + previewKey + "#" + pinKey
+        let ring = alerts.banner(within: prefs.stripAheadMeters)
+        let ringKey = ring.map { "\($0.id)|\(Int((($0.alongMeters - alerts.hereAlong) / 50).rounded()))" } ?? ""
+        let key = dataKey + "#" + previewKey + "#" + pinKey + "#" + ringKey
         if let c = sceneCache, c.key == key { return c.scene }
         var scene = sceneCache?.scene ?? MapOverlay.Scene()
         if scene.markersVersion != dataKey {
@@ -736,6 +780,17 @@ final class AppModel: ObservableObject {
         if scene.pinVersion != pinKey {
             if case let .found(p) = state { scene.pin = p.coordinate } else { scene.pin = nil }
             scene.pinVersion = pinKey
+        }
+        if scene.alertVersion != ringKey {
+            if let r = ring {
+                let m = r.marker
+                let tint = m.kind == "plugin" ? PluginStyle.color(PluginStyle.sourceId(m)) : (MarkerIcons.color[m.kind] ?? .orange)
+                scene.alert = MapOverlay.AlertRing(coordinate: m.coordinate, tint: tint,
+                                                   label: Units.distance(max(0, r.alongMeters - alerts.hereAlong)))
+            } else {
+                scene.alert = nil
+            }
+            scene.alertVersion = ringKey
         }
         sceneCache = (key, scene)
         return scene

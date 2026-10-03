@@ -417,18 +417,29 @@ private struct PluginSettings: View {
         Form {
             Section {
                 ForEach(model.sources.catalog) { p in
-                    Toggle(isOn: Binding(get: { model.sources.isOn(p.id) },
-                                         set: { model.sources.setOn(p.id, $0); model.markers.refresh(force: true) })) {
-                        Label { Text(p.name).lineLimit(2) } icon: {
+                    NavigationLink { PluginStatusView(sourceId: p.id) } label: {
+                        HStack(spacing: 10) {
                             PluginBadge(sourceId: p.id, category: p.oneCategory, size: 22)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(p.name).lineLimit(2)
+                                HStack(spacing: 6) {
+                                    Image(systemName: p.ok == false ? "xmark.circle.fill" : "checkmark.circle.fill")
+                                        .foregroundStyle(p.ok == false ? Color.red : Color.green).font(.caption)
+                                    Text(p.ok == false ? "Not answering" : "\(p.count) alerts")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                    if p.trust == "official" { Text("Official").font(.caption2.weight(.bold)).foregroundStyle(.green) }
+                                }
+                            }
+                            Spacer()
+                            Text(model.sources.isOn(p.id) ? "Installed" : "Off").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
                 if model.sources.catalog.isEmpty {
                     Text("No plugin is listed right now.").foregroundStyle(.secondary)
                 }
-            } header: { Text("Installed") } footer: {
-                Text("Plugins add alerts to the map. A plugin's alerts are badges in its own color.")
+            } header: { Text("Plugins") } footer: {
+                Text("Open one to see whether it is answering, what it loads, and to install or uninstall it. A plugin's alerts are badges in its own color.")
             }
             Section {
                 Button { showMarketplace = true } label: { Label("Browse the marketplace", systemImage: "square.grid.2x2") }
