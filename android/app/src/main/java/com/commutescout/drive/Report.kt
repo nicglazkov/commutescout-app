@@ -125,7 +125,7 @@ fun ReportSheet(model: DriveViewModel, lat: Double, lon: Double, onClose: () -> 
     var snap by remember { mutableStateOf<Snap?>(null) }
     var useExact by remember { mutableStateOf(false) }
     LaunchedEffect(lat, lon) {
-        snap = runCatching { Backend.get<Snap>("/api/snap", mapOf("lat" to "%.6f".format(lat), "lon" to "%.6f".format(lon))) }.getOrNull()
+        snap = runCatching { Backend.get<Snap>("/api/snap", mapOf("lat" to Backend.num(lat, 6), "lon" to Backend.num(lon, 6))) }.getOrNull()
     }
     val placedLat = if (snap?.snapped == true && !useExact) snap!!.lat else lat
     val placedLon = if (snap?.snapped == true && !useExact) snap!!.lon else lon

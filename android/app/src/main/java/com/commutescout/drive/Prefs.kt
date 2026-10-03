@@ -81,8 +81,9 @@ class Prefs(context: Context) {
         advancedAlerts = false; alertRulesRaw = ""; useMiles = true
     }
 
-    var theme by state(Theme.valueOf(p.getString("theme", "SYSTEM")!!)) { p.edit().putString("theme", it.name).apply() }
-    var mapStyle by state(MapStyle.valueOf(p.getString("mapstyle", "AUTO")!!)) { p.edit().putString("mapstyle", it.name).apply() }
+    // A name dropped in an update must not be a crash loop at launch.
+    var theme by state(runCatching { Theme.valueOf(p.getString("theme", "SYSTEM")!!) }.getOrDefault(Theme.SYSTEM)) { p.edit().putString("theme", it.name).apply() }
+    var mapStyle by state(runCatching { MapStyle.valueOf(p.getString("mapstyle", "AUTO")!!) }.getOrDefault(MapStyle.AUTO)) { p.edit().putString("mapstyle", it.name).apply() }
     var is3D by state(p.getBoolean("3d", true)) { p.edit().putBoolean("3d", it).apply() }
     var traffic by state(p.getBoolean("traffic", false)) { p.edit().putBoolean("traffic", it).apply() }
     /** Save the map along a route when a trip starts, on Wi-Fi. */
@@ -162,8 +163,17 @@ class Prefs(context: Context) {
         "wildfire" to "Wildfires", "police" to "Police reports", "hazard" to "Hazard and crash reports", "plugin" to "Other community reports",
     )
 
+    // Decoded once per change, not once per marker per fix: the engine
+    // asks for a rule hundreds of times a second with advanced alerts on.
+    private var rulesCache: Pair<String, Map<String, AlertRule>>? = null
     var alertRules: Map<String, AlertRule>
-        get() = runCatching { Backend.json.decodeFromString<Map<String, AlertRule>>(alertRulesRaw) }.getOrDefault(emptyMap())
+        get() {
+            val raw = alertRulesRaw
+            rulesCache?.let { if (it.first == raw) return it.second }
+            val m = runCatching { Backend.json.decodeFromString<Map<String, AlertRule>>(raw) }.getOrDefault(emptyMap())
+            rulesCache = raw to m
+            return m
+        }
         set(v) { alertRulesRaw = Backend.json.encodeToString(kotlinx.serialization.serializer<Map<String, AlertRule>>(), v) }
 
     fun rule(kind: String): AlertRule =

@@ -218,7 +218,11 @@ fun AlertsListSheet(model: DriveViewModel, mapState: NavigationMapState, onClose
     // redraw froze the sheet for a second. One row per thing.
     var sorted by remember { mutableStateOf<List<RoadMarker>?>(null) }
     LaunchedEffect(markers, direct, here) {
-        val shown = (markers + direct).filter { model.prefs.isShown(it.kind) && it.kind != "camera" && it.kind != "rwis" }
+        val hidden = Engine.sources.hidden.value
+        val shown = (markers + direct).filter {
+            model.prefs.isShown(it.kind) && it.kind != "camera" && it.kind != "rwis" &&
+                (it.kind != "plugin" || PluginStyle.sourceId(it) !in hidden)
+        }
         val h = here
         sorted = withContext(kotlinx.coroutines.Dispatchers.Default) {
             if (h == null) shown.take(100) else {
