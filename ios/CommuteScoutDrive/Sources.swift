@@ -247,7 +247,8 @@ final class SourcesStore: ObservableObject {
     func loadCatalog() async {
         guard let r = try? await Backend.get("api/flare/sources", as: SourcesResponse.self) else { return }
         catalog = r.sources.map {
-            FlareSource(id: $0.id, name: $0.name, base: nil, token: nil, refreshS: $0.refresh_s ?? 60, canReport: false, canConfirm: false,
+            FlareSource(id: $0.id, name: $0.name, base: nil, token: nil, refreshS: $0.refresh_s ?? 60, canReport: false,
+                        canConfirm: $0.capabilities?["confirm"] ?? false,
                         attribution: $0.attribution?.name, trust: $0.trust, tier: $0.tier ?? "unreviewed", count: $0.count ?? 0, ok: $0.ok,
                         summary: $0.description, coverage: $0.coverage, kinds: $0.kinds ?? [],
                         acceptsReports: $0.capabilities?["report"] ?? false,

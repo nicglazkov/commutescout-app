@@ -449,6 +449,25 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         return _postedLimitKmh.value
     }
 
+    /** Whether a marker's plugin takes confirmations (Still there / Gone). */
+    fun canConfirm(m: RoadMarker): Boolean {
+        if (m.kind != "plugin" || m.id == null) return false
+        val sid = PluginStyle.sourceId(m)
+        return (sources.catalog.value.firstOrNull { it.id == sid } ?: sources.mine.value.firstOrNull { it.id == sid })?.canConfirm ?: false
+    }
+
+    /** A vote on a community report, from the banner: no sheets while driving, a toast says what happened. */
+    fun vote(m: RoadMarker, v: String) {
+        val id = m.id ?: return
+        viewModelScope.launch {
+            if (!Connectivity.online.value) { toast("No signal: the vote did not go through."); return@launch }
+            val token = account.token() ?: run { toast("Sign in (Settings) to confirm reports."); return@launch }
+            runCatching { Reporter.confirm(id, v, token) }
+                .onSuccess { toast(if (v == "up") "Thanks, confirmed." else "Thanks, marked as gone.") }
+                .onFailure { toast(if (Connectivity.isOffline(it)) "No signal: the vote did not go through." else "Could not record that.") }
+        }
+    }
+
     fun applyPrefs() {
         Engine.alerts.spoken = prefs.spokenAlerts
         Engine.alerts.announceAheadMeters = prefs.alertAheadMeters

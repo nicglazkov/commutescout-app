@@ -20,6 +20,7 @@ struct AlertBanner: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
         HStack(spacing: 12) {
             MarkerGlyph(marker: item.marker, size: 30)
                 .frame(width: 44, height: 44)
@@ -35,23 +36,50 @@ struct AlertBanner: View {
                 }
             }
             Spacer(minLength: 0)
-            Button { model.alerts.dismiss(item.id) } label: {
-                Image(systemName: "xmark").font(.body.weight(.bold)).foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
-            }
-            .accessibilityIdentifier("alert-dismiss")
         }
-        .padding(.leading, 12).padding(.trailing, 4).padding(.vertical, 8)
+        .padding(.leading, 12).padding(.trailing, 12).padding(.top, 10).padding(.bottom, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { model.alerts.say(item.marker) }
+        // The buttons a hand can hit from the wheel: big, colored, one
+        // row. Dismiss always; Still there and Gone when the plugin takes
+        // confirmations (the Waze relay does), and those dismiss too.
+        HStack(spacing: 8) {
+            if model.canConfirm(item.marker) {
+                bigButton("Still there", "hand.thumbsup.fill", Color(red: 0.13, green: 0.55, blue: 0.24), id: "alert-confirm-up") {
+                    Task { await model.vote(item.marker, "up") }
+                    model.alerts.dismiss(item.id)
+                }
+                bigButton("Gone", "hand.thumbsdown.fill", Color(red: 0.78, green: 0.16, blue: 0.16), id: "alert-confirm-gone") {
+                    Task { await model.vote(item.marker, "gone") }
+                    model.alerts.dismiss(item.id)
+                }
+            }
+            bigButton("Dismiss", "xmark", Color(red: 0.25, green: 0.28, blue: 0.33), id: "alert-dismiss") { model.alerts.dismiss(item.id) }
+        }
+        .padding(.horizontal, 10).padding(.bottom, 10)
+        }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 16).fill(color).frame(width: 5).padding(.vertical, 8).padding(.leading, 1)
         }
         .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
-        .contentShape(Rectangle())
-        .onTapGesture { model.alerts.say(item.marker) }
         .gesture(DragGesture(minimumDistance: 20).onEnded { g in if g.translation.height < -20 { model.alerts.dismiss(item.id) } })
         .transition(.move(edge: .top).combined(with: .opacity))
         .accessibilityIdentifier("alert-banner")
+    }
+
+    private func bigButton(_ label: String, _ symbol: String, _ color: Color, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: symbol).font(.body.weight(.bold))
+                Text(label).font(.subheadline.weight(.bold)).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(color, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
     }
 }
 

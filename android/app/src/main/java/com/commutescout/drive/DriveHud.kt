@@ -19,8 +19,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,17 +52,16 @@ import kotlin.math.roundToInt
  * with the X, a swipe up, or once the alert is behind.
  */
 @Composable
-fun AlertBanner(item: Upcoming, along: Double, more: Int, onDismiss: () -> Unit, onTap: () -> Unit) {
+fun AlertBanner(item: Upcoming, along: Double, more: Int, canConfirm: Boolean, onVote: (String) -> Unit, onDismiss: () -> Unit, onTap: () -> Unit) {
     val m = item.marker
     val color = if (m.kind == "plugin") PluginStyle.color(PluginStyle.sourceId(m)) else MarkerIcons.color(m.kind)
-    Row(
+    Column(
         Modifier.fillMaxWidth().shadow(8.dp, RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-            .clickable(onClick = onTap)
             .pointerInput(item.id) { detectVerticalDragGestures { _, dy -> if (dy < -12) onDismiss() } }
             .testTag("alert-banner"),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onTap), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.width(5.dp).height(56.dp).padding(vertical = 8.dp).background(color, RoundedCornerShape(3.dp)))
         Spacer(Modifier.width(10.dp))
         Box(Modifier.size(44.dp).background(color.copy(alpha = 0.15f), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
@@ -76,7 +76,28 @@ fun AlertBanner(item: Upcoming, along: Double, more: Int, onDismiss: () -> Unit,
                 if (more > 0) Text("  +$more more", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        IconButton(onDismiss, Modifier.testTag("alert-dismiss")) { Icon(Icons.Default.Close, "Dismiss", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+        Spacer(Modifier.width(12.dp))
+    }
+    // The buttons a hand can hit from the wheel: big, colored, one row.
+    // Dismiss always; Still there and Gone when the plugin takes
+    // confirmations (the Waze relay does), and those dismiss too.
+    Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 10.dp, top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (canConfirm) {
+            BigButton("Still there", Icons.Default.ThumbUp, Color(0xFF2E7D32), Modifier.weight(1.25f).testTag("alert-confirm-up"), iconToo = false) { onVote("up"); onDismiss() }
+            BigButton("Gone", Icons.Default.ThumbDown, Color(0xFFC62828), Modifier.weight(1f).testTag("alert-confirm-gone"), iconToo = false) { onVote("gone"); onDismiss() }
+        }
+        BigButton("Dismiss", Icons.Default.Close, Color(0xFF3F4854), Modifier.weight(1f).testTag("alert-dismiss"), iconToo = !canConfirm, onClick = onDismiss)
+    }
+    }
+}
+
+@Composable
+private fun BigButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, color: Color, modifier: Modifier, iconToo: Boolean = true, onClick: () -> Unit) {
+    // Three across, the words alone fit; the icon joins when there is room.
+    Row(modifier.height(52.dp).background(color, RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        if (iconToo) { Icon(icon, null, tint = Color.White); Spacer(Modifier.width(6.dp)) }
+        Text(label, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, fontSize = 15.sp)
     }
 }
 
