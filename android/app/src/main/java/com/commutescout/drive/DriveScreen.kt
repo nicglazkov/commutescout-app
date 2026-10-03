@@ -33,6 +33,12 @@ import android.app.Activity
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -171,7 +177,6 @@ import kotlin.math.max
 @Composable
 fun DriveScreen(model: DriveViewModel) {
     val prefs = model.prefs
-    if (prefs.keepAwake) KeepScreenOnDisposableEffect()
     val state by model.state.collectAsStateWithLifecycle()
     val error by model.error.collectAsStateWithLifecycle()
     val uiState by model.navigationUiState.collectAsStateWithLifecycle()
@@ -217,7 +222,11 @@ fun DriveScreen(model: DriveViewModel) {
         Manifest.permission.POST_NOTIFICATIONS,
     ) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
-        model.setLocationPermission(granted[Manifest.permission.ACCESS_FINE_LOCATION] == true)
+        // "Approximate" is a grant too: the map follows, a little loosely.
+        val fine = granted[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarse = granted[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        model.setLocationPermission(fine || coarse)
+        if (coarse && !fine) model.toast("Precise location gives better alerts. Turn it on in Settings.")
     }
     LaunchedEffect(Unit) { if (!hasPermission) launcher.launch(permissions) }
 
@@ -252,6 +261,14 @@ fun DriveScreen(model: DriveViewModel) {
     // way the car points. Only while the map is still on the driver: a
     // map that was panned away is left where it was put.
     val driving by model.driving.collectAsStateWithLifecycle()
+    // The screen stays on while a trip runs or the car is moving, if the
+    // setting says so; a phone left on the seat may sleep.
+    if (prefs.keepAwake && (isNavigating || driving)) KeepScreenOnDisposableEffect()
+    // The bottom card's real height, so the side buttons and the
+    // speedometer clear a camera card as well as a short one.
+    var cardPx by remember { mutableIntStateOf(0) }
+    val cardDp = with(LocalDensity.current) { cardPx.toDp() } - WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding()
+    val aboveCard = if (cardPx > 0) cardDp.coerceAtLeast(0.dp) + 12.dp else 12.dp
     val course by model.course.collectAsStateWithLifecycle()
     val speedMps by model.speedMps.collectAsStateWithLifecycle()
     val ahead by model.alerts.ahead.collectAsStateWithLifecycle()
@@ -322,7 +339,11 @@ fun DriveScreen(model: DriveViewModel) {
             config = VisualNavigationViewConfig.Default(),
             views = NavigationViewComponentBuilder.Default().withCustomOverlayView { modifier ->
                 if (!uiState.isNavigating()) {
-                    BrowsingOverlay(modifier, model, offlineNotice, onSettings = { showSettings = true }, onLayers = { showTools = true })
+                    BrowsingOverlay(modifier, model, offlineNotice, onSettings = { showSettings = true }, onLayers = { showTools = true },
+                        banner = bannerItem?.let { next -> {
+                            AlertBanner(next, along, ahead.size - 1, canConfirm = model.canConfirm(next.marker),
+                                onVote = { v -> model.vote(next.marker, v) }, onDismiss = { model.alerts.dismiss(next.id) }) { model.alerts.say(next.marker) }
+                        } })
                 }
             },
             onTapExit = { model.stopNavigation() },
@@ -346,22 +367,28 @@ fun DriveScreen(model: DriveViewModel) {
             bannerItem?.let { AlertRing(it, along) }
         }
 
-        // The alert ahead, on a trip or driving without one, as a banner
-        // at the top: under the search bar while browsing, under the
-        // instruction card on a trip.
-        bannerItem?.let { next ->
-            // On a trip the banner leaves room for Ferrostar's buttons on the right.
-            Box(Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(start = 12.dp, end = if (isNavigating) 72.dp else 12.dp)
-                .padding(top = if (isNavigating) 132.dp else 112.dp)) {
-                AlertBanner(next, along, ahead.size - 1, canConfirm = model.canConfirm(next.marker),
-                    onVote = { v -> model.vote(next.marker, v) }, onDismiss = { model.alerts.dismiss(next.id) }) { model.alerts.say(next.marker) }
+        // On a trip the alert ahead sits bottom-left above the speedometer,
+        // clear of the instruction card and Ferrostar's side buttons; while
+        // browsing it is under the search row in the overlay. The offline
+        // or rerouting notice goes on top of the stack.
+        if (isNavigating) {
+            val rerouting = online && uiState.isCalculatingNewRoute == true
+            val notice = offlineNotice ?: if (rerouting) "Rerouting" to "Finding a new route from here." else null
+            Column(Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = 12.dp, end = 76.dp, bottom = 124.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.Start) {
+                notice?.let { (title, detail) -> OfflineBanner(title, detail, if (offlineNotice != null) Icons.Default.WifiOff else Icons.Default.Sync) }
+                bannerItem?.let { next ->
+                    AlertBanner(next, along, ahead.size - 1, canConfirm = model.canConfirm(next.marker),
+                        onVote = { v -> model.vote(next.marker, v) }, onDismiss = { model.alerts.dismiss(next.id) }) { model.alerts.say(next.marker) }
+                }
+                if (prefs.showSpeedLimit) Speedometer(speedMps, model.limitKmh(uiState))
             }
         }
 
         // Map controls: 2D/3D, compass when turned, my location. While
         // navigating Ferrostar draws its own zoom and recenter buttons.
         Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = 12.dp,
-            bottom = if (isNavigating) 118.dp else bottomCardHeight(state, selected, resumable != null) + 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            bottom = if (isNavigating) 118.dp else aboveCard), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (!isNavigating && abs(bearing) > 1.0) {
                 RoundIcon(Icons.Default.Navigation, "Face north", tint = Color(0xFFD32F2F), rotate = -bearing.toFloat(), tag = "compass") {
                     scope.launch { mapState.cameraState.animateTo(mapState.cameraState.position.copy(bearing = 0.0)) }
@@ -380,10 +407,10 @@ fun DriveScreen(model: DriveViewModel) {
                 Text("Report", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, lineHeight = 12.sp)
             }
         }
-        // The speedometer, above the trip bar and left of the side buttons.
-        if (prefs.showSpeedLimit && (speedMps >= 0 || isNavigating)) {
-            Box(Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = 12.dp,
-                bottom = if (isNavigating) 124.dp else bottomCardHeight(state, selected, resumable != null) + 12.dp)) {
+        // The speedometer while browsing, left of the side buttons; on a
+        // trip it is in the stack above.
+        if (prefs.showSpeedLimit && speedMps >= 0 && !isNavigating) {
+            Box(Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = 12.dp, bottom = aboveCard)) {
                 Speedometer(speedMps, model.limitKmh(uiState))
             }
         }
@@ -394,21 +421,7 @@ fun DriveScreen(model: DriveViewModel) {
             }
         }
 
-        // While navigating, above the alert strip: the offline notice when
-        // there is no signal (a reroute cannot happen then, and saying
-        // "Rerouting" would be a promise the app cannot keep), otherwise
-        // the reroute in progress.
-        if (isNavigating) {
-            val rerouting = online && uiState.isCalculatingNewRoute == true
-            val banner = offlineNotice ?: if (rerouting) "Rerouting" to "Finding a new route from here." else null
-            banner?.let { (title, detail) ->
-                Box(Modifier.align(Alignment.BottomStart).padding(start = 12.dp, end = 76.dp, bottom = 196.dp)) {
-                    OfflineBanner(title, detail, if (offlineNotice != null) Icons.Default.WifiOff else Icons.Default.Sync)
-                }
-            }
-        }
-
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { cardPx = it.height }) {
             if (isNavigating) {
                 // Ferrostar's trip bar owns the bottom while navigating.
             } else if (selected != null) {
@@ -445,15 +458,6 @@ fun DriveScreen(model: DriveViewModel) {
         AlertDialog(onDismissRequest = { model.clearError() }, confirmButton = { TextButton({ model.clearError() }) { Text("OK") } },
             title = { Text("Something went wrong") }, text = { Text(it) })
     }
-}
-
-private fun bottomCardHeight(state: DriveState, selected: RoadMarker?, resumable: Boolean = false) = when {
-    selected != null -> 170.dp
-    state is DriveState.Browsing && resumable -> 150.dp
-    state is DriveState.Found -> 150.dp
-    state is DriveState.Routing -> 80.dp
-    state is DriveState.Choosing -> 330.dp
-    else -> 0.dp
 }
 
 private fun zoomFor(dlat: Double, dlon: Double): Double {
@@ -655,7 +659,7 @@ private fun RouteLine(route: Route) {
 /** Search, settings and layers, floating over the map while browsing. */
 @Composable
 private fun BrowsingOverlay(modifier: Modifier, model: DriveViewModel, offline: Pair<String, String>?,
-                            onSettings: () -> Unit, onLayers: () -> Unit) {
+                            onSettings: () -> Unit, onLayers: () -> Unit, banner: (@Composable () -> Unit)? = null) {
     Column(modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 12.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.Top) {
             Box(Modifier.weight(1f)) { SearchBar(model) }
@@ -669,6 +673,12 @@ private fun BrowsingOverlay(modifier: Modifier, model: DriveViewModel, offline: 
         offline?.let { (title, detail) ->
             Spacer(Modifier.height(8.dp))
             OfflineBanner(title, detail, Icons.Default.WifiOff)
+        }
+        // The alert ahead while driving with no trip, under whatever is
+        // above it rather than at a guessed offset.
+        banner?.let {
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.fillMaxWidth().padding(end = 56.dp)) { it() }
         }
     }
 }
@@ -814,7 +824,7 @@ private fun SearchBar(model: DriveViewModel) {
                     model.places.work?.let { p -> RowItem(Icons.Default.Work, "Work", p.shortName, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
                     model.places.saved.take(5).forEach { p -> RowItem(Icons.Default.Star, p.shortName, p.name, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
                     model.places.recents.take(10).forEach { p -> RowItem(Icons.Default.History, p.shortName, p.name, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
-                    if (places.isEmpty()) Text("Type a place, an address, or coordinates like 37.35, -121.94.",
+                    if (places.isEmpty()) Text("Type a place, an address, or coordinates like ${exampleCoords(model.here.value)}.",
                         Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -1280,6 +1290,12 @@ object AutoDrive {
             (model.state.value as? DriveState.Choosing)?.let { c -> model.start(c.routes.first(), c.place) }
         }
     }
+}
+
+/** Coordinates near the driver for the search hint, so an example reads as local anywhere in the country. */
+private fun exampleCoords(here: LatLon?): String {
+    val p = here ?: LatLon(39.74, -104.99)
+    return String.format(java.util.Locale.US, "%.2f, %.2f", Math.round(p.lat * 100) / 100.0 + 0.01, Math.round(p.lon * 100) / 100.0 - 0.01)
 }
 
 /** A spot kept through an activity recreate: two doubles, or nothing. */
