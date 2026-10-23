@@ -667,5 +667,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
 
     override fun toggleMute() {
         super.toggleMute()
+        // One mute for both voices: guidance and the hazard alerts.
+        Engine.alerts.muted = Engine.tts.isMuted
     }
 }

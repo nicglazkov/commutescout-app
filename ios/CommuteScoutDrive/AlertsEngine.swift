@@ -80,6 +80,9 @@ final class AlertsEngine: ObservableObject {
     /// share one label (the same ramp closure recorded per lane).
     private var spokenAt: [String: Date] = [:]
     @Published var spoken = true
+    /// The driver's mute: no alert speaks on its own, whatever the per-kind
+    /// rules say. A tap to repeat one still does.
+    var muted = false
     var announceAheadMeters = 1500.0
     /// Per-kind rules from Settings; nil means the one distance above.
     var rules: ((RoadMarker) -> Prefs.AlertRule)?
@@ -247,11 +250,11 @@ final class AlertsEngine: ObservableObject {
             let gap = item.alongMeters - along
             if !announced.contains(item.id), gap <= rule.firstMeters, gap > -100 {
                 announced.insert(item.id)
-                if rule.speak { announce(item.marker, in: gap) }
+                if rule.speak && !muted { announce(item.marker, in: gap) }
             } else if announced.contains(item.id), !repeated.contains(item.id), rule.repeatMeters > 0,
                       gap <= rule.repeatMeters, gap > -100 {
                 repeated.insert(item.id)
-                if rule.speak { announce(item.marker, in: gap) }
+                if rule.speak && !muted { announce(item.marker, in: gap) }
             }
         }
     }

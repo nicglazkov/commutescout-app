@@ -807,6 +807,7 @@ final class AppModel: ObservableObject {
         muted = core.spokenInstructionObserver.isMuted
         // One mute for both voices.
         alerts.spoken = prefs.spokenAlerts && !muted
+        alerts.muted = muted
     }
 
     /// The screen stays on while a trip runs or the car is moving, if

@@ -54,6 +54,9 @@ class AlertsEngine(context: Context) {
     private val _hereAlong = MutableStateFlow(0.0)
     val hereAlong = _hereAlong.asStateFlow()
     var spoken = true
+    /** The driver's mute: no alert speaks on its own, whatever the per-kind
+     *  rules say. A tap to repeat one still does. */
+    @Volatile var muted = false
     var announceAheadMeters = 1500.0
     /** Per-kind rules from Settings; null means the one distance above. */
     var rules: ((RoadMarker) -> Prefs.AlertRule)? = null
@@ -346,10 +349,10 @@ class AlertsEngine(context: Context) {
             val gap = item.alongMeters - along
             if (item.id !in announced && gap <= rule.firstMeters && gap > -100) {
                 announced.add(item.id)
-                if (rule.speak) say(item.marker, gap)
+                if (rule.speak && !muted) say(item.marker, gap)
             } else if (item.id in announced && item.id !in repeated && rule.repeatMeters > 0 && gap <= rule.repeatMeters && gap > -100) {
                 repeated.add(item.id)
-                if (rule.speak) say(item.marker, gap)
+                if (rule.speak && !muted) say(item.marker, gap)
             }
         }
     }
