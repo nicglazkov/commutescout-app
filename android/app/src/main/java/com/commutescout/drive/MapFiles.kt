@@ -41,7 +41,7 @@ import java.io.File
  */
 object MapFiles {
     private const val TAG = "MapFiles"
-    const val DEFAULT_US = "https://data.commutescout.com/map/us.pmtiles"
+    const val DEFAULT_US = "https://maps.commutescout.com/us.pmtiles"
     val flavors = listOf("positron", "bright", "slate", "light", "dark", "grayscale")
     /** Styles drawn from OpenFreeMap's tiles: online only. Offline, the map draws Light from the saved file instead. */
     private val onlineFlavors = setOf("positron", "bright")
