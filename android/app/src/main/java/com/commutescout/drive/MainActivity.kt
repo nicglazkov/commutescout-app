@@ -79,7 +79,10 @@ class MainActivity : ComponentActivity(), AndroidTtsStatusListener {
 
     override fun onDestroy() {
         super.onDestroy()
-        Engine.tts.shutdown()
+        // A trip outlives the activity in the foreground service, and a
+        // rotation brings the activity straight back: the guidance voice
+        // must survive both. onStart starts it only when it is not running.
+        if (!isChangingConfigurations && !Engine.tripActive) Engine.tts.shutdown()
     }
 
     override fun onTtsInitialized(tts: TextToSpeech?, status: Int) {
