@@ -161,7 +161,7 @@ private fun PluginListing(s: FlareSource, installed: Boolean, onStatus: (FlareSo
             HorizontalDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(if (s.trust == "official") "Official CommuteScout plugin" else if (s.tier == "approved") "Reviewed by CommuteScout"
-                     else "Public, not reviewed. It never speaks unless you turn voice on for it.",
+                     else "Public, not reviewed. Its alerts are spoken like any other; change that in Settings > Alerts.",
                     Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
                     color = if (s.tier == "approved") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
                 TextButton({ onStatus(s) }, Modifier.testTag("status-${s.id}")) { Text("Status") }

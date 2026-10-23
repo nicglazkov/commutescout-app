@@ -575,7 +575,7 @@ struct PluginCard: View {
             Divider()
             HStack {
                 Text(source.trust == "official" ? "Official CommuteScout plugin" : source.tier == "approved" ? "Reviewed by CommuteScout"
-                     : "Public, not reviewed. It never speaks unless you turn voice on for it.")
+                     : "Public, not reviewed. Its alerts are spoken like any other; change that in Settings > Alerts.")
                     .font(.caption2).foregroundStyle(source.tier == "approved" ? Color.green : Color.orange)
                 Spacer()
                 NavigationLink { PluginStatusView(sourceId: source.id) } label: {
