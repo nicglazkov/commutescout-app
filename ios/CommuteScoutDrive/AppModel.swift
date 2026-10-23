@@ -315,7 +315,8 @@ final class AppModel: ObservableObject {
             locationProvider: location,
             navigationControllerConfig: config,
             networkSession: Backend.session,
-            annotation: AnnotationPublisher<ValhallaExtendedOSRMAnnotation>.valhallaExtendedOSRM()
+            annotation: AnnotationPublisher<ValhallaExtendedOSRMAnnotation>.valhallaExtendedOSRM(),
+            spokenInstructionObserver: .initAVSpeechSynthesizer(synthesizer: Voice.synth)
         )
     }
 

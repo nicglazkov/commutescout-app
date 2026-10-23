@@ -53,6 +53,13 @@ final class SpeechFocus: NSObject, AVSpeechSynthesizerDelegate {
     }
 }
 
+/// One voice for the whole app: the turn instructions and the road
+/// alerts go through the same synthesizer, so a sentence waits for the
+/// one before it instead of talking over it.
+enum Voice {
+    static let synth = AVSpeechSynthesizer()
+}
+
 @MainActor
 final class AlertsEngine: ObservableObject {
     struct Upcoming: Identifiable, Hashable {
@@ -106,7 +113,7 @@ final class AlertsEngine: ObservableObject {
     private var timer: Timer?
     private var box: (south: Double, west: Double, north: Double, east: Double)?
     private var lastSegment = 0
-    private let synth = AVSpeechSynthesizer()
+    private let synth = Voice.synth
     private let focus = SpeechFocus()
 
     static let refreshSeconds = 60.0
