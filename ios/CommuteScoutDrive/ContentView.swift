@@ -254,7 +254,11 @@ struct ContentView: View {
             case let .found(place):
                 PlaceCard(place: place)
             case .routing:
-                HStack(spacing: 10) { ProgressView(); Text("Finding routes") }
+                HStack(spacing: 10) {
+                    ProgressView(); Text("Finding routes")
+                    Spacer()
+                    Button("Cancel") { model.cancelRouting() }
+                }
                     .padding(16).frame(maxWidth: .infinity)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                     .padding(12)

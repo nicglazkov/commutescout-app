@@ -432,7 +432,8 @@ fun DriveScreen(model: DriveViewModel) {
                 is DriveState.Routing -> Card(Modifier.padding(12.dp).fillMaxWidth().safeDrawingPadding()) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(20.dp))
-                        Spacer(Modifier.width(10.dp)); Text("Finding routes")
+                        Spacer(Modifier.width(10.dp)); Text("Finding routes", Modifier.weight(1f))
+                        TextButton({ model.cancelRouting() }) { Text("Cancel") }
                     }
                 }
                 is DriveState.Choosing -> RoutesCard(s.routes, s.place, model) { chosenRoute = it }
