@@ -258,10 +258,20 @@ final class SourcesStore: ObservableObject {
         await discoverOwnSessions(r.sources.compactMap { s in s.base.map { (s.id, $0) } })
     }
 
+    /// Whether a plugin runs on CommuteScout's own hosts. Only those may
+    /// receive the account token: the backend accepts that token for an
+    /// hour, so a third-party plugin holding it could act as the person.
+    static func isFirstParty(_ base: String) -> Bool {
+        guard let c = URLComponents(string: base), c.scheme == "https", c.port == nil, c.user == nil,
+              let host = c.host?.lowercased() else { return false }
+        return host == "commutescout.com" || host.hasSuffix(".commutescout.com")
+            || host.hasSuffix("-15002631928.us-west1.run.app")
+    }
+
     /// Catalog plugins whose handshake offers user sessions get polled here.
     private func discoverOwnSessions(_ bases: [(String, String)]) async {
         var found: [FlareSource] = []
-        for (id, base) in bases where base.hasPrefix("https://") {
+        for (id, base) in bases where Self.isFirstParty(base) {
             guard let url = URL(string: base + "/flare/v1/handshake") else { continue }
             var req = URLRequest(url: url)
             req.setValue("application/json", forHTTPHeaderField: "Accept")

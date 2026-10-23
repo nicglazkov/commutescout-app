@@ -125,6 +125,17 @@ data class FlareSource(
 }
 @Serializable private data class FlareAlerts(val alerts: List<FlareAlert> = emptyList(), val ttl_s: Int? = null, val session: String? = null)
 
+/** Whether a plugin runs on CommuteScout's own hosts. Only those may
+ *  receive the account token: the backend accepts that token for an hour,
+ *  so a third-party plugin holding it could act as the person. */
+fun isFirstParty(base: String): Boolean {
+    val u = runCatching { java.net.URI(base) }.getOrNull() ?: return false
+    if (u.scheme != "https" || u.port != -1 || u.userInfo != null) return false
+    val host = u.host?.lowercase() ?: return false
+    return host == "commutescout.com" || host.endsWith(".commutescout.com") ||
+        host.endsWith("-15002631928.us-west1.run.app")
+}
+
 /**
  * The catalog and the driver's own sources. Public sources are drawn
  * through commutescout.com (mediated); direct sources are polled here
@@ -226,7 +237,7 @@ class SourcesStore(context: Context) {
     private suspend fun discoverOwnSessions(bases: List<Pair<String, String>>) {
         val found = ArrayList<FlareSource>()
         for ((id, base) in bases) {
-            if (!base.startsWith("https://")) continue
+            if (!isFirstParty(base)) continue
             val text = runCatching {
                 withContext(Dispatchers.IO) {
                     val b = Request.Builder().url("$base/flare/v1/handshake").header("Accept", "application/json")
