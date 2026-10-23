@@ -62,7 +62,7 @@ final class MapFiles: ObservableObject {
     /// Styles drawn from OpenFreeMap's tiles: online only. Offline, the
     /// map draws Light from the saved file instead.
     static let onlineFlavors: Set<String> = ["positron", "bright"]
-    static let defaultUS = "https://data.commutescout.com/map/us.pmtiles"
+    static let defaultUS = "https://maps.commutescout.com/us.pmtiles"
     /// A trip corridor is kept this long; it is for one drive.
     static let corridorKeep: TimeInterval = 7 * 24 * 3600
     static let corridorMax = 6
