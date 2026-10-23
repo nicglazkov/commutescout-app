@@ -597,7 +597,11 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         }
         _state.value = DriveState.Routing
         _selectedMarker.value = null
-        viewModelScope.launch {
+        // A newer request, or Cancel, replaces this one: its answer must
+        // not land on top of whatever the driver moved on to.
+        routeJob?.cancel()
+        routingPlace = place
+        routeJob = viewModelScope.launch {
             try {
                 val found = withContext(Dispatchers.IO) {
                     Engine.core.getRoutes(
@@ -607,6 +611,8 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
                 }
                 if (found.isEmpty()) throw BackendError("No route found. Try a different destination.")
                 _state.value = DriveState.Choosing(found, place)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w("DriveViewModel", "routes failed: $e")
                 // The raw exception ("Unable to resolve host ...") is for the log, not the driver.
@@ -617,6 +623,17 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
                 })
                 _state.value = DriveState.Found(place)
             }
+        }
+    }
+
+    private var routeJob: Job? = null
+    private var routingPlace: Place? = null
+
+    /** "Finding routes" can take twenty seconds on a weak signal: back to the pin. */
+    fun cancelRouting() {
+        routeJob?.cancel(); routeJob = null
+        if (_state.value is DriveState.Routing) {
+            _state.value = routingPlace?.let { DriveState.Found(it) } ?: DriveState.Browsing
         }
     }
 

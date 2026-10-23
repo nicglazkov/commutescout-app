@@ -625,6 +625,11 @@ final class AppModel: ObservableObject {
         // route from there starts with an immediate reroute. Wait briefly
         // for a fresh one.
         state = .routing   // "Finding routes" shows at once, wait or not
+        // A newer request, or Cancel, bumps the generation: this one's
+        // answer must not land on top of whatever the driver moved on to.
+        routeGen += 1
+        let gen = routeGen
+        routingPlace = place
         if origin == nil, let ts = location.lastLocation?.clLocation.timestamp, Date().timeIntervalSince(ts) > 20 {
             DriveLog.note("routes: last fix \(Int(Date().timeIntervalSince(ts))) s old, waiting for a fresh one")
             for _ in 0 ..< 6 {
@@ -632,6 +637,7 @@ final class AppModel: ObservableObject {
                 if let t2 = location.lastLocation?.clLocation.timestamp, Date().timeIntervalSince(t2) <= 20 { break }
             }
         }
+        guard gen == routeGen else { return }
         guard let from = origin?.coordinate ?? here else {
             DriveLog.note("routes: no position yet (denied=\(location.denied))")
             // Back to the pin, or "Finding routes" stays up behind the
@@ -648,6 +654,7 @@ final class AppModel: ObservableObject {
                 initialLocation: UserLocation(clCoordinateLocation2D: from),
                 waypoints: via.map { Waypoint(coordinate: GeographicCoordinate(cl: $0), kind: .via) }
                     + [Waypoint(coordinate: GeographicCoordinate(cl: place.coordinate), kind: .break)])
+            guard gen == routeGen else { return }
             guard !found.isEmpty else { throw DriveError.noRoute }
             preview = found.first
             state = .choosing(found, place)
@@ -657,12 +664,23 @@ final class AppModel: ObservableObject {
                     edgePadding: .init(top: 140, left: 40, bottom: 340, right: 40))
             }
         } catch {
+            guard gen == routeGen else { return }
             DriveLog.note("routes failed to '\(place.name)': \(error)")
             errorMessage = (error as? DriveError)?.errorDescription
                 ?? (!online || Connectivity.isOffline(error) ? OfflineText.routes
                     : "Could not get a route. Try again in a moment.")
             state = .found(place)
         }
+    }
+
+    private var routeGen = 0
+    private var routingPlace: Place?
+
+    /// "Finding routes" can take twenty seconds on a weak signal: back to the pin.
+    func cancelRouting() {
+        routeGen += 1
+        guard case .routing = state else { return }
+        state = routingPlace.map { .found($0) } ?? .browsing
     }
 
     func start(_ route: Route, to place: Place) {
