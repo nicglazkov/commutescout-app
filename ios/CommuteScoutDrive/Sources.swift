@@ -228,6 +228,24 @@ final class SourcesStore: ObservableObject {
         DriveLog.note("plugins: account has \(hidden.count) switched off, \(added) private plugin(s) added")
     }
 
+    /// Signing out: private plugins and their tokens came from, or went
+    /// to, the account, so they leave the phone with it; otherwise the
+    /// next account to sign in here would inherit them. Own sessions stay
+    /// listed and simply stop polling without an account. Nothing is pushed.
+    func forgetForSignOut() {
+        for s in mine {
+            KeychainStore.remove(tokenPrefix + s.id)
+            timers[s.id]?.invalidate(); timers[s.id] = nil
+            backoff[s.id] = nil
+            perSource[s.id] = nil
+        }
+        mine = []
+        hidden = []
+        UserDefaults.standard.removeObject(forKey: mineKey)
+        UserDefaults.standard.removeObject(forKey: hiddenKey)
+        rebuild()
+    }
+
     /// After a change: the account learns this phone's switches and its
     /// private plugins, tokens included, so the next device has them too.
     private func pushToAccount() {

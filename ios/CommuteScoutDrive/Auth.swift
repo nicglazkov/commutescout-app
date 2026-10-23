@@ -85,6 +85,8 @@ final class Account: NSObject, ObservableObject {
 
     /// Runs before the Firebase user goes away, while a token can still be minted.
     var beforeSignOut: (() async -> Void)?
+    /// Runs once the account is deleted, to clear what this phone kept of it.
+    var afterDelete: (() async -> Void)?
 
     func signOut() {
         Task { @MainActor in
@@ -107,6 +109,7 @@ final class Account: NSObject, ObservableObject {
             guard let http = resp as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else { throw AccountError.server }
             try await user.delete()
             GIDSignIn.sharedInstance.signOut()
+            await afterDelete?()
             return true
         } catch {
             self.error = "Could not delete the account: \(error.localizedDescription)"

@@ -83,6 +83,8 @@ class Account(context: Context) {
 
     /** Runs before the Firebase user goes away, while a token can still be minted. */
     var beforeSignOut: (suspend () -> Unit)? = null
+    /** Runs once the account is deleted, to clear what this phone kept of it. */
+    var afterDelete: (suspend () -> Unit)? = null
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
 
     fun signOut() {
@@ -104,6 +106,7 @@ class Account(context: Context) {
             val (status, _) = Backend.send("DELETE", "/api/watch/account", token)
             if (status !in 200..299) throw BackendError("HTTP $status")
             u.delete().await()
+            runCatching { afterDelete?.invoke() }
             true
         } catch (e: Exception) {
             _error.value = "Could not delete the account: ${e.message}"

@@ -218,7 +218,15 @@ object Engine {
         places.tokenProvider = { account.token() }
         push = PushRegistrar(app, account)
         PushRegistrar.ensureChannel(app)
-        account.beforeSignOut = { push.forget() }
+        account.beforeSignOut = {
+            push.forget()
+            places.forgetForSignOut()
+            sources.forgetForSignOut()
+        }
+        account.afterDelete = {
+            places.forgetForSignOut(flush = false)
+            sources.forgetForSignOut()
+        }
         // The dots start loading here, not from the map's first camera
         // callback. This fetch runs beside map setup and the camera
         // animation rather than after both of them, which is the whole
