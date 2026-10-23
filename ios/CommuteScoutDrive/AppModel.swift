@@ -324,7 +324,15 @@ final class AppModel: ObservableObject {
         location.delegate = relay
         sources.tokenProvider = { [weak self] in await self?.account.token() }
         places.tokenProvider = { [weak self] in await self?.account.token() }
-        account.beforeSignOut = { [weak self] in await self?.push.forget() }
+        account.beforeSignOut = { [weak self] in
+            await self?.push.forget()
+            await self?.places.forgetForSignOut()
+            self?.sources.forgetForSignOut()
+        }
+        account.afterDelete = { [weak self] in
+            await self?.places.forgetForSignOut(flush: false)
+            self?.sources.forgetForSignOut()
+        }
         accountSink = account.$user.receive(on: DispatchQueue.main).sink { [weak self] u in
             guard u != nil else { return }
             Task {

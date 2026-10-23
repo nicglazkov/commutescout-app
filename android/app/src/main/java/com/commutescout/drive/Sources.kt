@@ -201,6 +201,24 @@ class SourcesStore(context: Context) {
         Log.i("Sources", "account: ${_hidden.value.size} off, ${added.size} private plugin(s) added")
     }
 
+    /** Signing out: private plugins and their tokens came from, or went
+     * to, the account, so they leave the phone with it; otherwise the next
+     * account to sign in here would inherit them. Own sessions stay listed
+     * and simply stop polling without an account. Nothing is pushed. */
+    fun forgetForSignOut() {
+        val edit = secure.edit()
+        for (s in _mine.value) {
+            edit.remove(s.id)
+            jobs.remove(s.id)?.cancel(); perSource.remove(s.id); backoff.remove(s.id)
+        }
+        edit.apply()
+        _mine.value = emptyList()
+        _hidden.value = emptySet()
+        save()
+        p.edit().putStringSet("hidden", emptySet()).apply()
+        rebuild()
+    }
+
     /** After a change: the account learns this phone's switches and its
      * private plugins, tokens included, so the next device has them too. */
     private fun pushToAccount() {

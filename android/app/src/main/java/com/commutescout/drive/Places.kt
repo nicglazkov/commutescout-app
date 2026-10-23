@@ -96,6 +96,18 @@ class PlaceStore(context: Context) {
         runCatching { Backend.json.decodeFromString<WireBody>(text) }.getOrNull()?.let { apply(it.places); synced = true }
     }
 
+    /** Signing out: let a pending change reach the account, then drop the
+     *  list from this phone so the next account to sign in here does not
+     *  merge it in. Nothing is pushed: a push now would wipe the account.
+     *  A deleted account gets no last push (flush false): it would bring
+     *  the account's places back on the server. */
+    suspend fun forgetForSignOut(flush: Boolean = true) {
+        if (flush) pushJob?.join() else pushJob?.cancel()
+        pushJob = null
+        save(emptyList(), push = false)
+        synced = false
+    }
+
     /** After a change: the account gets this phone's list, debounced. An
      *  addition merges, so nothing saved elsewhere is lost. A removal
      *  replaces, so it is a removal everywhere, but only once this phone
