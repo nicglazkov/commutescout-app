@@ -95,17 +95,37 @@ final class DriveUITests: XCTestCase {
         app.buttons["place-close"].tap()
         app.buttons["settings"].tap()
         XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 5))
-        XCTAssertTrue(reveal(app.staticTexts["Home"]), "Home listed under Places")
+        openPage("saved-places")
+        XCTAssertTrue(reveal(app.staticTexts["Home"]), "Home listed under Saved places")
+        back()
         app.buttons["Done"].tap()
+    }
+
+    /// Settings is a home page of categories: open one by its row.
+    private func openPage(_ id: String) {
+        let row = app.descendants(matching: .any)["settings-\(id)"].firstMatch
+        XCTAssertTrue(reveal(row), "settings row \(id)")
+        row.tap()
+    }
+
+    private func back() {
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        sleep(1)   // let the pop finish
     }
 
     func testSettingsAndLayers() {
         app.buttons["settings"].tap()
         XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 5))
+        openPage("units")
+        XCTAssertTrue(app.buttons["Kilometers"].waitForExistence(timeout: 5))
         app.buttons["Kilometers"].tap()
         app.buttons["Miles"].tap()
+        back()
+        openPage("navigation")
         let tolls = app.switches["Avoid tolls"]
-        if tolls.exists { tolls.tap(); tolls.tap() }
+        if tolls.waitForExistence(timeout: 5) { tolls.tap(); tolls.tap() }
+        back()
+        openPage("alerts")
         // The row is a NavigationLink: a button labelled "Advanced alerts, Off".
         let advanced = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Advanced alerts'")).firstMatch
         XCTAssertTrue(reveal(advanced), "advanced alerts row")
@@ -124,9 +144,12 @@ final class DriveUITests: XCTestCase {
         sleep(1)
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
         XCTAssertTrue(app.staticTexts["Incidents"].waitForNonExistence(timeout: 5), "rules hidden again")
-        app.navigationBars.buttons.firstMatch.tap()   // back
+        back()   // to Alerts
+        back()   // to the home page
+        openPage("help")
         let link = app.staticTexts["Live map on the web"]
         XCTAssertTrue(reveal(link) || link.exists, "link back to the website")
+        back()
         app.buttons["Done"].tap()
         app.buttons["tools"].tap()
         app.buttons["tool-layers"].tap()

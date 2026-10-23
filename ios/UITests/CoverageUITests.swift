@@ -31,16 +31,40 @@ final class CoverageUITests: XCTestCase {
         return ok
     }
 
-    /// A SwiftUI Toggle: tap the switch itself, not its label.
+    /// A SwiftUI Toggle: tap the switch itself, not its label. A row
+    /// half under the screen's edge counts as hittable, so tap the inner
+    /// switch where there is one, and check that the value changed.
     private func flip(_ label: String) {
         let sw = app.switches[label]
         XCTAssertTrue(reveal(sw), "switch \(label)")
-        sw.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        let before = sw.value as? String
+        let inner = sw.switches.firstMatch
+        if inner.exists { inner.tap() } else { sw.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap() }
+        for _ in 0 ..< 10 where sw.value as? String == before { usleep(200_000) }
+        XCTAssertNotEqual(sw.value as? String, before, "switch \(label) flipped")
     }
 
     private func openSettings() {
         app.buttons["settings"].tap()
         XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 5))
+    }
+
+    /// Settings is a home page of categories: open one by its row.
+    private func openPage(_ id: String) {
+        let row = app.descendants(matching: .any)["settings-\(id)"].firstMatch
+        XCTAssertTrue(reveal(row), "settings row \(id)")
+        row.tap()
+    }
+
+    private func back() {
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        sleep(1)   // let the pop finish
+    }
+
+    /// Done is on the home page only: step back to it, then close.
+    private func closeSettings() {
+        for _ in 0 ..< 3 where !app.buttons["Done"].firstMatch.exists { back() }
+        app.buttons["Done"].firstMatch.tap()
     }
 
     private func search(_ text: String) {
@@ -90,12 +114,15 @@ final class CoverageUITests: XCTestCase {
         app.buttons["Save to favorites"].tap()
         app.buttons["place-close"].tap()
         openSettings()
-        XCTAssertTrue(reveal(app.staticTexts["Work"]), "Work listed under Places")
-        // Every place row has a trash button.
-        let trash = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'trash' OR label CONTAINS[c] 'delete' OR label CONTAINS[c] 'remove'"))
-        XCTAssertGreaterThan(trash.count, 0, "remove buttons on place rows")
-        trash.firstMatch.tap()
-        app.buttons["Done"].tap()
+        openPage("saved-places")
+        let work = app.staticTexts["Work"]
+        XCTAssertTrue(reveal(work), "Work listed under Saved places")
+        // Every place row swipes to Remove.
+        app.cells.containing(.staticText, identifier: "Work").firstMatch.swipeLeft()
+        XCTAssertTrue(app.buttons["Remove"].firstMatch.waitForExistence(timeout: 5), "Remove on a swipe")
+        app.buttons["Remove"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["set-work"].waitForExistence(timeout: 5), "Work is unset")
+        closeSettings()
         // The shortcut list under the field shows what is left (the favorite).
         app.textFields["search"].tap()
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Los Altos'")).firstMatch.waitForExistence(timeout: 5),
@@ -125,22 +152,27 @@ final class CoverageUITests: XCTestCase {
 
     func testUnitsChangeThePlaceCard() {
         openSettings()
+        openPage("units")
+        XCTAssertTrue(app.buttons["Kilometers"].waitForExistence(timeout: 5))
         app.buttons["Kilometers"].tap()
-        app.buttons["Done"].tap()
+        closeSettings()
         search("Los Altos")
         pickResult("Los Altos")
         let km = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ' km away'")).firstMatch
         XCTAssertTrue(km.waitForExistence(timeout: 10), "distance shown in km")
         app.buttons["place-close"].tap()
         openSettings()
+        openPage("units")
+        XCTAssertTrue(app.buttons["Miles"].waitForExistence(timeout: 5))
         app.buttons["Miles"].tap()
-        app.buttons["Done"].tap()
+        closeSettings()
     }
 
     // MARK: settings
 
     func testAppearancePickersAndPerspective() {
         openSettings()
+        openPage("appearance")
         // Theme and base map are segmented controls.
         for label in ["Dark", "Light", "System"] {
             let seg = app.buttons[label].firstMatch
@@ -158,7 +190,7 @@ final class CoverageUITests: XCTestCase {
                       || app.descendants(matching: .any)["basemap-preview"].firstMatch.exists, "live preview on the page")
         let before = app.buttons["perspective"].label   // "2D" while 3D is on
         flip("3D perspective")
-        app.buttons["Done"].tap()
+        closeSettings()
         XCTAssertNotEqual(app.buttons["perspective"].label, before, "map button reflects the settings toggle")
         app.buttons["perspective"].tap()
         XCTAssertEqual(app.buttons["perspective"].label, before)
@@ -166,10 +198,17 @@ final class CoverageUITests: XCTestCase {
 
     func testRouteOptionsAndDrivingToggles() {
         openSettings()
-        for label in ["Avoid tolls", "Avoid highways", "Avoid ferries", "Voice guidance", "Speak road alerts",
-                      "Show speed limit", "Keep the screen on", "Traffic"] {
+        openPage("navigation")
+        for label in ["Avoid tolls", "Avoid highways", "Avoid ferries", "Voice guidance",
+                      "Show speed limit", "Keep the screen on"] {
             flip(label); flip(label)
         }
+        back()
+        openPage("map-layers")
+        flip("Traffic"); flip("Traffic")
+        back()
+        openPage("alerts")
+        flip("Speak road alerts"); flip("Speak road alerts")
         let warn = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Warn about alerts'")).firstMatch
         XCTAssertTrue(reveal(warn))
         warn.tap()
@@ -180,12 +219,15 @@ final class CoverageUITests: XCTestCase {
         XCTAssertTrue(reveal(strip))
         strip.tap()
         app.buttons.matching(NSPredicate(format: "label CONTAINS 'mi' OR label CONTAINS 'km'")).element(boundBy: 0).tap()
+        back()
+        openPage("testing")
         XCTAssertTrue(reveal(app.switches["Simulate driving the route"]), "testing toggle")
-        app.buttons["Done"].tap()
+        closeSettings()
     }
 
     func testLayerSwitchesForEveryKind() {
         openSettings()
+        openPage("map-layers")
         let header = app.staticTexts["Official sources"]
         XCTAssertTrue(reveal(header))
         // The eight official kinds, then the plugin master switch under
@@ -198,22 +240,28 @@ final class CoverageUITests: XCTestCase {
             flip(n); flip(n); found += 1
         }
         XCTAssertEqual(found, names.count, "every layer kind has a switch: \(found)")
-        app.buttons["Done"].tap()
+        closeSettings()
     }
 
     func testHelpLinksAboutAndVersion() {
         openSettings()
+        openPage("help")
         for label in ["Live map on the web", "Data sources", "Developers and API", "About CommuteScout", "Contact", "Privacy"] {
             XCTAssertTrue(reveal(app.staticTexts[label]), label)
         }
-        let version = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Version, '")).firstMatch
-        XCTAssertTrue(reveal(version), "a version row")
-        XCTAssertTrue(version.label.contains("."), "with a number: \(version.label)")
-        app.buttons["Done"].tap()
+        back()
+        openPage("about")
+        let version = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Version'")).firstMatch
+        XCTAssertTrue(version.waitForExistence(timeout: 5), "a version row")
+        let number = app.staticTexts.matching(NSPredicate(format: "label MATCHES '.*[0-9]+\\\\.[0-9]+.*'")).firstMatch
+        XCTAssertTrue(number.exists, "with a number")
+        closeSettings()
     }
 
     func testAccountSectionSignInSheetOrSignedInRows() {
         openSettings()
+        openPage("account")
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 5))
         if app.buttons["Sign in"].exists {
             app.buttons["Sign in"].tap()
             XCTAssertTrue(app.buttons["Continue with Apple"].waitForExistence(timeout: 5))
@@ -231,14 +279,15 @@ final class CoverageUITests: XCTestCase {
             XCTAssertTrue(ask.waitForNonExistence(timeout: 5), "dialog dismissed")
             XCTAssertTrue(app.buttons["Sign out"].waitForExistence(timeout: 5), "still signed in")
         }
-        app.buttons["Done"].tap()
+        closeSettings()
     }
 
     func testPluginsScreenTiersAndAddByURL() {
         openSettings()
-        let row = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Plugins'")).firstMatch
-        XCTAssertTrue(reveal(row))
-        row.tap()
+        openPage("plugins")
+        let mine = app.buttons["My plugins and private sources"].firstMatch
+        XCTAssertTrue(reveal(mine))
+        mine.tap()
         XCTAssertTrue(app.staticTexts["Approved plugins"].waitForExistence(timeout: 8))
         XCTAssertTrue(reveal(app.staticTexts["Public plugins, not reviewed"]))
         XCTAssertTrue(reveal(app.buttons["add-source"]))
@@ -250,8 +299,7 @@ final class CoverageUITests: XCTestCase {
         app.buttons["Add"].tap()
         XCTAssertTrue(app.staticTexts["The address must start with https://"].waitForExistence(timeout: 5), "plain http refused")
         app.buttons["Cancel"].firstMatch.tap()
-        app.navigationBars.buttons.firstMatch.tap()
-        app.buttons["Done"].tap()
+        closeSettings()
     }
 
     // MARK: tools
@@ -267,7 +315,7 @@ final class CoverageUITests: XCTestCase {
         flip("3D perspective"); flip("3D perspective")
         // A medium sheet: the row is below the fold; pull the sheet up, then look.
         app.swipeUp()
-        let plugins = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Community sources'")).firstMatch
+        let plugins = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'My plugins and private sources'")).firstMatch
         XCTAssertTrue(reveal(plugins) || plugins.waitForExistence(timeout: 3), "plugins link in the layers sheet")
         app.buttons["Done"].tap()
     }
