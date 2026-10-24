@@ -18,7 +18,11 @@ struct DriveApp: App {
         .onChange(of: scenePhase) { phase in
             DriveLog.note("app \(phase == .active ? "active" : phase == .background ? "background" : "inactive")")
             if phase == .background { model.pauseIfIdle() }
-            if phase == .active { model.resumeFromBackground() }
+            if phase == .active {
+                // A voice may have been downloaded or deleted in the meantime.
+                Voice.refresh()
+                model.resumeFromBackground()
+            }
         }
     }
 }

@@ -28,6 +28,7 @@ struct SettingsSheet: View {
                 Section("Driving") {
                     row("Navigation", "arrow.triangle.turn.up.right.diamond.fill", .blue, value: navigationSummary) { NavigationSettings() }
                     row("Alerts", "bell.badge.fill", .red, value: alertsSummary) { AlertSettings() }
+                    row("Voice", "waveform", .pink, value: voiceSummary) { VoiceSettings() }
                 }
                 Section("Map") {
                     row("Map layers", "square.3.layers.3d", .orange, value: layersSummary) { LayerSettings() }
@@ -94,6 +95,12 @@ struct SettingsSheet: View {
     private var alertsSummary: String {
         if prefs.advancedAlerts { return "Per kind" }
         return (prefs.spokenAlerts ? "Spoken, " : "Silent, ") + Units.distance(prefs.alertAheadMeters) + " ahead"
+    }
+
+    /// The voice that speaks, picked or automatic.
+    private var voiceSummary: String {
+        _ = prefs.voiceId   // read so the row follows a new pick
+        return Voice.current?.name ?? "System voice"
     }
 
     private var layersSummary: String {

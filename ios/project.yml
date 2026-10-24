@@ -108,6 +108,19 @@ targets:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: Apple Distribution
           PROVISIONING_PROFILE_SPECIFIER: CommuteScout Drive AppStore
+  # Logic tests that need no app or simulator state: they compile the
+  # files they test rather than loading the app, so they run in seconds.
+  CommuteScoutDriveTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+      - path: CommuteScoutDrive/VoicePick.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.commutescout.drive.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
   CommuteScoutDriveUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -129,11 +142,13 @@ schemes:
       targets:
         CommuteScoutDrive: all
         CommuteScoutDriveUITests: [test]
+        CommuteScoutDriveTests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
+        - CommuteScoutDriveTests
         - CommuteScoutDriveUITests
     archive:
       config: Release

@@ -316,7 +316,10 @@ final class AppModel: ObservableObject {
             navigationControllerConfig: config,
             networkSession: Backend.session,
             annotation: AnnotationPublisher<ValhallaExtendedOSRMAnnotation>.valhallaExtendedOSRM(),
-            spokenInstructionObserver: .initAVSpeechSynthesizer(synthesizer: Voice.synth)
+            // The same observer initAVSpeechSynthesizer makes (mute, queue,
+            // audio focus), with each sentence said in the app's voice.
+            spokenInstructionObserver: SpokenInstructionObserver(
+                synthesizer: VoicedSynthesizer(Voice.synth), isMuted: false)
         )
     }
 

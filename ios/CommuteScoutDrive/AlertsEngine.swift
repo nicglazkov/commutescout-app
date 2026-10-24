@@ -53,13 +53,6 @@ final class SpeechFocus: NSObject, AVSpeechSynthesizerDelegate {
     }
 }
 
-/// One voice for the whole app: the turn instructions and the road
-/// alerts go through the same synthesizer, so a sentence waits for the
-/// one before it instead of talking over it.
-enum Voice {
-    static let synth = AVSpeechSynthesizer()
-}
-
 @MainActor
 final class AlertsEngine: ObservableObject {
     struct Upcoming: Identifiable, Hashable {
@@ -267,9 +260,16 @@ final class AlertsEngine: ObservableObject {
     /// Repeat an alert on demand, muted or not.
     func say(_ marker: RoadMarker) {
         DriveLog.note("say (tap): \(marker.kind) \(marker.displayTitle)")
-        let utterance = AVSpeechUtterance(string: marker.spokenTitle)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        speak(utterance)
+        speak(Voice.utterance(marker.spokenTitle))
+    }
+
+    /// A sample sentence from the Voice page, said the way alerts are.
+    /// With `interrupt` it cuts off whatever is being said, so tapping
+    /// down the list plays one voice at a time; the page passes it only
+    /// when no trip is running, so a turn instruction is never cut.
+    func preview(_ text: String, interrupt: Bool) {
+        if interrupt, synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
+        speak(Voice.utterance(text))
     }
 
     /// Every sentence goes out the same way: take the audio focus
@@ -286,9 +286,7 @@ final class AlertsEngine: ObservableObject {
         spokenAt[marker.spokenTitle] = Date()
         lastAnnounced = text
         DriveLog.note("alert spoken: \(marker.kind) '\(marker.displayTitle)' in \(DriveLog.meters(gap))")
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        speak(utterance)
+        speak(Voice.utterance(text))
     }
 
     /// Fetch again now: the signal came back.
