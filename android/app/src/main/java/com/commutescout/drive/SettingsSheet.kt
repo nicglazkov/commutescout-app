@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.Surface
@@ -88,7 +89,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /** The pages of Settings; null in the sheet's state is the home page. */
 private enum class SettingsPage(val title: String) {
-    ACCOUNT("Account"), APPEARANCE("Appearance"), UNITS("Units"), NAVIGATION("Navigation"), ALERTS("Alerts"),
+    ACCOUNT("Account"), APPEARANCE("Appearance"), UNITS("Units"), NAVIGATION("Navigation"), ALERTS("Alerts"), VOICE("Voice"),
     LAYERS("Map layers"), PLUGINS("Plugins"), OFFLINE("Offline maps"), PLACES("Saved places"), HELP("Help"),
     ABOUT("About"), TESTING("Testing"),
 }
@@ -130,6 +131,7 @@ fun SettingsSheet(model: DriveViewModel, onClose: () -> Unit) {
                         SettingsPage.UNITS -> UnitsPage(model)
                         SettingsPage.NAVIGATION -> NavigationPage(model)
                         SettingsPage.ALERTS -> AlertsPage(model)
+                        SettingsPage.VOICE -> VoicePage(model)
                         SettingsPage.LAYERS -> LayersPage(model)
                         SettingsPage.PLUGINS -> PluginsPage(model)
                         SettingsPage.OFFLINE -> OfflinePage(model)
@@ -181,7 +183,10 @@ private fun SettingsHome(model: DriveViewModel, open: (SettingsPage) -> Unit) {
         SettingsRow(Icons.Default.Navigation, Color(0xFF007AFF), "Navigation",
             if (avoid.isNotEmpty()) "Avoids " + avoid.joinToString(", ") else if (uiState.isMuted == true) "Voice off" else "Voice on") { open(SettingsPage.NAVIGATION) }
         SettingsRow(Icons.Default.NotificationsActive, Color(0xFFFF3B30), "Alerts",
-            if (prefs.advancedAlerts) "Per kind" else (if (prefs.spokenAlerts) "Spoken, " else "Silent, ") + Units.distance(prefs.alertAheadMeters) + " ahead", last = true) { open(SettingsPage.ALERTS) }
+            if (prefs.advancedAlerts) "Per kind" else (if (prefs.spokenAlerts) "Spoken, " else "Silent, ") + Units.distance(prefs.alertAheadMeters) + " ahead") { open(SettingsPage.ALERTS) }
+        val voiceReady by Engine.alerts.speaker.ready.collectAsStateWithLifecycle()
+        val voice = remember(voiceReady, prefs.voiceName) { voiceSummary(prefs, if (voiceReady) Engine.alerts.speaker.voices().map(VoiceInfo::of) else emptyList()) }
+        SettingsRow(Icons.Default.RecordVoiceOver, Color(0xFFFF2D55), "Voice", voice, last = true) { open(SettingsPage.VOICE) }
     }
     GroupTitle("Map")
     SettingsGroup {
@@ -207,7 +212,7 @@ fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun GroupTitle(text: String) {
+fun GroupTitle(text: String) {
     Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
 }
 
@@ -231,7 +236,7 @@ private fun SettingsRow(icon: ImageVector, color: Color, title: String, value: S
 
 /** A page's card of controls, padded like the rows on the home page. */
 @Composable
-private fun PageGroup(content: @Composable ColumnScope.() -> Unit) {
+fun PageGroup(content: @Composable ColumnScope.() -> Unit) {
     SettingsGroup { Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content) }
 }
 

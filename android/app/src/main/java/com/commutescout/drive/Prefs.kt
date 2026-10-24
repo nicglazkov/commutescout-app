@@ -79,6 +79,7 @@ class Prefs(context: Context) {
         spokenAlerts = true; alertAheadMeters = 1500.0; showSpeedLimit = true; keepAwake = true
         avoidTolls = false; avoidHighways = false; avoidFerries = false; stripAheadMeters = 16093.0
         advancedAlerts = false; alertRulesRaw = ""; useMiles = true
+        voiceName = ""; voiceEngine = ""; voiceRate = 1f; voicePitch = 1f
     }
 
     // A name dropped in an update must not be a crash loop at launch.
@@ -103,6 +104,15 @@ class Prefs(context: Context) {
     var advancedAlerts by state(p.getBoolean("alerts.advanced", false)) { p.edit().putBoolean("alerts.advanced", it).apply() }
     var alertRulesRaw by state(p.getString("alerts.rules", "")!!) { p.edit().putString("alerts.rules", it).apply() }
     var useMiles by state(if (p.contains("miles")) p.getBoolean("miles", true) else localeMiles()) { p.edit().putBoolean("miles", it).apply() }
+    /**
+     * The voice for alerts and turn instructions, by the engine's name
+     * for it; empty picks the best one on the phone for the language.
+     * The engine is a package name; empty is the system's default.
+     */
+    var voiceName by state(p.getString("voice.name", "")!!) { p.edit().putString("voice.name", it).apply() }
+    var voiceEngine by state(p.getString("voice.engine", "")!!) { p.edit().putString("voice.engine", it).apply() }
+    var voiceRate by state(p.getFloat("voice.rate", 1f)) { p.edit().putFloat("voice.rate", it).apply() }
+    var voicePitch by state(p.getFloat("voice.pitch", 1f)) { p.edit().putFloat("voice.pitch", it).apply() }
 
     /**
      * Roughly where the driver was when the app last held a snapshot.

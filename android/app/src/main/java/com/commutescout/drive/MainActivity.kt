@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.speech.tts.TextToSpeech
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -21,15 +20,12 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
-import com.stadiamaps.ferrostar.core.AndroidTtsStatusListener
-import java.util.Locale
 
-class MainActivity : ComponentActivity(), AndroidTtsStatusListener {
+class MainActivity : ComponentActivity() {
     internal val model: DriveViewModel by viewModels()   // internal: instrumented tests drive it
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Engine.tts.statusObserver = this
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
@@ -84,12 +80,4 @@ class MainActivity : ComponentActivity(), AndroidTtsStatusListener {
         // must survive both. onStart starts it only when it is not running.
         if (!isChangingConfigurations && !Engine.tripActive) Engine.tts.shutdown()
     }
-
-    override fun onTtsInitialized(tts: TextToSpeech?, status: Int) {
-        tts?.language = Locale.getDefault()
-    }
-
-    override fun onTtsSpeakError(utteranceId: String, status: Int) {}
-
-    override fun onTtsShutdownAndRelease() {}
 }
