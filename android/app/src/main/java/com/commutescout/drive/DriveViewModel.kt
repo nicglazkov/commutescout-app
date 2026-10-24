@@ -9,7 +9,6 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewModelScope
 import com.stadiamaps.ferrostar.composeui.notification.DefaultForegroundNotificationBuilder
 import com.stadiamaps.ferrostar.core.AlternativeRouteProcessor
-import com.stadiamaps.ferrostar.core.AndroidTtsObserver
 import com.stadiamaps.ferrostar.core.CorrectiveAction
 import com.stadiamaps.ferrostar.core.CustomRouteProvider
 import com.stadiamaps.ferrostar.core.FerrostarSessionBuilder
@@ -102,7 +101,17 @@ object Engine {
         )
     }
 
-    val tts: AndroidTtsObserver by lazy { AndroidTtsObserver(app) }
+    /** Turn instructions, in the same voice as the road alerts. */
+    val tts: GuidanceVoice by lazy { GuidanceVoice(app, prefs) }
+
+    /**
+     * A new text-to-speech engine was chosen: both voices bind to it
+     * again. Guidance restarts only if it was running.
+     */
+    fun voiceEngineChanged() {
+        alerts.speaker.restart()
+        tts.restart()
+    }
 
     // One core for the life of the process. The view model subscribes to
     // it once, so it must never be swapped; route options are read at
@@ -198,7 +207,7 @@ object Engine {
         MapFiles.init(application)
         prefs = Prefs(application)
         places = PlaceStore(application)
-        alerts = AlertsEngine(application)
+        alerts = AlertsEngine(application, prefs)
         account = Account(application)
         sources = SourcesStore(application)
         alerts.spoken = prefs.spokenAlerts

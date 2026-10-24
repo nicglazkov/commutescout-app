@@ -4,8 +4,6 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,7 +15,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
@@ -44,7 +41,7 @@ data class Upcoming(val marker: RoadMarker, val alongMeters: Double) {
  * distance straight ahead. The same rules and the same voice apply, so
  * a camera or a crash is called out on the way to the store too.
  */
-class AlertsEngine(context: Context) {
+class AlertsEngine(context: Context, prefs: Prefs) {
     private val _ahead = MutableStateFlow<List<Upcoming>>(emptyList())
     val ahead = _ahead.asStateFlow()
     /** Alerts the driver swiped away; off the banner until the next trip or free drive. */
@@ -89,39 +86,22 @@ class AlertsEngine(context: Context) {
     private var lastSegment = 0
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var refreshJob: Job? = null
-    private var ttsReady = false
-    private var tts: TextToSpeech? = null
 
     // A spoken alert is guidance: music turns down for the sentence and
     // comes back, a podcast pauses and resumes. Focus is taken before
     // each utterance and let go when the voice is done.
     private val audio = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private val voiceAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-        .build()
     private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-        .setAudioAttributes(voiceAttributes)
+        .setAudioAttributes(AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build())
         .setOnAudioFocusChangeListener { }
         .build()
     private var speaking = 0
 
-    init {
-        tts = TextToSpeech(context.applicationContext) { status ->
-            ttsReady = status == TextToSpeech.SUCCESS
-            if (ttsReady) {
-                tts?.language = Locale.getDefault()
-                tts?.setAudioAttributes(voiceAttributes)
-                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) {}
-                    override fun onDone(utteranceId: String?) = letGo()
-                    @Deprecated("Deprecated in Java")
-                    override fun onError(utteranceId: String?) = letGo()
-                    override fun onError(utteranceId: String?, errorCode: Int) = letGo()
-                })
-            }
-        }
-    }
+    /** The driver's voice, as for turn instructions. Settings lists its voices and plays its previews. */
+    val speaker = Speaker(context, prefs, onDone = { letGo() }, onError = { letGo() }).also { it.start() }
 
     private fun letGo() {
         synchronized(this) {
@@ -362,16 +342,23 @@ class AlertsEngine(context: Context) {
     private val spokenAt = HashMap<String, Long>()
 
     fun say(marker: RoadMarker, gap: Double = 0.0) {
-        if (!ttsReady) return
+        if (!speaker.ready.value) return
         val now = System.currentTimeMillis()
         if (gap > 0 && (spokenAt[marker.spokenTitle] ?: 0L) > now - 90_000) return
         spokenAt[marker.spokenTitle] = now
         val text = marker.spokenTitle + if (gap > 200) ", in " + Units.spoken(gap) else ""
+        speakWithFocus(text, marker.key, flush = false)
+    }
+
+    /** A sample from Settings, in place of anything still queued. It speaks even when muted: the driver asked. */
+    fun preview(text: String) = speakWithFocus(text, "preview", flush = true)
+
+    private fun speakWithFocus(text: String, id: String, flush: Boolean) {
         synchronized(this) {
             if (speaking == 0) audio.requestAudioFocus(focus)
             speaking += 1
         }
-        if (tts?.speak(text, TextToSpeech.QUEUE_ADD, null, marker.key) != TextToSpeech.SUCCESS) letGo()
+        if (!speaker.speak(text, id, flush)) letGo()
     }
 
     /** Fetch again now: the signal came back. */
@@ -422,6 +409,6 @@ class AlertsEngine(context: Context) {
 
     fun shutdown() {
         stop()
-        tts?.shutdown()
+        speaker.shutdown()
     }
 }
