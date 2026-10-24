@@ -85,6 +85,38 @@ final class PagesUITests: XCTestCase {
         }
     }
 
+    /// The Voice page in both themes, after picking a voice from the
+    /// list and going back to Automatic.
+    func testVoicePage() {
+        for theme in ["light", "dark"] {
+            app.terminate()
+            app.launchArguments = ["-csSimulate", "-csOpenSettings", "-cs.theme", theme]
+            app.launch()
+            // The sheet from -csOpenSettings does not always survive the
+            // relaunch; open it by hand when it is not up.
+            if !app.staticTexts["Voice"].waitForExistence(timeout: 6) { app.buttons["settings"].firstMatch.tap() }
+            open("Voice")
+            XCTAssertTrue(app.buttons["voice-automatic"].waitForExistence(timeout: 5))
+            shot("voice-\(theme)")
+            let accents = app.switches["voice-all-accents"].firstMatch
+            if accents.waitForExistence(timeout: 2) {
+                accents.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+                shot("voice-accents-\(theme)")
+            }
+            app.swipeUp()
+            // The list is lazy: its rows exist once scrolled into view.
+            let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'voice-com.apple.voice'")).firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 3), "a voice is listed")
+            row.tap()
+            XCTAssertTrue(row.isSelected, "a tapped voice is the one in use")
+            shot("voice-picked-\(theme)", 3)
+            app.swipeDown()
+            if !app.buttons["voice-automatic"].firstMatch.isHittable { app.swipeDown() }
+            app.buttons["voice-automatic"].firstMatch.tap()
+            XCTAssertTrue(app.buttons["voice-automatic"].firstMatch.isSelected)
+        }
+    }
+
     func testToolsAndTrip() {
         app.terminate()
         app.launchArguments = ["-csSimulate"]

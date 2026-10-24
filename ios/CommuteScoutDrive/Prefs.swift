@@ -87,6 +87,12 @@ final class Prefs: ObservableObject {
     @AppStorage("cs.alerts.rules") var alertRulesRaw: String = ""   // JSON, per kind
     @AppStorage("cs.alerts.advanced") var advancedAlerts: Bool = false
     @AppStorage("cs.alerts.strip") var stripAheadMeters: Double = 16093   // the strip shows the next alert within this
+    /// The voice for everything spoken, by identifier; "" picks the best
+    /// installed one. Speed and pitch on AVSpeechUtterance's own scales.
+    /// `Voice` reads the same keys.
+    @AppStorage(Voice.idKey) var voiceId: String = ""
+    @AppStorage(Voice.rateKey) var voiceRate: Double = Voice.defaultRate
+    @AppStorage(Voice.pitchKey) var voicePitch: Double = Voice.defaultPitch
 
     /// How one kind of alert is announced: at what distance, whether it
     /// repeats closer, and whether it is spoken at all. The advanced
