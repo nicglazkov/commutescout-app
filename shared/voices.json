@@ -1,0 +1,320 @@
+{
+  "schema": 1,
+  "release": "voices-v1",
+  "runtime": {
+    "name": "sherpa-onnx",
+    "version": "2.0.0"
+  },
+  "default_pack": "supertonic2-en",
+  "packs": [
+    {
+      "id": "supertonic2-en",
+      "title": "Fast voices",
+      "engine": "supertonic",
+      "engine_version": "Supertonic 2",
+      "language": "en",
+      "sample_rate": 44100,
+      "text_input": "raw",
+      "generation": {
+        "num_steps": 5,
+        "extra": {
+          "lang": "en"
+        },
+        "speed": 1.0
+      },
+      "license": {
+        "spdx": "OpenRAIL-M",
+        "name": "BigScience OpenRAIL-M",
+        "commercial_use": true,
+        "url": "https://huggingface.co/Supertone/supertonic-2/blob/main/LICENSE",
+        "obligations": [
+          "Make the Attachment A use restrictions an enforceable part of the app terms (paragraph 4a)",
+          "Ship LICENSE and NOTICE with the pack",
+          "Disclose that the speech is machine generated (Attachment A item e)"
+        ]
+      },
+      "attribution": "Supertonic 2 by Supertone Inc. int8 ONNX build by the sherpa-onnx project.",
+      "voices": [
+        {
+          "id": "supertonic2-en.F3",
+          "sid": 2,
+          "upstream": "F3",
+          "name": "Nora",
+          "accent": "en-US",
+          "gender": "female",
+          "default": true
+        },
+        {
+          "id": "supertonic2-en.F2",
+          "sid": 1,
+          "upstream": "F2",
+          "name": "Clara",
+          "accent": "en-US",
+          "gender": "female"
+        },
+        {
+          "id": "supertonic2-en.M3",
+          "sid": 7,
+          "upstream": "M3",
+          "name": "Theo",
+          "accent": "en-US",
+          "gender": "male"
+        },
+        {
+          "id": "supertonic2-en.M1",
+          "sid": 5,
+          "upstream": "M1",
+          "name": "Owen",
+          "accent": "en-US",
+          "gender": "male"
+        }
+      ],
+      "files": [
+        {
+          "name": "LICENSE",
+          "role": "license",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.LICENSE",
+          "sha256": "0d944a9110fed9a9602d60e0423a272903e7bd21ab060490774efc77c2275e9f",
+          "size": 15007
+        },
+        {
+          "name": "NOTICE",
+          "role": "license",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.NOTICE",
+          "sha256": "68b22013f5254e0fd0e8d63166c593b335eaf27c60227012e2448d3aaaa3692d",
+          "size": 1145
+        },
+        {
+          "name": "duration_predictor.int8.onnx",
+          "role": "duration_predictor",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.duration_predictor.int8.onnx",
+          "sha256": "6d556b3691165c364be91dc0bd894656b5949f5acd2750d8ec2f954010845011",
+          "size": 1521526
+        },
+        {
+          "name": "text_encoder.int8.onnx",
+          "role": "text_encoder",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.text_encoder.int8.onnx",
+          "sha256": "dd5f535ed629f7df86071043e15f541ce1b2ab7f1bdbce4c7892b307bca79fa3",
+          "size": 27431318
+        },
+        {
+          "name": "tts.json",
+          "role": "tts_json",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.tts.json",
+          "sha256": "ee531d9af9b80438a2ed703e22155ee6c83b12595ab22fd3bb6de94c7502fe96",
+          "size": 8699
+        },
+        {
+          "name": "unicode_indexer.bin",
+          "role": "unicode_indexer",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.unicode_indexer.bin",
+          "sha256": "06557ec23778a2c67130a99e28f5f550b9598fc1f04049cbb35d864549913154",
+          "size": 262144
+        },
+        {
+          "name": "vector_estimator.int8.onnx",
+          "role": "vector_estimator",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.vector_estimator.int8.onnx",
+          "sha256": "9cce89801068dc998719fbc91777f99f3f4d16ee36592281f8703f32e305daa2",
+          "size": 40686657
+        },
+        {
+          "name": "vocoder.int8.onnx",
+          "role": "vocoder",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.vocoder.int8.onnx",
+          "sha256": "db99c36fb871fbfb128b903662995f2e22213e875f2434f319f8d10ee0f10e90",
+          "size": 25977132
+        },
+        {
+          "name": "voice.bin",
+          "role": "voice_style",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.voice.bin",
+          "sha256": "12e0919ffc641ff20858026a4c655fbd9e5c414800bb1b756c9d4011e2536325",
+          "size": 517168
+        }
+      ],
+      "archive": {
+        "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.zip",
+        "sha256": "6a033400a951f91537af9b058caec30180dabef22f3e19259f6fa33c9b79250d",
+        "size": 81499387,
+        "format": "zip",
+        "root_dir": "supertonic2-en"
+      },
+      "download_size": 96420796
+    },
+    {
+      "id": "kokoro-en-v1_0",
+      "title": "Natural voices",
+      "engine": "kokoro",
+      "engine_version": "Kokoro v1.0",
+      "language": "en",
+      "sample_rate": 24000,
+      "text_input": "normalized",
+      "generation": {
+        "speed": 1.0
+      },
+      "lexicons": {
+        "en-US": [
+          "lexicon-us-en.txt",
+          "lexicon-us-en-extra.txt"
+        ],
+        "en-GB": [
+          "lexicon-gb-en.txt",
+          "lexicon-gb-en-extra.txt"
+        ]
+      },
+      "license": {
+        "spdx": "Apache-2.0",
+        "name": "Apache License 2.0",
+        "commercial_use": true,
+        "url": "https://huggingface.co/hexgrad/Kokoro-82M",
+        "obligations": [
+          "Ship LICENSE and NOTICE with the pack",
+          "Show the attributions in NOTICE in the app's licenses screen"
+        ]
+      },
+      "attribution": "Kokoro-82M by hexgrad. Lexicons from misaki and the CMU Pronouncing Dictionary. ONNX export by the sherpa-onnx and kokoro-onnx projects.",
+      "voices": [
+        {
+          "id": "kokoro-en-v1_0.af_heart",
+          "sid": 3,
+          "upstream": "af_heart",
+          "name": "Harper",
+          "accent": "en-US",
+          "gender": "female",
+          "default": true
+        },
+        {
+          "id": "kokoro-en-v1_0.af_bella",
+          "sid": 2,
+          "upstream": "af_bella",
+          "name": "Ruby",
+          "accent": "en-US",
+          "gender": "female"
+        },
+        {
+          "id": "kokoro-en-v1_0.am_michael",
+          "sid": 16,
+          "upstream": "am_michael",
+          "name": "Miles",
+          "accent": "en-US",
+          "gender": "male"
+        },
+        {
+          "id": "kokoro-en-v1_0.am_fenrir",
+          "sid": 14,
+          "upstream": "am_fenrir",
+          "name": "Grant",
+          "accent": "en-US",
+          "gender": "male"
+        },
+        {
+          "id": "kokoro-en-v1_0.bf_isabella",
+          "sid": 22,
+          "upstream": "bf_isabella",
+          "name": "Imogen",
+          "accent": "en-GB",
+          "gender": "female"
+        },
+        {
+          "id": "kokoro-en-v1_0.bf_emma",
+          "sid": 21,
+          "upstream": "bf_emma",
+          "name": "Emma",
+          "accent": "en-GB",
+          "gender": "female"
+        },
+        {
+          "id": "kokoro-en-v1_0.bm_george",
+          "sid": 26,
+          "upstream": "bm_george",
+          "name": "George",
+          "accent": "en-GB",
+          "gender": "male"
+        },
+        {
+          "id": "kokoro-en-v1_0.bm_fable",
+          "sid": 25,
+          "upstream": "bm_fable",
+          "name": "Oliver",
+          "accent": "en-GB",
+          "gender": "male"
+        }
+      ],
+      "files": [
+        {
+          "name": "LICENSE",
+          "role": "license",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "size": 11358
+        },
+        {
+          "name": "NOTICE",
+          "role": "license",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.NOTICE",
+          "sha256": "47c5a3603363569f4f81a6fea28a074246ecf31b94094df6faa699f226fc032f",
+          "size": 3374
+        },
+        {
+          "name": "lexicon-gb-en-extra.txt",
+          "role": "lexicon",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.lexicon-gb-en-extra.txt",
+          "sha256": "07f34f86ff8e87ebc0913fbf0cd0c99d410e83100e41c0e20839eab6f105f4e0",
+          "size": 2096223
+        },
+        {
+          "name": "lexicon-gb-en.txt",
+          "role": "lexicon",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.lexicon-gb-en.txt",
+          "sha256": "c4cbb37316f62210dff52718a7afcaae24f50c032cc75ab47ae67b831d1049e7",
+          "size": 6366635
+        },
+        {
+          "name": "lexicon-us-en-extra.txt",
+          "role": "lexicon",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.lexicon-us-en-extra.txt",
+          "sha256": "4343e29493298232285f3641553968bde92c03af7e5698f5929f19f02e9b5fa2",
+          "size": 2133064
+        },
+        {
+          "name": "lexicon-us-en.txt",
+          "role": "lexicon",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.lexicon-us-en.txt",
+          "sha256": "7daaab53a181be9885b853a8582bf1838186317e5dadacbcef9c426d6fa0da14",
+          "size": 5956885
+        },
+        {
+          "name": "model.int8.onnx",
+          "role": "model",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.model.int8.onnx",
+          "sha256": "c94f6e6a71875740daf0cd8d836cd9ea698747b2be71962d7777c04ed3afad21",
+          "size": 114202060
+        },
+        {
+          "name": "tokens.txt",
+          "role": "tokens",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.tokens.txt",
+          "sha256": "6ebb6bb288f20f3ae8d004d3c2ca27697da27c037d75e81a60e2a6a663f95425",
+          "size": 687
+        },
+        {
+          "name": "voices.bin",
+          "role": "voices",
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.voices.bin",
+          "sha256": "4aa5d56870d5ec500f6dc2009740025047c93e362848372da52238ae2a68df56",
+          "size": 14622720
+        }
+      ],
+      "archive": {
+        "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.zip",
+        "sha256": "934424c731c000b8aaaea08e80f3186f0e98a77e1c8bae0beac0489c1f6bde0d",
+        "size": 106656025,
+        "format": "zip",
+        "root_dir": "kokoro-en-v1_0"
+      },
+      "download_size": 145393006
+    }
+  ]
+}
