@@ -129,6 +129,26 @@ class AlertsEngine(context: Context, prefs: Prefs) {
 
         data class Hit(val along: Double, val offset: Double, val segment: Int)
 
+        /** What is said for an alert [gap] metres ahead. */
+        fun sentence(title: String, gap: Double, spoken: (Double) -> String = Units::spoken): String =
+            title + if (gap > 200) ", in " + spoken(gap) else ""
+
+        /**
+         * The sentences an alert will most likely be spoken with, so a
+         * neural voice can render them ahead: at its first distance and,
+         * when set, its second. A fix comes about once a second, so the
+         * gap lands up to 40 m inside each distance; both ends are kept
+         * where the spoken distance changes between them.
+         */
+        fun likelySentences(title: String, rule: Prefs.AlertRule, spoken: (Double) -> String = Units::spoken): List<Pair<String, Double>> {
+            val out = LinkedHashMap<String, Double>()
+            for (d in listOf(rule.firstMeters, rule.repeatMeters)) {
+                if (d <= 0) continue
+                for (g in listOf(d, d - 40)) if (g > 0) out.putIfAbsent(sentence(title, g, spoken), d)
+            }
+            return out.map { it.key to it.value }
+        }
+
         /** The direction a marker applies to as a bearing, from `dir` or "(northbound)" / "NB" in the label; null when both or unknown. */
         fun headingOf(m: RoadMarker): Double? {
             // The server's dir field: "North", "NB", "N"... and only that word.
@@ -196,7 +216,7 @@ class AlertsEngine(context: Context, prefs: Prefs) {
         _dismissed.value = emptySet()
         // A fresh start: what was said on the last drive is said again
         // on this one, and the sets do not grow for the life of the process.
-        announced.clear(); repeated.clear(); spokenAt.clear()
+        announced.clear(); repeated.clear(); spokenAt.clear(); prerendered.clear()
         freeDrive = true
         refreshJob = scope.launch {
             while (isActive) {
@@ -268,7 +288,7 @@ class AlertsEngine(context: Context, prefs: Prefs) {
         val lats = coordinates.map { it.lat }; val lons = coordinates.map { it.lon }
         if (lats.isEmpty()) return
         box = doubleArrayOf(lats.min() - 0.05, lons.min() - 0.05, lats.max() + 0.05, lons.max() + 0.05)
-        announced.clear(); repeated.clear()
+        announced.clear(); repeated.clear(); prerendered.clear()
         allAsOf = null
         refreshJob = scope.launch {
             while (isActive) {
@@ -322,8 +342,33 @@ class AlertsEngine(context: Context, prefs: Prefs) {
         announce(upcoming, hit.along)
     }
 
+    /** Alerts whose sentences were handed to the neural voice already, this trip or free drive. */
+    private val prerendered = HashSet<String>()
+
+    /**
+     * A neural voice renders each alert's sentence when the alert first
+     * becomes known, well before its announce distance. With a system
+     * voice this does nothing.
+     */
+    private fun prerender(upcoming: List<Upcoming>, along: Double) {
+        if (muted) return
+        val fresh = upcoming.filter { it.id !in prerendered }
+        if (fresh.isEmpty()) return
+        val sentences = ArrayList<Pair<String, Double>>()
+        for (item in fresh) {
+            prerendered.add(item.id)
+            val rule = rules?.invoke(item.marker) ?: Prefs.AlertRule(true, spoken, announceAheadMeters, 0.0)
+            if (!rule.speak) continue
+            // Already inside its first distance: it speaks now, too soon to render.
+            if (item.alongMeters - along <= rule.firstMeters) continue
+            for ((text, at) in likelySentences(item.marker.spokenTitle, rule)) sentences.add(text to item.alongMeters - at)
+        }
+        if (sentences.isNotEmpty()) Neural.prerenderAlerts(sentences, Engine.prefs)
+    }
+
     /** Each marker once when it comes within its first distance, and once more within its second, by the per-kind rules. */
     private fun announce(upcoming: List<Upcoming>, along: Double) {
+        runCatching { prerender(upcoming, along) }.onFailure { Log.w(TAG, "prerender: $it") }
         for (item in upcoming) {
             val rule = rules?.invoke(item.marker) ?: Prefs.AlertRule(true, spoken, announceAheadMeters, 0.0)
             val gap = item.alongMeters - along
@@ -346,8 +391,7 @@ class AlertsEngine(context: Context, prefs: Prefs) {
         val now = System.currentTimeMillis()
         if (gap > 0 && (spokenAt[marker.spokenTitle] ?: 0L) > now - 90_000) return
         spokenAt[marker.spokenTitle] = now
-        val text = marker.spokenTitle + if (gap > 200) ", in " + Units.spoken(gap) else ""
-        speakWithFocus(text, marker.key, flush = false)
+        speakWithFocus(sentence(marker.spokenTitle, gap), marker.key, flush = false)
     }
 
     /** A sample from Settings, in place of anything still queued. It speaks even when muted: the driver asked. */

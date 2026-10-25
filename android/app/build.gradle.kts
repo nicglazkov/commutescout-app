@@ -1,3 +1,5 @@
+import java.net.URI
+import java.security.MessageDigest
 import java.util.Properties
 
 plugins {
@@ -20,6 +22,59 @@ val keystoreProps = Properties().apply {
     if (f.exists()) f.inputStream().use { load(it) }
 }
 
+// On-device neural voices run on sherpa-onnx 2.0.0. It is not on Maven
+// Central and its JitPack build is broken, so the AAR comes from the
+// sherpa-onnx GitHub release. It is 49 MB, too big to keep in git: Gradle
+// downloads it once into app/libs (gitignored) and checks its sha256
+// before every build. A file that fails the check is never used.
+val sherpaOnnxAar: File = file("libs/sherpa-onnx-2.0.0.aar")
+run {
+    val url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.0/sherpa-onnx-2.0.0.aar"
+    val sha256 = "f0f8716982d27cb4ce695e3934018b1342d9d3d6fdb6ef1f1658fe8bad50b4fc"
+    fun hashOf(f: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        f.inputStream().use { input ->
+            val buf = ByteArray(1 shl 16)
+            while (true) { val n = input.read(buf); if (n < 0) break; md.update(buf, 0, n) }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+    if (sherpaOnnxAar.exists() && hashOf(sherpaOnnxAar) == sha256) return@run
+    sherpaOnnxAar.parentFile.mkdirs()
+    val part = File(sherpaOnnxAar.path + ".part")
+    logger.lifecycle("Downloading sherpa-onnx 2.0.0 AAR from the k2-fsa/sherpa-onnx release")
+    try {
+        URI(url).toURL().openStream().use { input -> part.outputStream().use { input.copyTo(it) } }
+    } catch (e: Exception) {
+        part.delete()
+        throw GradleException("Could not download $url. Put the file at $sherpaOnnxAar (sha256 $sha256).", e)
+    }
+    val got = hashOf(part)
+    if (got != sha256) {
+        part.delete()
+        throw GradleException("sherpa-onnx AAR checksum mismatch: expected $sha256, got $got")
+    }
+    sherpaOnnxAar.delete()
+    if (!part.renameTo(sherpaOnnxAar)) throw GradleException("Could not move $part to $sherpaOnnxAar")
+}
+
+/** Copies the shared voice catalog into the app's assets, so the app never fetches it. */
+abstract class CopyVoiceCatalog : DefaultTask() {
+    @get:InputFile abstract val catalog: RegularFileProperty
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+    @TaskAction fun copy() {
+        val out = outputDir.get().asFile
+        out.mkdirs()
+        catalog.get().asFile.copyTo(File(out, "voices.json"), overwrite = true)
+    }
+}
+val copyVoiceCatalog = tasks.register<CopyVoiceCatalog>("copyVoiceCatalog") {
+    catalog.set(rootProject.file("../shared/voices.json"))
+}
+androidComponents {
+    onVariants { variant -> variant.sources.assets?.addGeneratedSourceDirectory(copyVoiceCatalog, CopyVoiceCatalog::outputDir) }
+}
+
 android {
     namespace = "com.commutescout.drive"
     compileSdk = 37
@@ -35,6 +90,9 @@ android {
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
         // One version for both apps: VERSION at the repo root.
         versionName = rootProject.file("../VERSION").readText().trim()
+        // 64-bit only: the neural voice engine is 15 MB of native code per
+        // ABI. x86_64 is for the emulator.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     signingConfigs {
@@ -71,6 +129,9 @@ android {
     testOptions { execution = "ANDROIDX_TEST_ORCHESTRATOR" }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // sherpa-onnx's Kotlin API loads only libsherpa-onnx-jni (and its
+        // libonnxruntime); the C and C++ API libraries are for other bindings.
+        jniLibs.excludes += listOf("**/libsherpa-onnx-c-api.so", "**/libsherpa-onnx-cxx-api.so")
     }
 }
 
@@ -112,6 +173,9 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.ui)
+    // On-device neural voices (see the download above) and their pack downloads.
+    implementation(files(sherpaOnnxAar))
+    implementation(libs.androidx.work.runtime)
     // Instrumented UI tests (app/src/androidTest): every control on the emulator or a phone.
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
