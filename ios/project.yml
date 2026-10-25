@@ -27,6 +27,11 @@ packages:
   GoogleSignIn:
     url: https://github.com/google/GoogleSignIn-iOS
     from: 9.0.0
+  # On-device neural voices (docs/voices.md). A static xcframework with
+  # ONNX Runtime; no espeak-ng or other GPL code since 2.0.0.
+  SherpaOnnx:
+    url: https://github.com/k2-fsa/sherpa-onnx
+    exactVersion: 2.0.0
 targets:
   CommuteScoutDrive:
     type: application
@@ -39,6 +44,9 @@ targets:
       # paths inside the bundle stay what the styles expect.
       - path: CommuteScoutDrive/Map
         type: folder
+        buildPhase: resources
+      # The voice catalog both apps read: packs, files, hashes, licenses.
+      - path: ../shared/voices.json
         buildPhase: resources
     dependencies:
       - package: Ferrostar
@@ -57,6 +65,8 @@ targets:
         product: FirebaseMessaging
       - package: GoogleSignIn
         product: GoogleSignIn
+      - package: SherpaOnnx
+        product: sherpa-onnx
     entitlements:
       path: CommuteScoutDrive/CommuteScoutDrive.entitlements
       properties:
@@ -116,6 +126,12 @@ targets:
     sources:
       - path: Tests
       - path: CommuteScoutDrive/VoicePick.swift
+      - path: CommuteScoutDrive/VoiceCatalog.swift
+      - path: CommuteScoutDrive/VoicePackFiles.swift
+      - path: CommuteScoutDrive/KokoroText.swift
+      - path: CommuteScoutDrive/NeuralPlan.swift
+      - path: ../shared/voices.json
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.commutescout.drive.tests

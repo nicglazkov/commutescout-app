@@ -24,6 +24,10 @@ import Foundation
 /// as soon as the voice is done. Ferrostar's turn-by-turn voice does
 /// the same for its own sentences.
 final class SpeechFocus: NSObject, AVSpeechSynthesizerDelegate {
+    /// One for the app: the alerts, the system voice and the
+    /// CommuteScout voices all hold and let go of the same focus.
+    static let shared = SpeechFocus()
+
     private var held = false
 
     func take() {
@@ -45,11 +49,24 @@ final class SpeechFocus: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        if !synthesizer.isSpeaking { release() }
+        done(synthesizer)
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        if !synthesizer.isSpeaking { release() }
+        done(synthesizer)
+    }
+
+    /// The focus goes when nothing is left to say: not by the system
+    /// voice, and not by a CommuteScout voice, whose queue may hand the
+    /// next sentence over now.
+    private func done(_ synthesizer: AVSpeechSynthesizer) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.done(synthesizer) }
+            return
+        }
+        guard !synthesizer.isSpeaking else { return }
+        NeuralSpeaker.shared.systemFinished()
+        if !NeuralSpeaker.shared.busy { release() }
     }
 }
 
@@ -103,11 +120,13 @@ final class AlertsEngine: ObservableObject {
     private var lastCourse: (degrees: Double, at: Date)?
     private var announced: Set<String> = []
     private var repeated: Set<String> = []
+    /// Alerts whose sentences were queued to render in a CommuteScout voice.
+    private var prerendered: Set<String> = []
     private var timer: Timer?
     private var box: (south: Double, west: Double, north: Double, east: Double)?
     private var lastSegment = 0
     private let synth = Voice.synth
-    private let focus = SpeechFocus()
+    private let focus = SpeechFocus.shared
 
     static let refreshSeconds = 60.0
 
@@ -116,6 +135,7 @@ final class AlertsEngine: ObservableObject {
     func startFreeDrive() {
         stop()
         dismissed = []
+        prerendered = []
         freeDrive = true
         timer = Timer.scheduledTimer(withTimeInterval: Self.refreshSeconds, repeats: true) { [weak self] _ in
             Task { await self?.refreshAround() }
@@ -133,6 +153,7 @@ final class AlertsEngine: ObservableObject {
         box = (s - 0.05, w - 0.05, n + 0.05, e + 0.05)
         announced = []
         repeated = []
+        prerendered = []
         allAsOf = nil
         Task { await refresh() }
         timer = Timer.scheduledTimer(withTimeInterval: Self.refreshSeconds, repeats: true) { [weak self] _ in
@@ -210,6 +231,7 @@ final class AlertsEngine: ObservableObject {
         }.sorted { $0.alongMeters < $1.alongMeters }
         hereAlong = 0
         if upcoming != ahead { ahead = upcoming }
+        prerender(upcoming, from: 0)
         announce(upcoming, from: 0)
     }
 
@@ -260,7 +282,7 @@ final class AlertsEngine: ObservableObject {
     /// Repeat an alert on demand, muted or not.
     func say(_ marker: RoadMarker) {
         DriveLog.note("say (tap): \(marker.kind) \(marker.displayTitle)")
-        speak(Voice.utterance(marker.spokenTitle))
+        speak(marker.spokenTitle)
     }
 
     /// A sample sentence from the Voice page, said the way alerts are.
@@ -268,25 +290,63 @@ final class AlertsEngine: ObservableObject {
     /// down the list plays one voice at a time; the page passes it only
     /// when no trip is running, so a turn instruction is never cut.
     func preview(_ text: String, interrupt: Bool) {
+        if Voice.neural != nil {
+            // Outside a trip the sample may take a moment to render;
+            // during one it waits no longer than any other sentence.
+            if interrupt { NeuralSpeaker.shared.stop() }
+            NeuralSpeaker.shared.say(text, label: "sample", patience: interrupt ? 10 : NeuralPlan.patience, urgent: interrupt)
+            return
+        }
         if interrupt, synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
-        speak(Voice.utterance(text))
+        speak(text)
     }
 
     /// Every sentence goes out the same way: take the audio focus
-    /// (music ducks), say it, give the focus back when done.
-    private func speak(_ utterance: AVSpeechUtterance) {
+    /// (music ducks), say it, give the focus back when done. With a
+    /// CommuteScout voice, the neural speaker does the same in its queue.
+    private func speak(_ text: String) {
+        if Voice.neural != nil {
+            NeuralSpeaker.shared.say(text, label: "alert")
+            return
+        }
+        let utterance = Voice.utterance(text)
         if synth.delegate == nil { synth.delegate = focus }
         focus.take()
         synth.speak(utterance)
     }
 
+    /// What an alert says: its title, and how far ahead when that is
+    /// more than a few hundred metres.
+    static func sentence(_ title: String, gap: Double) -> String {
+        title + (gap > 200 ? ", in " + Units.spoken(gap) : "")
+    }
+
+    /// Alerts just learned of, rendered in a CommuteScout voice before
+    /// they are due, soonest first. Each alert's sentences are queued
+    /// once per trip.
+    private func prerender(_ items: [Upcoming], from along: Double) {
+        guard Voice.neural != nil else { return }
+        var queue: [(text: String, due: Double)] = []
+        for item in items where !prerendered.contains(item.id) {
+            let rule = rules?(item.marker) ?? Prefs.AlertRule(enabled: true, speak: spoken, firstMeters: announceAheadMeters, repeatMeters: 0)
+            guard rule.enabled, rule.speak else { continue }
+            prerendered.insert(item.id)
+            let title = item.marker.spokenTitle
+            let texts = NeuralPlan.alertSentences(firstMeters: rule.firstMeters, repeatMeters: rule.repeatMeters,
+                                                  gapNow: item.alongMeters - along) { Self.sentence(title, gap: $0) }
+            let due = item.alongMeters - rule.firstMeters
+            queue += texts.map { (text: $0, due: due) }
+        }
+        if !queue.isEmpty { NeuralVoices.shared.prerender(queue) }
+    }
+
     private func announce(_ marker: RoadMarker, in gap: Double) {
-        let text = marker.spokenTitle + (gap > 200 ? ", in " + Units.spoken(gap) : "")
+        let text = Self.sentence(marker.spokenTitle, gap: gap)
         if let t = spokenAt[marker.spokenTitle], Date().timeIntervalSince(t) < 90 { return }
         spokenAt[marker.spokenTitle] = Date()
         lastAnnounced = text
         DriveLog.note("alert spoken: \(marker.kind) '\(marker.displayTitle)' in \(DriveLog.meters(gap))")
-        speak(Voice.utterance(text))
+        speak(text)
     }
 
     /// Fetch again now: the signal came back.
@@ -337,6 +397,7 @@ final class AlertsEngine: ObservableObject {
         }.value
         all = found
         allAsOf = asOf
+        prerender(found.filter { $0.alongMeters > hereAlong - 100 }, from: hereAlong)
     }
 
     // MARK: geometry (plain functions, safe off the main actor)

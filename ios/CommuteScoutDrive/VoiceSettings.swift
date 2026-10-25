@@ -2,15 +2,18 @@ import AVFoundation
 import SwiftUI
 
 /// Settings > Voice: who says the turns and the alerts, how fast and at
-/// what pitch. Every voice here is one iOS keeps on the phone, so all
-/// of them are free and work with no signal. Tapping a voice picks it
-/// and says a sample sentence in it; the speed and pitch sliders say
-/// the sample again when let go.
+/// what pitch. At the top are the CommuteScout voices, downloaded from
+/// here; below them the voices iOS keeps on the phone. All of them are
+/// free and work with no signal. Tapping a voice picks it and says a
+/// sample sentence in it; the speed and pitch sliders say the sample
+/// again when let go.
 struct VoiceSettings: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var voices: [VoiceOption] = []
     @State private var allAccents = false
+    @StateObject private var previews = VoicePreviewPlayer()
+    @ObservedObject private var packs = VoicePacks.shared
 
     private var prefs: Prefs { model.prefs }
 
@@ -30,29 +33,45 @@ struct VoiceSettings: View {
 
     private var speaking: VoiceOption? { Voice.resolve(saved: prefs.voiceId, among: voices) }
     private var best: VoiceOption? { VoicePick.best(offered, region: region, systemDefault: Voice.systemDefault) }
+    /// The CommuteScout voice that speaks, if one does.
+    private var neural: (pack: VoiceCatalog.Pack, voice: VoiceCatalog.Voice)? {
+        _ = packs.states   // read so the page follows a download or a delete
+        return packs.catalog?.neuralVoice(saved: prefs.voiceId, installed: VoicePacks.installedIds)
+    }
+    /// What Automatic would pick among the CommuteScout voices.
+    private var automaticNeural: VoiceCatalog.Voice? {
+        _ = packs.states
+        return packs.catalog?.neuralVoice(saved: "", installed: VoicePacks.installedIds)?.voice
+    }
     /// Automatic: nothing picked, or the pick was deleted from the phone.
-    private var automatic: Bool { !offered.contains { $0.id == prefs.voiceId } }
+    private var automatic: Bool {
+        !offered.contains { $0.id == prefs.voiceId } && !(neural.map { $0.voice.id == prefs.voiceId } ?? false)
+    }
 
     /// What a drive sounds like, in the driver's units.
     private var sample: String { "In \(Units.spoken(805)), turn right onto Main Street. Police reported ahead." }
 
     var body: some View {
         Form {
+            CommuteScoutVoicesSections(previews: previews, selected: neural?.voice.id, pick: pick)
+
             Section {
                 HStack(spacing: 12) {
                     SettingsIcon(symbol: "waveform", color: .pink)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(speaking?.name ?? "System voice").font(.headline)
-                        Text(speaking.map(detail) ?? "English").font(.subheadline).foregroundStyle(.secondary)
+                        Text(neural?.voice.name ?? speaking?.name ?? "System voice").font(.headline)
+                        Text(neural.map { CommuteScoutVoicesSections.detail($0.voice) + ". Computer-generated voice" }
+                            ?? speaking.map(detail) ?? "English")
+                            .font(.subheadline).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    if let q = speaking?.quality, q > .standard { VoiceQualityBadge(quality: q) }
+                    if neural == nil, let q = speaking?.quality, q > .standard { VoiceQualityBadge(quality: q) }
                 }
                 .padding(.vertical, 2)
                 .accessibilityElement(children: .combine)
                 Button { play() } label: { Label("Test voice", systemImage: "play.circle.fill") }
                     .accessibilityIdentifier("voice-test")
-            } footer: { Text("Turn instructions and road alerts are both spoken in this voice.") }
+            } header: { Text("Speaking now") } footer: { Text("Turn instructions and road alerts are both spoken in this voice.") }
 
             Section {
                 VStack(alignment: .leading, spacing: 4) {
@@ -70,7 +89,9 @@ struct VoiceSettings: View {
                         maximumValueLabel: { Text("High").font(.caption).foregroundStyle(.secondary) }
                         onEditingChanged: { if !$0 { play() } }
                         .accessibilityIdentifier("voice-pitch")
+                        .disabled(neural != nil)
                 }
+                .opacity(neural != nil ? 0.5 : 1)
                 Button("Reset speed and pitch") {
                     prefs.voiceRate = Voice.defaultRate
                     prefs.voicePitch = Voice.defaultPitch
@@ -78,12 +99,15 @@ struct VoiceSettings: View {
                 }
                 .disabled(prefs.voiceRate == Voice.defaultRate && prefs.voicePitch == Voice.defaultPitch)
                 .accessibilityIdentifier("voice-reset")
-            } header: { Text("Speed and pitch") }
+            } header: { Text("Speed and pitch") } footer: {
+                if neural != nil { Text("Pitch applies to system voices only. CommuteScout voices keep their own pitch.") }
+            }
 
             Section {
                 Button { pick("") } label: {
                     choiceLabel("Automatic",
-                                best.map { "Best on this phone: \($0.name), \($0.quality.label)" } ?? "The system voice",
+                                automaticNeural.map { "\($0.name), a CommuteScout voice" }
+                                    ?? best.map { "Best on this phone: \($0.name), \($0.quality.label)" } ?? "The system voice",
                                 quality: nil, selected: automatic)
                 }
                 .buttonStyle(.plain)
@@ -94,7 +118,7 @@ struct VoiceSettings: View {
                         .accessibilityIdentifier("voice-all-accents")
                 }
             } header: { Text("Voice") } footer: {
-                Text("Automatic picks the best voice on this phone for your region, and moves to a better one when you download it. Tap a voice to hear it.")
+                Text("Automatic uses a downloaded CommuteScout voice. Without one, it picks the best system voice on this phone for your region. Tap a voice to hear it.")
             }
 
             ForEach([VoiceOption.Quality.premium, .enhanced, .standard], id: \.self) { q in
@@ -118,12 +142,17 @@ struct VoiceSettings: View {
                     Text("No English voice is on this phone yet.").foregroundStyle(.secondary)
                 }
             } header: { Text("More voices") } footer: {
-                Text("More natural voices are free to download. In the Settings app, go to Accessibility > Read & Speak > Voices > English, choose a voice, and download its Enhanced or Premium version. On iOS 18 and earlier, Read & Speak is called Spoken Content. When you come back, the new voice is in this list.")
+                Text("For a more natural voice, download a CommuteScout voice at the top of this page. Voices added to iOS also appear in this list.")
             }
         }
         .navigationTitle("Voice")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { reload() }
+        .onAppear {
+            reload()
+            // Ready the sample in the voice in use, so Test voice speaks at once.
+            if Voice.neural != nil, !model.state.isNavigating { NeuralVoices.shared.prerender([(sample, -1)]) }
+        }
+        .onDisappear { previews.stop() }
         .onChange(of: scenePhase) { phase in
             if phase == .active { reload() }
         }
@@ -169,6 +198,8 @@ struct VoiceSettings: View {
     private func pick(_ id: String) {
         prefs.voiceId = id
         prefs.objectWillChange.send()
+        Voice.refresh()
+        previews.stop()
         play()
     }
 

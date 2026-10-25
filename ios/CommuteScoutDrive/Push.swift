@@ -25,6 +25,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return true
     }
 
+    /// iOS woke the app because voice downloads finished in the
+    /// background: reconnect to the session and say when it is done.
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        guard identifier == VoicePacks.sessionId else { completionHandler(); return }
+        Task { @MainActor in VoicePacks.shared.backgroundCompletion = completionHandler }
+    }
+
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         Messaging.messaging().apnsToken = deviceToken
     }
