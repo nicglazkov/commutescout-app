@@ -42,7 +42,13 @@
           "name": "Nora",
           "accent": "en-US",
           "gender": "female",
-          "default": true
+          "default": true,
+          "preview": {
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.supertonic2-en.F3.m4a",
+            "size": 65869,
+            "sha256": "e6bbec2f3ffce201b8d4e1b4304d6401b53625047b530119b3b53b08e1e77eaf",
+            "format": "m4a"
+          }
         },
         {
           "id": "supertonic2-en.F2",
@@ -50,7 +56,13 @@
           "upstream": "F2",
           "name": "Clara",
           "accent": "en-US",
-          "gender": "female"
+          "gender": "female",
+          "preview": {
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.supertonic2-en.F2.m4a",
+            "size": 62159,
+            "sha256": "f85552fbf291009e1f4c8c3272cbd4756fc7ef27653627adf3bb3ed6ce2c5e05",
+            "format": "m4a"
+          }
         },
         {
           "id": "supertonic2-en.M3",
@@ -58,7 +70,13 @@
           "upstream": "M3",
           "name": "Theo",
           "accent": "en-US",
-          "gender": "male"
+          "gender": "male",
+          "preview": {
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.supertonic2-en.M3.m4a",
+            "size": 58813,
+            "sha256": "fc26f776736ca3a32175e0796110ff3baf94cda7b5630df646184713f0ccf738",
+            "format": "m4a"
+          }
         },
         {
           "id": "supertonic2-en.M1",
@@ -66,7 +84,13 @@
           "upstream": "M1",
           "name": "Owen",
           "accent": "en-US",
-          "gender": "male"
+          "gender": "male",
+          "preview": {
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.supertonic2-en.M1.m4a",
+            "size": 64010,
+            "sha256": "f6fedb8a4166552dfa0fd0d31bb4218797f8699aa7093b035ce2a741edfa9e28",
+            "format": "m4a"
+          }
         }
       ],
       "files": [
@@ -183,7 +207,13 @@
           "name": "Harper",
           "accent": "en-US",
           "gender": "female",
-          "default": true
+          "default": true,
+          "preview": {
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.af_heart.m4a",
+            "size": 52618,
+            "sha256": "0e618ac5e2b729cc2587c73be01ead93cbc3ffba43bfee3ce2f7ffc095584903",
+            "format": "m4a"
+          }
         },
         {
           "id": "kokoro-en-v1_0.af_bella",
@@ -191,7 +221,13 @@
           "upstream": "af_bella",
           "name": "Ruby",
           "accent": "en-US",
-          "gender": "female"
+          "gender": "female",
+          "preview": {
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.af_bella.m4a",
+            "size": 53080,
+            "sha256": "42ce972a185e02721f5ae602019ecf8fb176aeeb48e31fe8bafd7480f0e05507",
+            "format": "m4a"
+          }
         },
         {
           "id": "kokoro-en-v1_0.am_michael",
@@ -199,7 +235,13 @@
           "upstream": "am_michael",
           "name": "Miles",
           "accent": "en-US",
-          "gender": "male"
+          "gender": "male",
+          "preview": {
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.am_michael.m4a",
+            "size": 56133,
+            "sha256": "7035d8f015d4cc8f131f3acda6a510bea37faeef0dde1fa4f1c32de84c06de67",
+            "format": "m4a"
+          }
         },
         {
           "id": "kokoro-en-v1_0.am_fenrir",
@@ -207,7 +249,13 @@
           "upstream": "am_fenrir",
           "name": "Grant",
           "accent": "en-US",
-          "gender": "male"
+          "gender": "male",
+          "preview": {
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.am_fenrir.m4a",
+            "size": 51761,
+            "sha256": "fa2c6c9fbaca692f32c31027400ae52388a92014b8add3245737d13eaa644bac",
+            "format": "m4a"
+          }
         },
         {
           "id": "kokoro-en-v1_0.bf_isabella",
@@ -215,7 +263,13 @@
           "upstream": "bf_isabella",
           "name": "Imogen",
           "accent": "en-GB",
-          "gender": "female"
+          "gender": "female",
+          "preview": {
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.bf_isabella.m4a",
+            "size": 57495,
+            "sha256": "de39a0b149f3570163d6ae60660d5cbb0d925caa27920fdf1d5ee933a69f880c",
+            "format": "m4a"
+          }
         },
         {
           "id": "kokoro-en-v1_0.bf_emma",
@@ -223,7 +277,13 @@
           "upstream": "bf_emma",
           "name": "Emma",
           "accent": "en-GB",
-          "gender": "female"
+          "gender": "female",
+          "preview": {
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.bf_emma.m4a",
+            "size": 54301,
+            "sha256": "da74917107ee265ccf1e5e93ab5e4cffc9a19ff8e85df45c3c0f58ceccb66e9e",
+            "format": "m4a"
+          }
         },
         {
           "id": "kokoro-en-v1_0.bm_george",
@@ -231,7 +291,13 @@
           "upstream": "bm_george",
           "name": "George",
           "accent": "en-GB",
-          "gender": "male"
+          "gender": "male",
+          "preview": {
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.bm_george.m4a",
+            "size": 62392,
+            "sha256": "f4a4fc76ad1f165feba3d0513c1ee8b636616725549b352520b2987b5cdb2e2c",
+            "format": "m4a"
+          }
         },
         {
           "id": "kokoro-en-v1_0.bm_fable",
@@ -239,7 +305,13 @@
           "upstream": "bm_fable",
           "name": "Oliver",
           "accent": "en-GB",
-          "gender": "male"
+          "gender": "male",
+          "preview": {
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.bm_fable.m4a",
+            "size": 67093,
+            "sha256": "2aa6e6f4f38b2fee333431eb0ee7949477c86f635175fc765c6bab4d0e046347",
+            "format": "m4a"
+          }
         }
       ],
       "files": [
