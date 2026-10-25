@@ -27,10 +27,27 @@ ABBR = {r"\bSt\b": "Street", r"\bAve\b": "Avenue", r"\bBlvd\b": "Boulevard", r"\
         r"\bN\b": "North", r"\bS\b": "South", r"\bE\b": "East", r"\bW\b": "West", r"\bmph\b": "miles per hour",
         r"\bCHP\b": "C H P", r"\bmi\b": "miles", r"\bkm\b": "kilometers", r"\bft\b": "feet"}
 
+IRREGULAR = {"one": "first", "two": "second", "three": "third", "five": "fifth", "eight": "eighth", "nine": "ninth", "twelve": "twelfth"}
+
+def ordinal(n: int) -> str:
+    # 3rd "third", 21st "twenty first", 112th "one hundred twelfth": only the last word changes.
+    *head, last = words(n).split(" ")
+    if last in IRREGULAR: last = IRREGULAR[last]
+    elif last.endswith("y"): last = last[:-1] + "ieth"
+    else: last += "th"
+    return " ".join(head + [last])
+
+def letters(s: str) -> str:
+    # A short all-caps run is a code, said letter by letter: G5 "G five".
+    return " ".join(s) if s.isupper() and len(s) <= 3 else s
+
 def normalize(t: str) -> str:
     for k, v in ABBR.items(): t = re.sub(k, v, t)
     t = ROUTE.sub(lambda m: PREFIX[m.group(1)] + " " + route_number(m.group(2)), t)
+    t = re.sub(r"\b(\d+)(st|nd|rd|th)\b", lambda m: ordinal(int(m.group(1))), t)
     t = re.sub(r"(\d+)\.(\d+)", lambda m: words(int(m.group(1))) + " point " + " ".join(ONES[int(d)] for d in m.group(2)), t)
+    t = re.sub(r"\b([A-Za-z]+)(\d+)\b", lambda m: letters(m.group(1)) + " " + words(int(m.group(2))), t)
+    t = re.sub(r"\b(\d+)([A-Za-z])\b", lambda m: words(int(m.group(1))) + " " + m.group(2), t)
     t = re.sub(r"\d+", lambda m: words(int(m.group(0))), t)
     return t
 

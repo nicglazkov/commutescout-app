@@ -7,3 +7,6 @@
 -keep,includedescriptorclasses class com.commutescout.drive.**$$serializer { *; }
 -keepclassmembers class com.commutescout.drive.** { *** Companion; }
 -keepclasseswithmembers class com.commutescout.drive.** { kotlinx.serialization.KSerializer serializer(...); }
+# sherpa-onnx: the JNI code reads the config classes' fields by name and
+# builds GeneratedAudio from native code.
+-keep class com.k2fsa.sherpa.onnx.** { *; }
