@@ -91,7 +91,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 private enum class SettingsPage(val title: String) {
     ACCOUNT("Account"), APPEARANCE("Appearance"), UNITS("Units"), NAVIGATION("Navigation"), ALERTS("Alerts"), VOICE("Voice"),
     LAYERS("Map layers"), PLUGINS("Plugins"), OFFLINE("Offline maps"), PLACES("Saved places"), HELP("Help"),
-    ABOUT("About"), TESTING("Testing"),
+    ABOUT("About"), VOICE_LICENSES("Voice licenses"), TESTING("Testing"),
 }
 
 /**
@@ -131,13 +131,14 @@ fun SettingsSheet(model: DriveViewModel, onClose: () -> Unit) {
                         SettingsPage.UNITS -> UnitsPage(model)
                         SettingsPage.NAVIGATION -> NavigationPage(model)
                         SettingsPage.ALERTS -> AlertsPage(model)
-                        SettingsPage.VOICE -> VoicePage(model)
+                        SettingsPage.VOICE -> VoicePage(model) { page = SettingsPage.VOICE_LICENSES }
                         SettingsPage.LAYERS -> LayersPage(model)
                         SettingsPage.PLUGINS -> PluginsPage(model)
                         SettingsPage.OFFLINE -> OfflinePage(model)
                         SettingsPage.PLACES -> PlacesPage(model)
                         SettingsPage.HELP -> HelpPage()
-                        SettingsPage.ABOUT -> AboutPage()
+                        SettingsPage.ABOUT -> AboutPage { page = SettingsPage.VOICE_LICENSES }
+                        SettingsPage.VOICE_LICENSES -> VoiceLicensesPage()
                         SettingsPage.TESTING -> TestingPage(model)
                     }
                 }
@@ -557,8 +558,15 @@ private fun HelpPage() {
 }
 
 @Composable
-private fun AboutPage() {
+private fun AboutPage(openVoiceLicenses: () -> Unit) {
     PageGroup { Text("Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})") }
+    PageGroup {
+        Row(Modifier.fillMaxWidth().clickable(onClick = openVoiceLicenses).padding(vertical = 6.dp).testTag("about-voice-licenses"),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("Voice licenses", Modifier.weight(1f))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
     Note("Routing and address lookup by Stadia Maps. Map data (c) OpenStreetMap contributors, drawn from files CommuteScout hosts. Road data from the agencies listed on commutescout.com. Verify before you drive.")
 }
 

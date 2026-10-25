@@ -176,6 +176,7 @@ object Engine {
                 c.replaceRoute(r)
                 // The alerts engine must follow the new geometry.
                 alerts.start(r.geometry.map { LatLon(it.lat, it.lng) })
+                Neural.prerenderRoute(r, prefs)
                 tripPlace?.let { TripStore.save(r, it) }
             }
         }
@@ -215,6 +216,8 @@ object Engine {
         alerts.rules = { m -> prefs.rule(prefs.ruleKind(m)) }
         alerts.shown = { m -> prefs.isShown(m.kind) && (m.kind != "plugin" || PluginStyle.sourceId(m) !in sources.hidden.value) }
         alerts.fallback = { markers.held() to markers.asOf.value }
+        // Neural voices drop rendering work the driver has already passed.
+        Neural.renderer.hereAlong = { alerts.hereAlong.value }
         // The signal is back: the snapshot, spoken alerts and any report
         // made meanwhile all catch up. The marker store does its own.
         Connectivity.onReconnect {
@@ -666,6 +669,8 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             setDestination(place.shortName)
             Engine.places.noteRecent(place.name, place.lat, place.lon)
             Engine.alerts.start(route.geometry.map { LatLon(it.lat, it.lng) })
+            // A neural voice renders every spoken instruction now, so none waits on the engine.
+            runCatching { Neural.prerenderRoute(route, prefs) }.onFailure { Log.w("DriveViewModel", "prerender: $it") }
             _selectedMarker.value = null
             // The "from" place of the Directions sheet is for this one trip.
             origin = null
@@ -696,6 +701,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             }
         }
         Engine.alerts.startFreeDrive()
+        Neural.tripEnded()
         _state.value = DriveState.Browsing
     }
 

@@ -238,9 +238,9 @@ object VoiceLabels {
 class Speaker(
     context: Context,
     private val prefs: Prefs,
-    private val onStart: (String?) -> Unit = {},
-    private val onDone: (String?) -> Unit = {},
-    private val onError: (String?) -> Unit = {},
+    internal val onStart: (String?) -> Unit = {},
+    internal val onDone: (String?) -> Unit = {},
+    internal val onError: (String?) -> Unit = {},
 ) {
     private val context = context.applicationContext
     private var tts: TextToSpeech? = null
@@ -257,7 +257,7 @@ class Speaker(
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
         .build()
 
-    val isSpeaking: Boolean get() = tts?.isSpeaking == true
+    val isSpeaking: Boolean get() = tts?.isSpeaking == true || SpeechQueue.busy(this)
 
     fun start() {
         if (tts != null) return
@@ -274,12 +274,12 @@ class Speaker(
             t.setAudioAttributes(attributes)
             t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) = this@Speaker.onStart(utteranceId)
-                override fun onDone(utteranceId: String?) = this@Speaker.onDone(utteranceId)
+                override fun onDone(utteranceId: String?) { this@Speaker.onDone(utteranceId); SpeechQueue.systemFinished(utteranceId) }
                 @Deprecated("Deprecated in Java")
-                override fun onError(utteranceId: String?) = this@Speaker.onError(utteranceId)
-                override fun onError(utteranceId: String?, errorCode: Int) = this@Speaker.onError(utteranceId)
+                override fun onError(utteranceId: String?) { this@Speaker.onError(utteranceId); SpeechQueue.systemFinished(utteranceId) }
+                override fun onError(utteranceId: String?, errorCode: Int) { this@Speaker.onError(utteranceId); SpeechQueue.systemFinished(utteranceId) }
                 // Cut off by a preview or a stop: finished, as far as audio focus is concerned.
-                override fun onStop(utteranceId: String?, interrupted: Boolean) = this@Speaker.onDone(utteranceId)
+                override fun onStop(utteranceId: String?, interrupted: Boolean) { this@Speaker.onDone(utteranceId); SpeechQueue.systemFinished(utteranceId) }
             })
             applied = null
             applyVoice()
@@ -302,7 +302,10 @@ class Speaker(
         if (running) start()
     }
 
-    fun stop() { tts?.stop() }
+    fun stop() {
+        SpeechQueue.stop(this)
+        tts?.stop()
+    }
 
     /** Pick the voice again before the next sentence: voices may have been downloaded or removed. */
     fun invalidate() { applied = null }
@@ -314,12 +317,30 @@ class Speaker(
     fun engines(): List<TextToSpeech.EngineInfo> = runCatching { tts?.engines }.getOrNull().orEmpty()
     val defaultEngine: String? get() = runCatching { tts?.defaultEngine }.getOrNull()
 
-    /** Speaks [text]; false when the engine is not ready or refused it. */
+    /**
+     * Speaks [text]; false when the engine is not ready or refused it.
+     * With a neural voice the sentence joins the [SpeechQueue], which
+     * plays its rendered audio or hands it back to the system voice.
+     */
     fun speak(text: String, id: String, flush: Boolean = false): Boolean {
         val t = tts ?: return false
         if (!_ready.value) return false
+        val neural = runCatching { Neural.active(prefs) }.getOrNull()
+        // Sentences already in the queue keep their order, whatever voice comes next.
+        if (neural != null || SpeechQueue.busy(this)) {
+            if (flush) t.stop()
+            return SpeechQueue.enqueue(this, text, id, flush, neural, prefs.voiceRate)
+        }
         applyVoice()
         return t.speak(text, if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.SUCCESS
+    }
+
+    /** The system voice says one sentence for the [SpeechQueue]: a neural voice could not. */
+    internal fun speakSystem(text: String, id: String): Boolean {
+        val t = tts ?: return false
+        if (!_ready.value) return false
+        applyVoice()
+        return t.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.SUCCESS
     }
 
     @Synchronized

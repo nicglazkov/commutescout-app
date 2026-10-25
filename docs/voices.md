@@ -280,7 +280,15 @@ it. Vendor the AAR from the sherpa-onnx release instead:
 - Size: 49,236,482 bytes
 - sha256: `f0f8716982d27cb4ce695e3934018b1342d9d3d6fdb6ef1f1658fe8bad50b4fc`
 
-Put it in `android/app/libs/` and add it in `android/app/build.gradle.kts`:
+The app does not commit the AAR. `android/app/build.gradle.kts` downloads it
+into `android/app/libs/` (gitignored) on the first Gradle run, checks the
+sha256 on every configuration, and stops the build on a mismatch. CI downloads
+it the same way. The build also drops `libsherpa-onnx-c-api.so` and
+`libsherpa-onnx-cxx-api.so`: the Kotlin API loads only `libsherpa-onnx-jni.so`
+and `libonnxruntime.so`. R8 needs `-keep class com.k2fsa.sherpa.onnx.** { *; }`
+because the native code reads the config classes' fields by name.
+
+The equivalent setup with the file in place:
 
 ```kotlin
 android {
