@@ -7,7 +7,7 @@ import org.junit.Test
 
 /**
  * The Kotlin port of scripts/voices/norm.py. Each expected line is that
- * script's output for the input, quirks included ("threerd"): the two
+ * script's output for the input: the two
  * apps must say the same thing, and the reference is the one to change.
  */
 class KokoroTextTest {
@@ -20,16 +20,21 @@ class KokoroTextTest {
         "Exit 405 onto I 405 S" to "Exit four hundred five onto I four oh five South",
         "CHP reports a crash on SR 1 near Elm Ave" to "C H P reports a crash on State Route one near Elm Avenue",
         "Speed limit 65 mph" to "Speed limit sixty five miles per hour",
-        "In 500 ft, turn right onto W 3rd St" to "In five hundred feet, turn right onto West threerd Street",
+        "In 500 ft, turn right onto W 3rd St" to "In five hundred feet, turn right onto West third Street",
         "Continue for 2.25 km on Hwy 280" to "Continue for two point two five kilometers on Highway two eighty",
-        "Take exit 23B toward Route 66" to "Take exit twenty threeB toward Route sixty six",
+        "Take exit 23B toward Route 66" to "Take exit twenty three B toward Route sixty six",
         "Interstate 5 has 1500 cars" to "Interstate five has one thousand five hundred cars",
         "In 1200 ft, keep left at the fork" to "In one thousand two hundred feet, keep left at the fork",
         "Roadwork for 1234567 ft on Highway 99" to "Roadwork for one two three four five six seven feet on Highway ninety nine",
         "Turn onto Dr Martin Luther King Jr Blvd" to "Turn onto Drive Martin Luther King Jr Boulevard",
         "Drive 100 miles on US 100" to "Drive one hundred miles on U S one oh zero",
-        "Head north on 1st Ave, then E 42nd St" to "Head north on onest Avenue, then East forty twond Street",
+        "Head north on 1st Ave, then E 42nd St" to "Head north on first Avenue, then East forty second Street",
         "Police reported ahead, in one mile" to "Police reported ahead, in one mile",
+        "Turn right onto 3rd St" to "Turn right onto third Street",
+        "Take exit 5A" to "Take exit five A",
+        "G5 Rd" to "G five Road",
+        "112th St" to "one hundred twelfth Street",
+        "Continue on 21st Ave" to "Continue on twenty first Avenue",
     )
 
     @Test fun matchesTheReference() {

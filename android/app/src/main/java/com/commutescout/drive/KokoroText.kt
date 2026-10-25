@@ -47,14 +47,34 @@ object KokoroText {
         "N" to "North", "S" to "South", "E" to "East", "W" to "West", "mph" to "miles per hour",
         "CHP" to "C H P", "mi" to "miles", "km" to "kilometers", "ft" to "feet",
     ).map { (k, v) -> Regex("""\b$k\b""") to v }
+    private val ORDINAL = Regex("""\b(\d+)(st|nd|rd|th)\b""")
     private val DECIMAL = Regex("""(\d+)\.(\d+)""")
+    private val CODE = Regex("""\b([A-Za-z]+)(\d+)\b""")
+    private val EXIT = Regex("""\b(\d+)([A-Za-z])\b""")
     private val NUMBER = Regex("""\d+""")
+    private val IRREGULAR = mapOf("one" to "first", "two" to "second", "three" to "third", "five" to "fifth",
+        "eight" to "eighth", "nine" to "ninth", "twelve" to "twelfth")
+
+    /** 3rd "third", 21st "twenty first", 112th "one hundred twelfth": only the last word changes. */
+    fun ordinal(digits: String): String {
+        val parts = wordsOf(digits).split(" ")
+        val last = parts.last()
+        val said = IRREGULAR[last] ?: if (last.endsWith("y")) last.dropLast(1) + "ieth" else last + "th"
+        return (parts.dropLast(1) + said).joinToString(" ")
+    }
+
+    /** A short all-caps run is a code, said letter by letter: G5 "G five". */
+    private fun letters(s: String): String =
+        if (s.length <= 3 && s.all { it.isUpperCase() }) s.toList().joinToString(" ") else s
 
     fun normalize(text: String): String {
         var t = text
         for ((k, v) in ABBR) t = k.replace(t, v)
         t = ROUTE.replace(t) { m -> PREFIX.getValue(m.groupValues[1]) + " " + routeNumber(m.groupValues[2]) }
+        t = ORDINAL.replace(t) { m -> ordinal(m.groupValues[1]) }
         t = DECIMAL.replace(t) { m -> wordsOf(m.groupValues[1]) + " point " + m.groupValues[2].map { ONES[it - '0'] }.joinToString(" ") }
+        t = CODE.replace(t) { m -> letters(m.groupValues[1]) + " " + wordsOf(m.groupValues[2]) }
+        t = EXIT.replace(t) { m -> wordsOf(m.groupValues[1]) + " " + m.groupValues[2] }
         t = NUMBER.replace(t) { m -> wordsOf(m.value) }
         return t
     }
