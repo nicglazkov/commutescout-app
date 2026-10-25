@@ -1,6 +1,7 @@
 package com.commutescout.drive
 
 import android.content.Intent
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -79,8 +80,17 @@ fun VoicePage(model: DriveViewModel) {
         runCatching { context.startActivity(Intent(TTS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             .onFailure { Log.w("Voice", "no text-to-speech settings screen: $it") }
     }
+    // The engine's own voice download screen, one tap away; the general
+    // settings screen when the engine has none.
+    fun openDownloads() {
+        val engine = prefs.voiceEngine.ifEmpty { speaker.defaultEngine ?: "" }
+        val install = Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (engine.isNotEmpty()) install.setPackage(engine)
+        runCatching { context.startActivity(install) }
+            .onFailure { Log.w("Voice", "no voice download screen for $engine: $it"); openSystem() }
+    }
     fun pick(v: VoiceInfo?) {
-        if (v != null && !v.installed) { openSystem(); return }
+        if (v != null && !v.installed) { openDownloads(); return }
         prefs.voiceName = v?.name ?: ""
         preview()
     }
@@ -152,8 +162,11 @@ fun VoicePage(model: DriveViewModel) {
         Note("Each engine has its own voices.")
     }
 
-    PageGroup { LinkRow("Text-to-speech settings") { openSystem() } }
-    Note("More natural voices are free to download. In text-to-speech settings, tap the settings icon next to Speech Services by Google, then tap Install voice data.")
+    PageGroup {
+        LinkRow("Download more voices") { openDownloads() }
+        LinkRow("Text-to-speech settings") { openSystem() }
+    }
+    Note("More natural voices are free to download. Pick a voice there, then come back to choose it here.")
 }
 
 /** A choice with a radio button: a voice or an engine, and a line about it. */
