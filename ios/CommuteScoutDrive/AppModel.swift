@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import CoreLocation
 @preconcurrency import FerrostarCore
@@ -352,6 +353,7 @@ final class AppModel: ObservableObject {
             self.coreState = s
             if let loc = s?.preferredUserLocation?.clLocation.coordinate, self.state.isNavigating {
                 self.alerts.update(position: loc)
+                NeuralVoices.shared.setAlong(self.alerts.hereAlong)
             }
             // Arrived: nothing left to resume.
             if case .complete = s?.tripState { SavedTrip.clear() }
@@ -483,6 +485,7 @@ final class AppModel: ObservableObject {
     /// is what the location background mode is for.
     func pauseIfIdle() {
         guard !state.isNavigating else { return }
+        NeuralVoices.shared.free("in the background")
         location.stopUpdating()
         alerts.stop()
         markers.pause()
@@ -670,6 +673,9 @@ final class AppModel: ObservableObject {
             guard !found.isEmpty else { throw DriveError.noRoute }
             preview = found.first
             state = .choosing(found, place)
+            // The first sentences of the likely route, while the driver
+            // looks at the choices: they are said the moment it starts.
+            if let first = found.first { prerenderSpeech(first, from: 0, limit: 3) }
             if let bbox = found.first?.bbox {
                 camera = .boundingBox(MLNCoordinateBounds(
                     sw: bbox.sw.clLocationCoordinate2D, ne: bbox.ne.clLocationCoordinate2D),
@@ -707,11 +713,13 @@ final class AppModel: ObservableObject {
             selectedMarker = nil
             origin = nil
             places.noteRecent(name: place.name, coordinate: place.coordinate)
+            prerenderSpeech(route, from: 0)
             alerts.start(route: route.geometry.map(\.clLocationCoordinate2D))
             via = []
             resumable = nil
             delegate.onReroute = { [weak self] r in
                 guard let self else { return }
+                self.prerenderSpeech(r, from: 0)
                 self.alerts.start(route: r.geometry.map(\.clLocationCoordinate2D))
                 SavedTrip.save(route: r, place: place)
                 DriveLog.note("rerouted: \(DriveLog.meters(r.distance)), \(r.geometry.count) pts")
@@ -719,6 +727,7 @@ final class AppModel: ObservableObject {
             camera = navigationCamera
             state = .navigating(place)
             applyIdleTimer()
+            speechWarmth()
         } catch {
             DriveLog.note("route start failed: \(error)")
             errorMessage = here == nil ? "Waiting for your location. Try again in a moment."
@@ -728,6 +737,7 @@ final class AppModel: ObservableObject {
 
     func stop() {
         DriveLog.note("route stop")
+        NeuralVoices.shared.clearQueue()
         SavedTrip.clear()
         core.stopNavigation()
         // Ferrostar stops location updates with the trip; start them again so
@@ -736,7 +746,40 @@ final class AppModel: ObservableObject {
         alerts.startFreeDrive()
         state = .browsing
         applyIdleTimer()
+        speechWarmth()
         follow()
+    }
+
+    /// With a CommuteScout voice, every spoken instruction of the route
+    /// is rendered now, in the order it will be said, so the voice never
+    /// has to be made while the driver waits. The text is built the way
+    /// Ferrostar builds it and `VoicedSynthesizer` reads it back, so the
+    /// cached audio matches the sentence when it comes.
+    func prerenderSpeech(_ route: Route, from along: Double, limit: Int = .max) {
+        guard Voice.neural != nil else { return }
+        NeuralVoices.shared.clearQueue()
+        let due = NeuralPlan.instructionDue(stepDistances: route.steps.map(\.distance),
+                                            triggers: route.steps.map { $0.spokenInstructions.map(\.triggerDistanceBeforeManeuver) })
+        var items: [(text: String, due: Double)] = []
+        for (i, step) in route.steps.enumerated() {
+            for (j, instruction) in step.spokenInstructions.enumerated() {
+                let u: AVSpeechUtterance = if let ssml = instruction.ssml, let s = AVSpeechUtterance(ssmlRepresentation: ssml) { s }
+                    else { AVSpeechUtterance(string: instruction.text) }
+                let text = Voice.plainText(u)
+                if !text.isEmpty, !items.contains(where: { $0.text == text }) { items.append((text, due[i][j])) }
+                if items.count >= limit { break }
+            }
+            if items.count >= limit { break }
+        }
+        DriveLog.note("neural: queued \(items.count) instructions to render")
+        NeuralVoices.shared.prerender(items.filter { $0.due >= along - 50 })
+    }
+
+    /// The engine is kept loaded while a trip or a drive runs, and let
+    /// go otherwise.
+    private func speechWarmth() {
+        let warm = state.isNavigating || driving
+        NeuralVoices.shared.setKeepWarm(warm)
     }
 
     // MARK: driving mode
@@ -820,6 +863,7 @@ final class AppModel: ObservableObject {
 
     private func setDriving(_ on: Bool) {
         driving = on
+        speechWarmth()
         DriveLog.note(on ? "driving mode on" : "driving mode off")
         applyIdleTimer()
         if !on { postedLimitKmh = nil }

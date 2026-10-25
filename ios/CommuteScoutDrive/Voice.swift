@@ -85,10 +85,18 @@ enum Voice {
         let pick = resolve(saved: saved, among: installed)
         let voice = pick.flatMap { AVSpeechSynthesisVoice(identifier: $0.id) }
         cached = (saved, voice)
-        // Logged when the outcome changes, not on every refresh.
-        let line = !saved.isEmpty && pick?.id != saved
-            ? "voice: \(saved) is not installed, using \(pick?.id ?? "the system voice")"
-            : "voice: \(pick?.id ?? "the system voice")\(saved.isEmpty ? " (automatic)" : "")"
+        // Logged when the outcome changes, not on every refresh. With a
+        // CommuteScout voice in use, this is the voice that stands in.
+        let neural = neural
+        let line: String
+        if let neural {
+            line = "voice: \(neural.voice.name) (\(neural.voice.id))\(saved.isEmpty ? " (automatic)" : ""), "
+                + "system voice for fallback \(pick?.id ?? "the system voice")"
+        } else if !saved.isEmpty && pick?.id != saved {
+            line = "voice: \(saved) is not installed, using \(pick?.id ?? "the system voice")"
+        } else {
+            line = "voice: \(pick?.id ?? "the system voice")\(saved.isEmpty ? " (automatic)" : "")"
+        }
         if line != logged {
             logged = line
             DriveLog.note(line)
@@ -102,6 +110,21 @@ enum Voice {
         lock.lock()
         cached = nil
         lock.unlock()
+    }
+
+    /// The CommuteScout voice that speaks: the driver's pick while its
+    /// pack is installed, or with Automatic the default voice of an
+    /// installed pack. Nil means a system voice speaks.
+    static var neural: (pack: VoiceCatalog.Pack, voice: VoiceCatalog.Voice)? {
+        guard let catalog = VoiceCatalog.bundled else { return nil }
+        return catalog.neuralVoice(saved: UserDefaults.standard.string(forKey: idKey) ?? "",
+                                   installed: VoicePacks.installedIds)
+    }
+
+    /// The speed slider as the neural engine's speed, 1 being normal.
+    /// Pitch applies to system voices only.
+    static var neuralSpeed: Float {
+        NeuralPlan.speed(rate: stored(rateKey, defaultRate, rateRange), normalRate: defaultRate)
     }
 
     static var rate: Float { Float(stored(rateKey, defaultRate, rateRange)) }
@@ -140,19 +163,40 @@ enum Voice {
 /// one, with each sentence said again in the app's voice, speed and
 /// pitch. Ferrostar's observer keeps everything else it did before:
 /// mute, the queue on the shared synthesizer, and its audio focus.
+///
+/// With a CommuteScout voice in use, the sentence goes to the neural
+/// speaker instead, which plays the audio rendered when the route
+/// started, in turn with the road alerts, and falls back to the system
+/// voice for a sentence that is not ready.
 final class VoicedSynthesizer: SpeechSynthesizer {
     private let synth: AVSpeechSynthesizer
 
     init(_ synth: AVSpeechSynthesizer) { self.synth = synth }
 
-    var isSpeaking: Bool { synth.isSpeaking }
+    var isSpeaking: Bool { synth.isSpeaking || NeuralSpeaker.shared.busy }
 
     func speak(_ utterance: AVSpeechUtterance) {
-        let u = Voice.utterance(Voice.plainText(utterance))
+        let text = Voice.plainText(utterance)
+        if Voice.neural != nil {
+            // Ferrostar calls from a background task; the speaker lives
+            // on the main thread. Counted as speaking from this moment,
+            // so the observer does not let go of the audio focus early.
+            NeuralSpeaker.shared.reserve()
+            DispatchQueue.main.async {
+                NeuralSpeaker.shared.say(text, label: "turn instruction", reserved: true)
+            }
+            return
+        }
+        let u = Voice.utterance(text)
         DriveLog.note("turn instruction spoken with \(u.voice?.identifier ?? "the system voice")")
         synth.speak(u)
     }
 
     @discardableResult
-    func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool { synth.stopSpeaking(at: boundary) }
+    func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool {
+        if NeuralSpeaker.shared.busy {
+            if Thread.isMainThread { NeuralSpeaker.shared.stop() } else { DispatchQueue.main.async { NeuralSpeaker.shared.stop() } }
+        }
+        return synth.stopSpeaking(at: boundary)
+    }
 }

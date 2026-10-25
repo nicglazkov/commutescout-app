@@ -269,6 +269,39 @@ For Kokoro, build the model config with
 `sherpaOnnxOfflineTtsKokoroModelConfig(model:voices:tokens:lexicon:)`, pass it
 as `kokoro:`, and use `SherpaOnnxGenerationConfigSwift(sid:)`.
 
+#### How the iOS app does it
+
+- **Gate.** `VoiceCatalog.supertonicCleared` is `false` until the terms
+  update in [Supertonic 2: OpenRAIL-M](#supertonic-2-openrail-m) ships. While
+  it is `false`, the Supertonic pack is left out of the Voice page, out of
+  Automatic, and out of the licenses page, so Kokoro is the only pack offered.
+- **Files.** `VoicePacks` (`VoiceDownloads.swift`) downloads each per-file
+  asset on a background `URLSession`. A cancelled or failed file keeps its
+  resume data, or its `.part` file for a `Range` request. Each finished file is
+  checked against its size and sha256 before it is renamed. Sizes are checked
+  again at launch and before the engine loads; a file that fails loses the
+  `pack.ok` marker and is downloaded again.
+- **Automatic.** With a pack installed, Automatic uses that pack's default
+  voice (Harper while Supertonic is gated). Otherwise it uses the best system
+  voice, as before.
+- **Render ahead.** Kokoro is too slow to speak on demand, so `NeuralVoices`
+  renders ahead: every spoken instruction when a route starts (the first three
+  while the route choices are on screen), and each road alert's sentences when
+  the alert first becomes known. Jobs run one at a time, soonest first, on a
+  utility queue with 2 threads. Audio is cached by voice, speed, and words.
+- **Speak.** `NeuralSpeaker` plays cached audio with `AVAudioPlayer`, in queue
+  order with every other sentence, and takes the same audio focus as the system
+  voice (`SpeechFocus`). A sentence whose audio is not ready waits at most
+  300 ms for a render in progress; otherwise the system voice says it. A
+  missing pack, a model that fails to load, failed or non-finite synthesis, and
+  a word in neither lexicon all fall back the same way, and each is noted in
+  the drive log.
+- **Speed and pitch.** The speed slider maps to the engine's `speed`. Pitch
+  applies to system voices only, so the slider is disabled for neural voices.
+- **Memory.** The engine is kept loaded while a trip or a drive runs. It is
+  freed 30 seconds after the last sentence otherwise, in the background with no
+  trip, and on a memory warning.
+
 ### Android
 
 sherpa-onnx 2.0.0 is not on Maven Central, and the JitPack build of 2.0.0

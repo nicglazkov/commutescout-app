@@ -100,7 +100,7 @@ struct SettingsSheet: View {
     /// The voice that speaks, picked or automatic.
     private var voiceSummary: String {
         _ = prefs.voiceId   // read so the row follows a new pick
-        return Voice.current?.name ?? "System voice"
+        return Voice.neural?.voice.name ?? Voice.current?.name ?? "System voice"
     }
 
     private var layersSummary: String {
@@ -679,6 +679,12 @@ private struct AboutSettings: View {
                 LabeledContent("Version", value: AppInfo.version)
             } footer: {
                 Text("Routing and address lookup by Stadia Maps. Map data (c) OpenStreetMap contributors, drawn from files CommuteScout hosts and from OpenFreeMap. Road data from the agencies listed on commutescout.com. Verify before you drive.")
+            }
+            Section {
+                NavigationLink { VoiceLicensesView() } label: { Label("Voice licenses", systemImage: "doc.text") }
+                    .accessibilityIdentifier("about-voice-licenses")
+            } footer: {
+                Text("Credits and license terms for the CommuteScout voices and the speech engine.")
             }
         }
         .navigationTitle("About")
