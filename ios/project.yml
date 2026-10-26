@@ -67,6 +67,15 @@ targets:
         product: GoogleSignIn
       - package: SherpaOnnx
         product: sherpa-onnx
+    postBuildScripts:
+      # onnxruntime 1.28.2's binary is built for iOS 16.1, but its
+      # Info.plist claims 13.0, and App Store Connect rejects the upload
+      # (ITMS-90208). Make every embedded framework's plist state its
+      # binary's real minimum, then sign the framework again.
+      - name: Match framework minimum OS to its binary
+        basedOnDependencyAnalysis: false
+        script: |
+          bash "$SRCROOT/../scripts/ios_framework_minos.sh"
     entitlements:
       path: CommuteScoutDrive/CommuteScoutDrive.entitlements
       properties:
