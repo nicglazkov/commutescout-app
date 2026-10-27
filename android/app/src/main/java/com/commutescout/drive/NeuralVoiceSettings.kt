@@ -4,26 +4,15 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.util.Log
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -86,64 +75,32 @@ object PreviewPlayer {
 }
 
 /**
- * "CommuteScout voices": the neural voices, each with its sample, and
- * per pack a download with progress and cancel, then Delete with the
- * size it frees. Downloaded voices are chosen like system voices.
+ * "Downloaded voices": each set of CommuteScout voices that is on the
+ * phone or on its way, with its progress, and Cancel, Resume or Delete.
+ * Voices are picked in the list above; picking one that is not
+ * downloaded starts its set here.
  */
 @Composable
-fun NeuralVoicesSection(model: DriveViewModel, packs: VoicePacks, installed: Set<String>, active: NeuralVoice?) {
-    val prefs = model.prefs
-    val listed = packs.catalog.listed
-    if (listed.isEmpty()) return
-    var askMetered by remember { mutableStateOf<VoicePackInfo?>(null) }
+fun VoicePackGroup(packs: VoicePacks, listed: List<VoicePackInfo>, states: Map<String, PackState>, prefs: Prefs) {
+    val shown = listed.filter { states[it.id] != null && states[it.id] != PackState.NotInstalled }
+    if (shown.isEmpty()) return
     var confirmDelete by remember { mutableStateOf<VoicePackInfo?>(null) }
-    val playing by PreviewPlayer.playing.collectAsStateWithLifecycle()
 
-    // The page's own test sentence, ready by the time the driver taps Test voice.
-    LaunchedEffect(active?.id, prefs.voiceRate) {
-        active?.let { Neural.renderer.request(it, prefs.voiceRate, VoiceLabels.preview(Units.spoken(800.0)), Double.NEGATIVE_INFINITY) }
-    }
-
-    fun download(pack: VoicePackInfo) {
-        if (Connectivity.onWifi.value) packs.download(pack, metered = false) else askMetered = pack
-    }
-
-    GroupTitle("CommuteScout voices")
-    for (pack in listed) {
-        val state by remember(pack.id) { packs.state(pack) }.collectAsStateWithLifecycle()
-        val ready = pack.id in installed
-        PageGroup {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(pack.title, style = MaterialTheme.typography.titleSmall)
-                    Text(pack.engineVersion + " · " + NeuralLabels.GENERATED, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            PackControls(pack, state, onDownload = { download(pack) }, onMetered = { packs.download(pack, metered = true) },
-                onCancel = { packs.cancel(pack.id) }, onDelete = { confirmDelete = pack })
-            HorizontalDivider()
-            pack.voices.forEach { v ->
-                NeuralVoiceRow(v, selected = prefs.voiceName == v.id, enabled = ready, playing = playing == v.id,
-                    onPick = {
-                        if (ready) prefs.voiceName = v.id
-                        PreviewPlayer.play(v)
-                    },
-                    onPlay = { if (playing == v.id) PreviewPlayer.stop() else PreviewPlayer.play(v) })
+    GroupTitle("Downloaded voices")
+    PageGroup {
+        shown.forEachIndexed { i, pack ->
+            if (i > 0) HorizontalDivider()
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(pack.title, style = MaterialTheme.typography.titleSmall)
+                Text("${pack.voices.size} voices · ${Units.bytes(pack.downloadSize)} · ${NeuralLabels.GENERATED}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                PackControls(pack, states.getValue(pack.id), onResume = { packs.download(pack, metered = false) },
+                    onMetered = { packs.download(pack, metered = true) }, onCancel = { packs.cancel(pack.id) }, onDelete = { confirmDelete = pack })
             }
         }
     }
-    Note(if (installed.isEmpty()) "Natural voices run on this phone and need no connection once downloaded. Tap a voice to hear a sample."
-        else "Downloaded voices run on this phone and need no connection. If one cannot speak a sentence in time, the system voice says it.")
+    Note("One download adds every voice in a set. If a voice cannot say a sentence in time, the system voice says it.")
 
-    askMetered?.let { pack ->
-        val left = (pack.downloadSize - PackFiles.bytesOnDisk(packs.dir(pack.id), pack)).coerceAtLeast(0)
-        AlertDialog(onDismissRequest = { askMetered = null },
-            title = { Text("Download over mobile data?") },
-            text = { Text("${pack.title} are ${Units.bytes(left)}. You can wait for Wi-Fi instead, and the download starts when you connect.") },
-            confirmButton = { TextButton({ packs.download(pack, metered = true); askMetered = null }, Modifier.testTag("voice-metered-yes")) { Text("Use mobile data") } },
-            dismissButton = { TextButton({ packs.download(pack, metered = false); askMetered = null }, Modifier.testTag("voice-metered-wait")) { Text("Wait for Wi-Fi") } })
-    }
     confirmDelete?.let { pack ->
         AlertDialog(onDismissRequest = { confirmDelete = null },
             title = { Text("Delete ${pack.title.lowercase()}?") },
@@ -160,23 +117,24 @@ fun NeuralVoicesSection(model: DriveViewModel, packs: VoicePacks, installed: Set
 }
 
 @Composable
-private fun PackControls(pack: VoicePackInfo, state: PackState, onDownload: () -> Unit, onMetered: () -> Unit, onCancel: () -> Unit, onDelete: () -> Unit) {
+private fun PackControls(pack: VoicePackInfo, state: PackState, onResume: () -> Unit, onMetered: () -> Unit, onCancel: () -> Unit, onDelete: () -> Unit) {
     val tag = "voice-pack-${pack.id}"
     when (state) {
-        PackState.NotInstalled -> Button(onDownload, Modifier.testTag("$tag-download")) { Text("Download (${Units.bytes(pack.downloadSize)})") }
-        is PackState.Paused -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onDownload, Modifier.testTag("$tag-download")) { Text("Resume download") }
-            Text("${Units.bytes(state.done)} of ${Units.bytes(state.total)}", style = MaterialTheme.typography.bodySmall,
+        PackState.NotInstalled -> {}
+        is PackState.Paused -> Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Paused · ${Units.bytes(state.done)} of ${Units.bytes(state.total)}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onDelete, Modifier.testTag("$tag-delete")) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            TextButton(onResume, Modifier.testTag("$tag-download")) { Text("Resume") }
         }
         is PackState.Waiting -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             LinearProgressIndicator({ fraction(state.done, state.total) }, Modifier.fillMaxWidth())
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(if (state.metered) "Waiting for a connection" else "Waiting for Wi-Fi", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                if (!state.metered) TextButton(onMetered, Modifier.testTag("$tag-metered")) {
+                    Text("Use mobile data (${Units.bytes((state.total - state.done).coerceAtLeast(0))})")
+                }
                 TextButton(onCancel, Modifier.testTag("$tag-cancel")) { Text("Cancel") }
-            }
-            if (!state.metered) OutlinedButton(onMetered, Modifier.testTag("$tag-metered")) {
-                Text("Use mobile data (${Units.bytes((state.total - state.done).coerceAtLeast(0))})")
             }
         }
         is PackState.Downloading -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -186,9 +144,10 @@ private fun PackControls(pack: VoicePackInfo, state: PackState, onDownload: () -
                 TextButton(onCancel, Modifier.testTag("$tag-cancel")) { Text("Cancel") }
             }
         }
-        is PackState.Failed -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(state.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            Button(onDownload, Modifier.testTag("$tag-download")) { Text("Try again") }
+        is PackState.Failed -> Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(state.reason, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            TextButton(onDelete, Modifier.testTag("$tag-delete")) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            TextButton(onResume, Modifier.testTag("$tag-download")) { Text("Try again") }
         }
         is PackState.Installed -> Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Downloaded · ${Units.bytes(state.bytes)}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
@@ -199,23 +158,6 @@ private fun PackControls(pack: VoicePackInfo, state: PackState, onDownload: () -
 }
 
 private fun fraction(done: Long, total: Long): Float = if (total <= 0) 0f else (done.toFloat() / total).coerceIn(0f, 1f)
-
-/** A neural voice: chosen once its pack is on the phone; its sample plays either way. */
-@Composable
-private fun NeuralVoiceRow(v: VoiceEntry, selected: Boolean, enabled: Boolean, playing: Boolean, onPick: () -> Unit, onPlay: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onPick).testTag("voice-${v.id}"), verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected, null, enabled = enabled)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(v.name, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(NeuralLabels.accent(v.accent) + " · " + v.gender.replaceFirstChar { it.uppercase() } + " · " + NeuralLabels.GENERATED,
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if (v.preview != null) IconButton(onPlay, Modifier.testTag("voice-play-${v.id}")) {
-            Icon(if (playing) Icons.Default.Stop else Icons.Default.PlayArrow, if (playing) "Stop sample of ${v.name}" else "Play sample of ${v.name}")
-        }
-    }
-}
 
 /**
  * Each voice pack's credits and license. The full LICENSE and NOTICE

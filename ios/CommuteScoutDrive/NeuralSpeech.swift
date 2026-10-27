@@ -112,7 +112,7 @@ private final class NeuralEngine {
         let samples = audio.samples
         let rate = Int(audio.sampleRate)
         guard rate > 0, NeuralPlan.usable(samples) else { return .failure(.synthesisFailed) }
-        return .success(.init(data: NeuralPlan.wav(samples, sampleRate: rate),
+        return .success(.init(data: NeuralPlan.wav(NeuralPlan.clean(samples, sampleRate: rate), sampleRate: rate),
                               seconds: Double(samples.count) / Double(rate),
                               renderSeconds: Date().timeIntervalSince(t0)))
     }

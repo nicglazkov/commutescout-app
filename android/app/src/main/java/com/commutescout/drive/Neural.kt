@@ -19,8 +19,13 @@ import java.io.File
 import java.util.PriorityQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 /**
  * What became of a sentence for a neural voice: audio ready to play, or
@@ -53,6 +58,48 @@ object NeuralRules {
 
     /** Audio that is safe to play: some samples and every one of them finite. */
     fun usable(samples: FloatArray?): Boolean = samples != null && samples.isNotEmpty() && samples.all { it.isFinite() }
+
+    /**
+     * What every clip gets before it plays (scripts/voices/clean.py is the
+     * reference): a 30 Hz high-pass, because Kokoro's output sits on a DC
+     * offset of about 0.025 that clicks where a clip starts and ends; a gain
+     * that brings speech to -20 dBFS RMS, at most 4x and never past a 0.95
+     * peak, so every voice is about as loud as the next; and 5 ms fades at
+     * both ends.
+     */
+    fun clean(samples: FloatArray, sampleRate: Int): FloatArray {
+        if (samples.isEmpty() || sampleRate <= 0) return samples
+        val r = exp(-2 * PI * 30 / sampleRate)
+        val y = DoubleArray(samples.size)
+        var px = samples[0].toDouble().takeIf { it.isFinite() } ?: 0.0
+        var py = 0.0
+        for (i in samples.indices) {
+            val x = samples[i].toDouble().takeIf { it.isFinite() } ?: 0.0
+            py = x - px + r * py
+            px = x
+            y[i] = py
+        }
+        // Speech level: the RMS of the 20 ms frames within 30 dB of the loudest.
+        val n = max(1, sampleRate / 50)
+        val frames = (y.indices step n).map { s ->
+            var sum = 0.0
+            val e = min(s + n, y.size)
+            for (j in s until e) sum += y[j] * y[j]
+            sqrt(sum / (e - s))
+        }
+        val top = frames.maxOrNull() ?: 0.0
+        val loud = frames.filter { it >= top * 10.0.pow(-30.0 / 20) }
+        val level = if (loud.isEmpty()) 0.0 else sqrt(loud.sumOf { it * it } / loud.size)
+        val peak = y.maxOf { abs(it) }
+        val gain = if (level <= 0 || peak <= 0) 1.0 else minOf(0.1 / level, 4.0, 0.95 / peak)
+        val k = min(sampleRate / 200, y.size / 2)
+        return FloatArray(y.size) { j ->
+            var v = y[j] * gain
+            if (j < k) v *= j.toDouble() / k
+            if (j >= y.size - k) v *= (y.size - 1 - j).toDouble() / k
+            v.toFloat()
+        }
+    }
 
     /** Float samples to 16-bit PCM, clipped. Half the memory of floats in the cache. */
     fun pcm16(samples: FloatArray): ShortArray = ShortArray(samples.size) { i ->
@@ -349,7 +396,7 @@ class Renderer {
             Log.w(TAG, "no usable audio for \"${req.key.text}\" after $ms ms; the system voice will say it")
             return Rendered.Failed("no usable audio")
         }
-        val clip = Rendered.Clip(NeuralRules.pcm16(audio.samples), audio.sampleRate, ms)
+        val clip = Rendered.Clip(NeuralRules.pcm16(NeuralRules.clean(audio.samples, audio.sampleRate)), audio.sampleRate, ms)
         Log.i(TAG, "rendered \"${req.key.text}\" with ${voice.name}: $ms ms for ${clip.audioMs} ms of audio (rtf %.2f)".format(ms.toDouble() / max(1L, clip.audioMs)))
         return clip
     }

@@ -17,8 +17,13 @@ Each pack is a zip archive and is also available as individual files named
 
 | Pack | Engine | Download | Sample rate | License |
 |---|---|---|---|---|
-| `supertonic2-en` (Fast voices) | Supertonic 2, int8 | 96.4 MB of files, 81.5 MB zip | 44.1 kHz | BigScience OpenRAIL-M |
-| `kokoro-en-v1_0` (Natural voices) | Kokoro v1.0, int8 | 145.4 MB of files, 106.7 MB zip | 24 kHz | Apache-2.0 |
+| `supertonic2-en` (Fast voices) | Supertonic 2, int8 with a float16 vocoder | 121.2 MB of files, 108.5 MB zip | 44.1 kHz | BigScience OpenRAIL-M |
+| `kokoro-en-v1_0` (Natural voices) | Kokoro v1.0, int8 with a float32 generator | 188.0 MB of files, 149.7 MB zip | 24 kHz | Apache-2.0 |
+
+The October 2026 builds replaced `model.int8.onnx` with `model.mixed.onnx`
+and `vocoder.int8.onnx` with `vocoder.fp16.onnx` to remove audible artifacts;
+see [Quality checks](#quality-checks). The zips of these builds are
+`<pack id>.v2.zip`, and the preview clips are `preview.<voice id>.v2.m4a`.
 
 ### Listed voices
 
@@ -76,9 +81,10 @@ Commercial use is allowed. The license has these conditions:
   in a context without disclosing that it is machine generated. Turn-by-turn
   speech in a navigation app is plainly synthetic, but the voice picker should
   still label these voices as computer generated.
-- **Notices (paragraph 4b to 4d).** Ship `LICENSE` and keep the notices. The
-  ONNX files are the int8 build from the sherpa-onnx project, and `NOTICE`
-  states that change.
+- **Notices (paragraph 4b to 4d).** Ship `LICENSE` and keep the notices. Three
+  ONNX files are the int8 build from the sherpa-onnx project; the vocoder is
+  Supertone's float32 vocoder converted to float16. `NOTICE` states those
+  changes.
 
 Supertone does not publish the training data for Supertonic 2.
 
@@ -129,8 +135,9 @@ Two groups of models were left out because of license terms:
 4. When a file is complete, check its byte size and sha256 against the
    catalog. On a mismatch, delete the `.part` file and start that file again.
    Rename it to its final name only after it passes.
-5. When all files pass, write a `pack.ok` marker. The app treats a pack as
-   installed only when the marker exists.
+5. When all files pass, write a `pack.ok` marker and delete any file in the
+   folder that the catalog does not name. The app treats a pack as installed
+   only when the marker exists.
 
 Use the per-file assets rather than the zip. Neither platform needs an unzip
 step, and a failure costs one file, not the whole pack. The `archive` entry
@@ -144,6 +151,12 @@ Other rules:
   to the system voice.
 - **Space.** Check free space for `download_size` plus 10% before starting.
 - **Network.** Use Wi-Fi by default, and ask before using cellular data.
+- **Update.** At launch, a pack that has the marker but no longer matches the
+  catalog, because a new app version ships new files or a file was damaged,
+  loses the marker, deletes the files the catalog no longer names, and
+  downloads only the missing files, on Wi-Fi unless the user allowed cellular
+  data for that pack before. The chosen voice stays chosen, and the system
+  voice speaks until the pack is complete again.
 
 ### Synthesis
 
@@ -160,6 +173,13 @@ Other rules:
 - Run synthesis off the main thread, then play the samples through the same
   audio session the system voice uses, so ducking and Bluetooth routing still
   work.
+- Clean every clip before it plays, as
+  [`scripts/voices/clean.py`](../scripts/voices/clean.py) does: a 30 Hz
+  high-pass, a gain that brings speech to -20 dBFS RMS (at most 4 times and
+  never past a 0.95 peak), and 5 ms fades at both ends. Kokoro's output sits on
+  a DC offset of about 0.025 in every build, float32 included, which clicks
+  where a clip starts and stops. The gain keeps every voice about as loud as
+  the next.
 
 ### Fallback to system voices
 
@@ -228,6 +248,37 @@ Estimates for phones at 2 threads:
 - **Stability.** The stock sherpa-onnx Kokoro int8 model returns NaN audio on
   ARM (k2-fsa/sherpa-onnx#4086): 124 of 140 short prompts broke on an M1 Max.
   The pack's re-quantized model and Supertonic 2 broke on none.
+- **Spectrum.** We rendered 5 driving prompts in all 12 voices with each
+  candidate build and compared spectrograms and long-term spectra against the
+  float32 models. "Noise floor" is the median level in the quietest tenth of
+  frames during speech; lower is cleaner.
+
+  | Build | Size of the changed file | Noise floor | Steady tones |
+  |---|---|---|---|
+  | Kokoro float32 (reference) | 326 MB | -66.4 dB | none |
+  | Kokoro int8, first pack build | 114 MB | about -63 dB | 4.8 and 9.6 kHz in 8 of 8 voices |
+  | Kokoro int8 from sherpa-onnx | 114 MB | about -63 dB | 4.8 and 9.6 kHz |
+  | Kokoro int8, per-channel | 115 MB | -62.3 dB | 4.8 and 9.6 kHz in 8 of 8 voices |
+  | **Kokoro int8, generator in float32** | 157 MB | -66.3 dB | none |
+  | Supertonic float32 vocoder (reference) | 101 MB | -73.3 dB | none |
+  | Supertonic int8 vocoder, first pack build | 26 MB | about -66 dB | none |
+  | **Supertonic float16 vocoder** | 51 MB | -73.5 dB | none |
+
+  The Kokoro tones sit at a fifth and two fifths of the 24 kHz sample rate, 16
+  to 23 dB above the speech around them and in nearly every frame. They come
+  from quantizing the decoder's generator, the vocoder inside Kokoro. The
+  Supertonic int8 vocoder raised the broadband noise under speech by 5 to 9
+  dB, heard as hiss and a rough, recorded sound. Quantizing Supertonic's text
+  encoder, duration predictor, and vector estimator made no measurable
+  difference, so they stay int8.
+
+  The new builds are also faster. At 2 threads on an M1 Max, Kokoro's time to
+  first audio went from 3.25 s to 1.91 s (RTF 0.86 to 0.50), because ARM runs
+  float32 convolutions faster than int8 ones. Supertonic stayed at RTF 0.07 to
+  0.08. Neither broke on any of 140 short prompts.
+- **Previews.** The first preview clips were 48 kbit/s AAC, which cut
+  Supertonic at 16 kHz. The clips are now 96 kbit/s for 44.1 kHz voices and 64
+  kbit/s for 24 kHz voices, the most the encoder takes at that rate.
 
 ## Integration
 
@@ -250,7 +301,7 @@ func makeSupertonic(dir: URL) -> SherpaOnnxOfflineTtsWrapper {
     durationPredictor: path("duration_predictor.int8.onnx"),
     textEncoder: path("text_encoder.int8.onnx"),
     vectorEstimator: path("vector_estimator.int8.onnx"),
-    vocoder: path("vocoder.int8.onnx"),
+    vocoder: path("vocoder.fp16.onnx"),
     ttsJson: path("tts.json"),
     unicodeIndexer: path("unicode_indexer.bin"),
     voiceStyle: path("voice.bin"))
@@ -346,7 +397,7 @@ fun makeSupertonic(dir: File): OfflineTts {
       durationPredictor = path("duration_predictor.int8.onnx"),
       textEncoder = path("text_encoder.int8.onnx"),
       vectorEstimator = path("vector_estimator.int8.onnx"),
-      vocoder = path("vocoder.int8.onnx"),
+      vocoder = path("vocoder.fp16.onnx"),
       ttsJson = path("tts.json"),
       unicodeIndexer = path("unicode_indexer.bin"),
       voiceStyle = path("voice.bin"),
@@ -374,8 +425,9 @@ and use `GenerationConfig(sid = ...)`.
 3. If the voice is in a new pack, build a directory with only the runtime files
    plus `LICENSE` and a `NOTICE` that lists the source, the license, and every
    change you made.
-4. Publish the files on a new release, such as `voices-v2`. Do not replace
-   assets on an existing release, because installed apps check the hashes.
+4. Publish the files on a new release, such as `voices-v2`, or under new
+   asset names on the current one. Do not replace an existing asset, because
+   installed apps check the hashes.
 5. Add the pack or voice to `shared/voices.json` with the sha256 and size of
    every file.
 
@@ -384,10 +436,17 @@ changes.
 
 ### Build scripts
 
-- [`scripts/voices/requant.py`](../scripts/voices/requant.py) builds the
-  Kokoro int8 model from the float32 `kokoro-multi-lang-v1_0` model. It keeps
-  the two forward-STFT convolutions in float32 and keeps the 28 English
+- [`scripts/voices/requant.py`](../scripts/voices/requant.py) builds
+  `model.mixed.onnx` from the float32 `kokoro-multi-lang-v1_0` model: int8
+  except the decoder's generator, which stays float32, and only the 28 English
   speakers.
+- [`scripts/voices/vocoder_fp16.py`](../scripts/voices/vocoder_fp16.py)
+  converts Supertone's float32 vocoder to `vocoder.fp16.onnx`.
+- [`scripts/voices/previews.py`](../scripts/voices/previews.py) renders the
+  preview clips from the packs and prints their sizes and hashes for the
+  catalog. It needs macOS for `afconvert`.
+- [`scripts/voices/clean.py`](../scripts/voices/clean.py) is the reference for
+  the clean-up every clip gets before it plays.
 - [`scripts/voices/cmu2misaki.py`](../scripts/voices/cmu2misaki.py) builds the
   `*-extra.txt` lexicons from CMUdict.
 - [`scripts/voices/norm.py`](../scripts/voices/norm.py) is the reference text

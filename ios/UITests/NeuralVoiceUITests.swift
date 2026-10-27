@@ -1,8 +1,9 @@
 import XCTest
 
-/// The CommuteScout voices section of the Voice page, end to end, on a
-/// simulator: preview before download, the real Kokoro download, and
-/// picking Harper. It needs the network and a few minutes, so it runs
+/// CommuteScout voices on the Voice page, end to end, on a simulator:
+/// a tap on Harper plays the sample and offers the download, the real
+/// Kokoro download, Delete, and picking voices once they are on the
+/// phone. It needs the network and a few minutes, so it runs
 /// only when asked: `CS_NEURAL_UI=1` in the test environment
 /// (`TEST_RUNNER_CS_NEURAL_UI=1` on the xcodebuild command line).
 ///
@@ -47,27 +48,30 @@ final class NeuralVoiceUITests: XCTestCase {
         }
         XCTAssertTrue(voiceRow.waitForExistence(timeout: 5), app.debugDescription)
         voiceRow.tap()
-        let download = app.buttons["voices-download-\(pack)"]
-        XCTAssertTrue(download.waitForExistence(timeout: 10), "the pack offers a download")
         let row = app.buttons["voice-\(pack).af_heart"]
-        XCTAssertTrue(row.exists && row.label.contains("Harper") && row.label.contains("Computer-generated voice"), row.label)
-        XCTAssertFalse(row.isEnabled, "a voice can be picked only after its pack is downloaded")
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "Harper is in the one voice list")
+        XCTAssertTrue(row.label.contains("Harper") && row.label.contains("CommuteScout voice") && row.label.contains("MB download"), row.label)
+        XCTAssertFalse(app.buttons["voices-delete-\(pack)"].exists, "nothing is downloaded yet")
 
-        // A preview plays before anything is downloaded.
-        let preview = app.buttons["voices-preview-\(pack).af_heart"]
-        XCTAssertTrue(preview.exists)
-        preview.tap()
-        let playing = NSPredicate(format: "label BEGINSWITH 'Stop the sample'")
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: playing, evaluatedWith: preview)], timeout: 15), .completed,
+        // A tap plays the sample and offers the download.
+        let offer = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Download'")).firstMatch
+        func choose() {
+            row.tap()
+            XCTAssertTrue(offer.waitForExistence(timeout: 10), "a voice not on the phone offers its download")
+        }
+        choose()
+        let playing = NSPredicate(format: "label CONTAINS 'Playing a sample'")
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: playing, evaluatedWith: row)], timeout: 15), .completed,
                        "the sample streams and plays")
         stage("before")
 
         // The first download, shown in light; the pack is then deleted
         // and downloaded again in dark, which also covers Delete.
-        download.tap()
+        offer.tap()
         let progress = app.descendants(matching: .any)["voices-progress-\(pack)"]
         XCTAssertTrue(progress.waitForExistence(timeout: 20), "progress shows while downloading")
         XCTAssertTrue(app.buttons["voices-cancel-\(pack)"].exists)
+        XCTAssertTrue(row.isSelected, "Harper is chosen while the set downloads")
         stage("downloading-light")
 
         let delete = app.buttons["voices-delete-\(pack)"]
@@ -76,20 +80,22 @@ final class NeuralVoiceUITests: XCTestCase {
         let confirm = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Delete '")).firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "deleting asks first")
         confirm.tap()
-        XCTAssertTrue(download.waitForExistence(timeout: 10), "a deleted pack offers its download again")
+        XCTAssertTrue(app.buttons["voice-automatic"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["voice-automatic"].isSelected, "deleting the set in use goes back to Automatic")
         stage("dark")
-        download.tap()
+        choose()
+        offer.tap()
         XCTAssertTrue(progress.waitForExistence(timeout: 20))
         stage("downloading-dark")
         XCTAssertTrue(delete.waitForExistence(timeout: 900), "the pack installs again")
 
-        // Every voice of the pack can be picked now; pick Harper.
-        XCTAssertTrue(row.isEnabled)
-        row.tap()
-        XCTAssertTrue(row.isSelected, "Harper is the voice in use")
-        let george = app.buttons["voices-preview-\(pack).bm_george"]
+        // Every voice of the set is picked with one tap now.
+        XCTAssertTrue(row.isSelected)
+        let george = app.buttons["voice-\(pack).bm_george"]
+        if !george.exists { app.switches["voice-all-accents"].firstMatch.tap() }
         george.tap()
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: playing, evaluatedWith: george)], timeout: 15), .completed)
+        XCTAssertTrue(george.isSelected, "George is the voice in use")
+        XCTAssertFalse(offer.exists, "a voice on the phone is picked with no question")
         stage("after")
     }
 }

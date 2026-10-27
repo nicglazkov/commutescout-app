@@ -2,66 +2,49 @@ import AVFoundation
 import CryptoKit
 import SwiftUI
 
-/// The top of Settings > Voice: the CommuteScout voices. Each pack has
-/// one row to download, cancel, resume or delete it, and each voice a
-/// row with a preview that streams before anything is downloaded. Once
-/// the pack is on the phone its voices are picked like the system ones.
-struct CommuteScoutVoicesSections: View {
+/// The bottom of Settings > Voice: each set of CommuteScout voices that
+/// is on the phone or on its way, with its progress, and Cancel, Resume
+/// or Delete. Voices are picked in the list above; picking one that is
+/// not downloaded starts its set here.
+struct VoicePackSection: View {
     @ObservedObject private var packs = VoicePacks.shared
     @ObservedObject private var connectivity = Connectivity.shared
     @ObservedObject var previews: VoicePreviewPlayer
-    /// The voice id that is picked, if it is a CommuteScout voice.
-    let selected: String?
+    /// The voice id that is picked.
+    let picked: String
     let pick: (String) -> Void
 
-    @State private var askCellular: VoiceCatalog.Pack?
     @State private var askDelete: VoiceCatalog.Pack?
-    @State private var noSpace: String?
 
-    private var offered: [VoiceCatalog.Pack] { packs.catalog?.offeredPacks() ?? [] }
-
-    var body: some View {
-        ForEach(Array(offered.enumerated()), id: \.element.id) { index, pack in
-            Section {
-                packRow(pack)
-                ForEach(pack.voices) { v in voiceRow(v, in: pack) }
-            } header: {
-                if index == 0 { Text("CommuteScout voices") }
-            } footer: {
-                if index == offered.count - 1 { footer(pack) }
-            }
-        }
-        .confirmationDialog("Download on cellular data?", isPresented: Binding(get: { askCellular != nil }, set: { if !$0 { askCellular = nil } }),
-                            titleVisibility: .visible, presenting: askCellular) { pack in
-            Button("Download on cellular") { packs.download(pack.id, cellular: true) }
-            Button("Wait for Wi-Fi") { packs.download(pack.id, cellular: false) }
-            Button("Cancel", role: .cancel) {}
-        } message: { pack in
-            Text("\(pack.title) are \(VoicePackFiles.label(pack.downloadSize)). Downloading on Wi-Fi avoids using your data plan.")
-        }
-        .confirmationDialog("Delete \(askDelete?.title.lowercased() ?? "voices")?", isPresented: Binding(get: { askDelete != nil }, set: { if !$0 { askDelete = nil } }),
-                            titleVisibility: .visible, presenting: askDelete) { pack in
-            Button("Delete \(VoicePackFiles.label(pack.downloadSize))", role: .destructive) { delete(pack) }
-            Button("Cancel", role: .cancel) {}
-        } message: { pack in
-            Text("This frees \(VoicePackFiles.label(max(VoicePackFiles.bytesOnDisk(pack), 0))) on this phone. You can download \(pack.title.lowercased()) again at any time.")
-        }
-        .alert("Not enough space", isPresented: Binding(get: { noSpace != nil }, set: { if !$0 { noSpace = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: { Text(noSpace ?? "") }
+    private var shown: [VoiceCatalog.Pack] {
+        (packs.catalog?.offeredPacks() ?? []).filter { packs.state($0.id) != .none }
     }
 
-    // MARK: the pack row
+    var body: some View {
+        if !shown.isEmpty {
+            Section {
+                ForEach(shown) { pack in packRow(pack) }
+            } header: { Text("Downloaded voices") } footer: {
+                Text("One download adds every voice in a set. When a trip starts, the first instructions may be said in the system voice while the rest are prepared.")
+            }
+            .confirmationDialog("Delete \(askDelete?.title.lowercased() ?? "voices")?", isPresented: Binding(get: { askDelete != nil }, set: { if !$0 { askDelete = nil } }),
+                                titleVisibility: .visible, presenting: askDelete) { pack in
+                Button("Delete \(VoicePackFiles.label(pack.downloadSize))", role: .destructive) { delete(pack) }
+                Button("Cancel", role: .cancel) {}
+            } message: { pack in
+                Text("This frees \(VoicePackFiles.label(max(VoicePackFiles.bytesOnDisk(pack), 0))) on this phone. You can download \(pack.title.lowercased()) again at any time.")
+            }
+        }
+    }
 
     @ViewBuilder
     private func packRow(_ pack: VoiceCatalog.Pack) -> some View {
         let state = packs.state(pack.id)
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                SettingsIcon(symbol: "waveform.badge.plus", color: .pink)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(pack.title).font(.headline)
-                    Text(summary(pack)).font(.caption).foregroundStyle(.secondary)
+                    Text(Self.summary(pack)).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
                 packAction(pack, state)
@@ -74,67 +57,53 @@ struct CommuteScoutVoicesSections: View {
                     .font(.caption).foregroundStyle(.secondary).monospacedDigit()
             case let .paused(done, total):
                 ProgressView(value: Double(done), total: Double(max(total, 1))).tint(.secondary)
-                HStack {
-                    Text("Paused: \(VoicePackFiles.label(done)) of \(VoicePackFiles.label(total))")
-                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                    Spacer()
-                    Button("Delete", role: .destructive) { askDelete = pack }
-                        .buttonStyle(.borderless).font(.caption)
-                        .accessibilityIdentifier("voices-delete-\(pack.id)")
-                }
+                Text("Paused: \(VoicePackFiles.label(done)) of \(VoicePackFiles.label(total))")
+                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
             case let .failed(why):
                 Text(why).font(.caption).foregroundStyle(.red)
-            case .installed:
-                HStack {
-                    Label("Downloaded, \(VoicePackFiles.label(pack.downloadSize))", systemImage: "checkmark.circle.fill")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Delete", role: .destructive) { askDelete = pack }
-                        .buttonStyle(.borderless).font(.caption)
-                        .accessibilityIdentifier("voices-delete-\(pack.id)")
-                }
-            case .none:
+            case .installed, .none:
                 EmptyView()
             }
         }
         .padding(.vertical, 2)
     }
 
+    /// The buttons for each state: Cancel while it runs; Resume and
+    /// Delete when it stopped; Delete once it is on the phone.
     @ViewBuilder
     private func packAction(_ pack: VoiceCatalog.Pack, _ state: VoicePacks.State) -> some View {
         switch state {
-        case .none, .failed:
-            Button { start(pack) } label: {
-                Text("Download \(VoicePackFiles.label(pack.downloadSize))").font(.subheadline.weight(.semibold))
-            }
-            .buttonStyle(.bordered).buttonBorderShape(.capsule)
-            .accessibilityIdentifier("voices-download-\(pack.id)")
         case .downloading:
-            Button { packs.pause(pack.id) } label: {
-                Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.secondary)
+            Button("Cancel") { packs.pause(pack.id) }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("voices-cancel-\(pack.id)")
+        case .paused, .failed:
+            HStack(spacing: 16) {
+                Button("Delete", role: .destructive) { askDelete = pack }
+                    .buttonStyle(.borderless)
+                    .accessibilityIdentifier("voices-delete-\(pack.id)")
+                Button("Resume") { packs.download(pack.id, cellular: cellularAllowed(pack)) }
+                    .buttonStyle(.borderless).fontWeight(.semibold)
+                    .accessibilityIdentifier("voices-resume-\(pack.id)")
             }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Cancel download")
-            .accessibilityIdentifier("voices-cancel-\(pack.id)")
-        case .paused:
-            Button { start(pack) } label: { Text("Resume").font(.subheadline.weight(.semibold)) }
-                .buttonStyle(.bordered).buttonBorderShape(.capsule)
-                .accessibilityIdentifier("voices-resume-\(pack.id)")
         case .installed:
+            Button("Delete", role: .destructive) { askDelete = pack }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("voices-delete-\(pack.id)")
+        case .none:
             EmptyView()
         }
     }
 
-    /// "8 voices, US and UK English, 145 MB".
-    private func summary(_ pack: VoiceCatalog.Pack) -> String {
+    /// "8 voices, US and UK English, 188 MB".
+    static func summary(_ pack: VoiceCatalog.Pack) -> String {
         let accents = Set(pack.voices.map { VoicePick.regionCode($0.accent) ?? "" })
         let where_ = accents == ["US"] ? "US English" : accents == ["GB"] ? "UK English" : "US and UK English"
         return "\(pack.voices.count) voices, \(where_), \(VoicePackFiles.label(pack.downloadSize))"
     }
 
     private func progressText(_ done: Int64, _ total: Int64, waiting: Bool) -> String {
-        let pct = total > 0 ? Int(Double(done) / Double(total) * 100) : 0
-        let base = "\(VoicePackFiles.label(done)) of \(VoicePackFiles.label(total)) (\(pct)%)"
+        let base = "\(VoicePackFiles.label(done)) of \(VoicePackFiles.label(total)) (\(VoicePackFiles.percent(done, total)))"
         return waiting ? base + ". Waiting for Wi-Fi." : base
     }
 
@@ -142,74 +111,11 @@ struct CommuteScoutVoicesSections: View {
         UserDefaults.standard.bool(forKey: "cs.voices.cellular.\(pack.id)")
     }
 
-    private func start(_ pack: VoiceCatalog.Pack) {
-        if case let .noSpace(needed) = packs.problem(pack.id) {
-            noSpace = "\(pack.title) need \(VoicePackFiles.label(needed)) free on this phone. Free up some space and try again."
-            return
-        }
-        if connectivity.online, !connectivity.onWifi {
-            askCellular = pack
-        } else {
-            packs.download(pack.id, cellular: false)
-        }
-    }
-
     private func delete(_ pack: VoiceCatalog.Pack) {
-        // The voice in use goes with its pack: back to Automatic.
-        if let s = selected, pack.voices.contains(where: { $0.id == s }) { pick("") }
+        // The voice in use goes with its set: back to Automatic.
+        if pack.voices.contains(where: { $0.id == picked }) { pick("") }
         previews.stop()
         packs.delete(pack.id)
-    }
-
-    // MARK: a voice row
-
-    private func voiceRow(_ v: VoiceCatalog.Voice, in pack: VoiceCatalog.Pack) -> some View {
-        let installed = packs.state(pack.id) == .installed
-        let isSelected = installed && selected == v.id
-        return HStack(spacing: 12) {
-            Button { previews.toggle(v) } label: {
-                ZStack {
-                    if previews.loading == v.id {
-                        ProgressView()
-                    } else {
-                        Image(systemName: previews.playing == v.id ? "stop.circle.fill" : "play.circle.fill")
-                            .font(.title2).foregroundStyle(Color.accentColor)
-                    }
-                }
-                .frame(width: 30, height: 30)
-            }
-            .buttonStyle(.borderless)
-            .disabled(v.preview == nil)
-            .accessibilityLabel(previews.playing == v.id ? "Stop the sample of \(v.name)" : "Play a sample of \(v.name)")
-            .accessibilityIdentifier("voices-preview-\(v.id)")
-            Button { if installed { pick(v.id) } } label: {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(v.name).foregroundStyle(installed ? .primary : .secondary)
-                        Text(Self.detail(v)).font(.caption).foregroundStyle(.secondary)
-                        Text("Computer-generated voice").font(.caption2).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    Image(systemName: "checkmark").font(.body.weight(.semibold)).foregroundStyle(Color.accentColor)
-                        .opacity(isSelected ? 1 : 0)
-                        .accessibilityHidden(true)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!installed)
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
-            .accessibilityIdentifier("voice-\(v.id)")
-        }
-    }
-
-    /// "English (UK), female".
-    static func detail(_ v: VoiceCatalog.Voice) -> String {
-        "\(VoicePick.accent(v.accent)), \(v.gender)"
-    }
-
-    private func footer(_ pack: VoiceCatalog.Pack) -> some View {
-        Text("CommuteScout voices are computer-generated voices that run on this phone and need no signal once downloaded. One download adds every voice in the set. Play a sample before you download. When a trip starts, the first instructions may be said in the system voice while the rest are prepared.")
     }
 }
 

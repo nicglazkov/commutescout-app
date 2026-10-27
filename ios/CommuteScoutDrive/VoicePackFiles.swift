@@ -128,6 +128,23 @@ enum VoicePackFiles {
         return broken.map(\.name)
     }
 
+    /// Deletes what an earlier catalog had in the pack's folder and this
+    /// one does not, such as a model file a new release renamed. Parts
+    /// and resume data of current files stay.
+    @discardableResult
+    static func removeStale(_ pack: VoiceCatalog.Pack, root: URL = root) -> [String] {
+        let dir = directory(pack.id, root: root)
+        var keep: Set<String> = [marker]
+        for f in pack.files {
+            keep.insert(f.name)
+            keep.insert(partURL(f, in: dir).lastPathComponent)
+            keep.insert(resumeURL(f, in: dir).lastPathComponent)
+        }
+        let stale = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { !keep.contains($0) }
+        for name in stale { try? FileManager.default.removeItem(at: dir.appendingPathComponent(name)) }
+        return stale
+    }
+
     static func remove(_ packId: String, root: URL = root) {
         try? FileManager.default.removeItem(at: directory(packId, root: root))
     }
@@ -147,6 +164,11 @@ enum VoicePackFiles {
     }
 
     /// "145 MB".
+    /// "34%", for a download's progress.
+    static func percent(_ done: Int64, _ total: Int64) -> String {
+        "\(total > 0 ? Int(Double(done) / Double(total) * 100) : 0)%"
+    }
+
     static func label(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }

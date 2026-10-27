@@ -102,6 +102,22 @@ class NeuralVoiceTest {
         } finally { dir.deleteRecursively() }
     }
 
+    @Test fun aNewReleaseUpdatesAnInstalledPackAndDropsRenamedFiles() {
+        val dir = tmpDir()
+        try {
+            val pack = packOf("model.new.onnx" to ByteArray(10), "tokens.txt" to ByteArray(5))
+            File(dir, "model.old.onnx").writeBytes(ByteArray(8)) // what the previous catalog named the model
+            File(dir, "tokens.txt").writeBytes(ByteArray(5))
+            File(dir, "model.new.onnx.part").writeBytes(ByteArray(3))
+            assertFalse(PackFiles.needsUpdate(dir, pack))
+            File(dir, PackFiles.MARKER).writeText("ok")
+            assertTrue(PackFiles.needsUpdate(dir, pack))
+            assertEquals(listOf("model.old.onnx"), PackFiles.stale(dir, pack))
+            File(dir, "model.new.onnx").writeBytes(ByteArray(10))
+            assertFalse(PackFiles.needsUpdate(dir, pack))
+        } finally { dir.deleteRecursively() }
+    }
+
     // Fallback
 
     @Test fun kokoroWaitsBrieflyAndOnlyForAudioRenderedAhead() {
@@ -126,6 +142,23 @@ class NeuralVoiceTest {
 
     @Test fun samplesBecomeClippedPcm() {
         assertArrayEquals(shortArrayOf(0, 32767, -32767, 32767, -32767), NeuralRules.pcm16(floatArrayOf(0f, 1f, -1f, 2f, -3f)))
+    }
+
+    @Test fun cleanRemovesTheOffsetFadesTheEndsAndSetsTheLevel() {
+        // One second of a 200 Hz tone at 0.02 on Kokoro's 0.025 offset.
+        val sr = 24000
+        val x = FloatArray(sr) { (0.025 + 0.02 * Math.sin(2 * Math.PI * 200 * it / sr)).toFloat() }
+        val y = NeuralRules.clean(x, sr)
+        assertEquals(x.size, y.size)
+        assertEquals(0f, y.first())
+        assertEquals(0f, y.last())
+        val tail = y.copyOfRange(sr / 2, sr)
+        assertEquals("no DC left", 0.0, tail.average(), 0.002)
+        assertEquals("gain is capped at 4x", 0.057, Math.sqrt(tail.map { it.toDouble() * it }.average()), 0.005)
+        // Loud speech is turned down to the level, never clipped.
+        val loud = NeuralRules.clean(FloatArray(sr) { (0.9 * Math.sin(2 * Math.PI * 200 * it / sr)).toFloat() }, sr)
+        assertTrue(loud.maxOf { Math.abs(it) } <= 0.95f)
+        assertEquals(0.1, Math.sqrt(loud.copyOfRange(sr / 2, sr).map { it.toDouble() * it }.average()), 0.01)
     }
 
     @Test fun onlyKokoroTextIsNormalized() {

@@ -106,7 +106,9 @@ final class PagesUITests: XCTestCase {
             app.swipeUp()
             // The list is lazy: its rows exist once scrolled into view.
             let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'voice-com.apple.voice'")).firstMatch
-            XCTAssertTrue(row.waitForExistence(timeout: 3), "a voice is listed")
+            // System voices follow the CommuteScout ones in the same list.
+            for _ in 0 ..< 3 where !row.waitForExistence(timeout: 2) { app.swipeUp() }
+            XCTAssertTrue(row.exists, "a voice is listed")
             row.tap()
             XCTAssertTrue(row.isSelected, "a tapped voice is the one in use")
             shot("voice-picked-\(theme)", 3)

@@ -93,6 +93,18 @@ final class VoicePackFilesTests: XCTestCase {
         XCTAssertFalse(VoicePackFiles.hasAnything("p", root: root))
     }
 
+    func testANewReleaseDropsRenamedFilesAndKeepsCurrentOnesAndParts() throws {
+        let p = try pack()
+        _ = try write(b, "tokens.txt")
+        _ = try write(a.prefix(1000), "model.int8.onnx.part")
+        _ = try write(a, "model.old.onnx")   // what the previous catalog named the model
+        XCTAssertEqual(VoicePackFiles.removeStale(p, root: root), ["model.old.onnx"])
+        let dir = VoicePackFiles.directory("p", root: root)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("tokens.txt").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("model.int8.onnx.part").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("model.old.onnx").path))
+    }
+
     func testThePackFolderIsExcludedFromBackup() throws {
         let dir = try VoicePackFiles.prepare("p", root: root)
         XCTAssertEqual(try dir.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
