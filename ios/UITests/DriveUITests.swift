@@ -38,13 +38,13 @@ final class DriveUITests: XCTestCase {
 
     private func pickFirstResult() {
         // Results are buttons whose title is the place's first line.
-        let first = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Los Altos'")).firstMatch
-        XCTAssertTrue(first.waitForExistence(timeout: 15), "a suggestion for Los Altos")
+        let first = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Palo Alto'")).firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 15), "a suggestion for Palo Alto")
         first.tap()
     }
 
     func testSearchPinRoutesNavigateAndStop() {
-        search("Los Altos")
+        search("Palo Alto")
         pickFirstResult()
         let navigate = app.buttons["navigate"]
         XCTAssertTrue(navigate.waitForExistence(timeout: 10), "place card with Navigate")
@@ -72,7 +72,7 @@ final class DriveUITests: XCTestCase {
     }
 
     func testCoordinatesBecomeAPin() {
-        search("37.372, -122.110")
+        search("37.442, -122.143")
         app.textFields["search"].typeText("\n")   // the return key, whatever the keyboard calls it
         XCTAssertTrue(app.buttons["navigate"].waitForExistence(timeout: 10), "a pin from typed coordinates")
         app.buttons["place-close"].tap()
@@ -80,7 +80,7 @@ final class DriveUITests: XCTestCase {
     }
 
     func testSaveHomeThenUseShortcut() {
-        search("Los Altos")
+        search("Palo Alto")
         pickFirstResult()
         XCTAssertTrue(app.buttons["save-menu"].waitForExistence(timeout: 10))
         app.buttons["save-menu"].tap()

@@ -89,7 +89,7 @@ final class CoverageUITests: XCTestCase {
 
     func testSearchIsLiveWhileTypingAndClears() {
         search("Los Alt")
-        let suggestion = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Los Altos'")).firstMatch
+        let suggestion = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Palo Alto'")).firstMatch
         XCTAssertTrue(suggestion.waitForExistence(timeout: 8), "suggestions arrive before submit")
         app.buttons["search-clear"].tap()
         XCTAssertEqual(app.textFields["search"].value as? String ?? "", "Search a place or address", "field cleared")
@@ -105,8 +105,8 @@ final class CoverageUITests: XCTestCase {
     }
 
     func testSaveWorkAndFavoriteThenRemoveInSettings() {
-        search("Los Altos")
-        pickResult("Los Altos")
+        search("Palo Alto")
+        pickResult("Palo Alto")
         XCTAssertTrue(app.buttons["save-menu"].waitForExistence(timeout: 10))
         app.buttons["save-menu"].tap()
         app.buttons["Save as Work"].tap()
@@ -125,15 +125,15 @@ final class CoverageUITests: XCTestCase {
         closeSettings()
         // The shortcut list under the field shows what is left (the favorite).
         app.textFields["search"].tap()
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Los Altos'")).firstMatch.waitForExistence(timeout: 5),
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Palo Alto'")).firstMatch.waitForExistence(timeout: 5),
                       "favorite as a shortcut")
     }
 
     func testQuickPicksOrderAndRemove() {
         // Save Home and a favorite, use a place, then the empty field lists
         // Home, the favorite and the recent, each with a remove button.
-        search("Los Altos")
-        pickResult("Los Altos")
+        search("Palo Alto")
+        pickResult("Palo Alto")
         XCTAssertTrue(app.buttons["save-menu"].waitForExistence(timeout: 10))
         app.buttons["save-menu"].tap(); app.buttons["Save as Home"].tap()
         app.buttons["save-menu"].tap(); app.buttons["Save to favorites"].tap()
@@ -156,8 +156,8 @@ final class CoverageUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Kilometers"].waitForExistence(timeout: 5))
         app.buttons["Kilometers"].tap()
         closeSettings()
-        search("Los Altos")
-        pickResult("Los Altos")
+        search("Palo Alto")
+        pickResult("Palo Alto")
         let km = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ' km away'")).firstMatch
         XCTAssertTrue(km.waitForExistence(timeout: 10), "distance shown in km")
         app.buttons["place-close"].tap()
@@ -353,8 +353,8 @@ final class CoverageUITests: XCTestCase {
         fromPick.tap()
         let to = app.textFields["Search a destination"]
         XCTAssertTrue(reveal(to))
-        to.tap(); to.typeText("Los Altos")
-        let toPick = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Los Altos'")).firstMatch
+        to.tap(); to.typeText("Palo Alto")
+        let toPick = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Palo Alto'")).firstMatch
         XCTAssertTrue(toPick.waitForExistence(timeout: 15))
         toPick.tap()
         let show = app.buttons["Show routes"]
@@ -502,8 +502,8 @@ final class CoverageUITests: XCTestCase {
     }
 
     func testRoutesCardAlternatesAndClose() {
-        search("Los Altos")
-        pickResult("Los Altos")
+        search("Palo Alto")
+        pickResult("Palo Alto")
         XCTAssertTrue(app.buttons["navigate"].waitForExistence(timeout: 10))
         app.buttons["navigate"].tap()
         XCTAssertTrue(app.buttons["start"].waitForExistence(timeout: 30))

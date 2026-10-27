@@ -51,7 +51,7 @@ enum AutoDrive {
                         return CLLocationCoordinate2D(latitude: la, longitude: lo)
                     }
                 }
-                DriveLog.note("remote start requested: \(place.name), via \(model.via.count) point(s)")
+                DriveLog.note("remote start requested, via \(model.via.count) point(s)")
                 for _ in 0 ..< 30 where model.here == nil { try? await Task.sleep(nanoseconds: 1_000_000_000) }
                 model.show(place)
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -118,7 +118,7 @@ enum AutoDrive {
         guard args.contains("-csAutoDrive") else { return }
         model.simulating = true
         try? await Task.sleep(nanoseconds: 2_000_000_000)
-        let place = Place(name: "Los Altos, CA", coordinate: CLLocationCoordinate2D(latitude: 37.372, longitude: -122.110), kind: .recent)
+        let place = Place(name: "Palo Alto, CA", coordinate: CLLocationCoordinate2D(latitude: 37.442, longitude: -122.143), kind: .recent)
         model.show(place)
         try? await Task.sleep(nanoseconds: 1_500_000_000)
         await model.routes(to: place)

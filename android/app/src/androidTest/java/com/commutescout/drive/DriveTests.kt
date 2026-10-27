@@ -116,8 +116,8 @@ class DriveTests {
     // MARK: search and places
 
     @Test fun searchIsLiveWhileTypingThenPinRoutesNavigateAndStop() {
-        search("Los Altos")
-        pickSuggestion("Los Altos")
+        search("Palo Alto")
+        pickSuggestion("Palo Alto")
         waitFor { tagExists("navigate") }
         tag("navigate").performClick()
         waitFor(45_000) { tagExists("start") }
@@ -130,7 +130,7 @@ class DriveTests {
     }
 
     @Test fun coordinatesBecomeAPin() {
-        search("37.372, -122.110")
+        search("37.442, -122.143")
         tag("search").performImeAction()
         waitFor { tagExists("navigate") }
         tag("place-close").performClick()
@@ -143,8 +143,8 @@ class DriveTests {
     }
 
     @Test fun saveHomeWorkFavoriteThenShortcutsAndRemoveInSettings() {
-        search("Los Altos")
-        pickSuggestion("Los Altos")
+        search("Palo Alto")
+        pickSuggestion("Palo Alto")
         waitFor { tagExists("save-menu") }
         tag("save-menu").performClick(); waitFor { exists("Save as Home") }; text("Save as Home").performClick()
         tag("save-menu").performClick(); waitFor { exists("Save as Work") }; text("Save as Work").performClick()
@@ -165,7 +165,7 @@ class DriveTests {
     }
 
     @Test fun quickPicksOrderAndRemove() {
-        search("Los Altos"); pickSuggestion("Los Altos")
+        search("Palo Alto"); pickSuggestion("Palo Alto")
         waitFor { tagExists("save-menu") }
         tag("save-menu").performClick(); waitFor { exists("Save as Home") }; text("Save as Home").performClick()
         tag("save-menu").performClick(); waitFor { exists("Save to favorites") }; text("Save to favorites").performClick()
@@ -184,7 +184,7 @@ class DriveTests {
         openSettingsPage("Units")
         scrollTo(text("Kilometers")).performClick()
         closeSheet("settings-sheet")
-        search("Los Altos"); pickSuggestion("Los Altos")
+        search("Palo Alto"); pickSuggestion("Palo Alto")
         waitFor { exists(" km") }
         tag("place-close").performClick()
         openSettingsPage("Units")
@@ -304,9 +304,9 @@ class DriveTests {
         tag("from-field").performClick(); tag("from-field").performTextInput("Palo Alto")
         waitFor(20_000) { exists("Palo Alto,") }
         compose.onAllNodesWithText("Palo Alto,", substring = true, useUnmergedTree = true)[0].performClick()
-        tag("to-field").performClick(); tag("to-field").performTextInput("Los Altos")
-        waitFor(20_000) { exists("Los Altos,") }
-        compose.onAllNodesWithText("Los Altos,", substring = true, useUnmergedTree = true)[0].performClick()
+        tag("to-field").performClick(); tag("to-field").performTextInput("Palo Alto")
+        waitFor(20_000) { exists("Palo Alto,") }
+        compose.onAllNodesWithText("Palo Alto,", substring = true, useUnmergedTree = true)[0].performClick()
         scrollTo(text("Show routes")).performClick()
         waitFor { !tagExists("directions-sheet") }
         waitFor(60_000) { tagExists("start") }

@@ -369,7 +369,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), NavigationUiState.empty())
 
     init {
-        _resumable.value?.let { Log.i("DriveViewModel", "trip to ${it.place.shortName} was running when the app closed; offering it back") }
+        _resumable.value?.let { Log.i("DriveViewModel", "a trip was running when the app closed; offering it back") }
         viewModelScope.launch { Engine.notice.collect { n -> if (n != null) { toast(n); Engine.notice.value = null } } }
         viewModelScope.launch { MapFiles.notice.collect { n -> if (n != null) { toast(n); MapFiles.notice.value = null } } }
         MapFiles.position = { _here.value ?: viewCenter }
@@ -496,7 +496,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         val trip = _resumable.value ?: return
         if (_here.value == null && !simulating.value) { toast("Waiting for your location. Try again in a moment."); return }
         _resumable.value = null
-        Log.i("DriveViewModel", "resume trip to ${trip.place.shortName}, saved ${(System.currentTimeMillis() - trip.startedAt) / 1000} s ago")
+        Log.i("DriveViewModel", "resume trip, saved ${(System.currentTimeMillis() - trip.startedAt) / 1000} s ago")
         start(trip.route, trip.place)
     }
 
@@ -660,7 +660,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     }
 
     fun start(route: Route, place: Place) {
-        Log.i("DriveViewModel", "start navigation to ${place.shortName}")
+        Log.i("DriveViewModel", "start navigation")
         try {
             if (simulating.value) Engine.location.enableSimulationOn(route)
             Engine.tripActive = true

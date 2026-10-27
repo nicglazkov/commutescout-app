@@ -190,7 +190,7 @@ final class AppModel: ObservableObject {
         }
         Connectivity.shared.onReconnect { [weak self] in self?.reconnected() }
         resumable = SavedTrip.load()
-        if let trip = resumable { DriveLog.note("trip to '\(trip.place.name)' was running when the app closed; offering it back") }
+        if let trip = resumable { DriveLog.note("a trip was running when the app closed; offering it back") }
         Task { await followOnceAllowed() }
         Task { await flushReports() }
     }
@@ -275,7 +275,7 @@ final class AppModel: ObservableObject {
             return
         }
         resumable = nil
-        DriveLog.note("resume trip to '\(trip.place.name)', saved \(Int(Date().timeIntervalSince(trip.startedAt))) s ago")
+        DriveLog.note("resume trip, saved \(Int(Date().timeIntervalSince(trip.startedAt))) s ago")
         start(trip.route, to: trip.place)
     }
 
@@ -683,7 +683,7 @@ final class AppModel: ObservableObject {
             }
         } catch {
             guard gen == routeGen else { return }
-            DriveLog.note("routes failed to '\(place.name)': \(error)")
+            DriveLog.note("routes failed: \(error)")
             errorMessage = (error as? DriveError)?.errorDescription
                 ?? (!online || Connectivity.isOffline(error) ? OfflineText.routes
                     : "Could not get a route. Try again in a moment.")
@@ -707,7 +707,7 @@ final class AppModel: ObservableObject {
             try core.startNavigation(route: route)
             SavedTrip.save(route: route, place: place)
             saveTripMap(route, to: place, manual: false)
-            DriveLog.note("route start to '\(place.name)': \(DriveLog.meters(route.distance)) \(Int(route.steps.reduce(0) { $0 + $1.duration } / 60)) min, "
+            DriveLog.note("route start: \(DriveLog.meters(route.distance)) \(Int(route.steps.reduce(0) { $0 + $1.duration } / 60)) min, "
                           + "\(route.geometry.count) pts, simulated=\(simulating), alertsAhead=\(Int(prefs.alertAheadMeters)) m")
             preview = nil
             selectedMarker = nil

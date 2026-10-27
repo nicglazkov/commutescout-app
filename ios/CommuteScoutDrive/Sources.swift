@@ -286,6 +286,19 @@ final class SourcesStore: ObservableObject {
             || host.hasSuffix("-15002631928.us-west1.run.app")
     }
 
+    /// The URL an own session is polled at, or nil unless `path` is a plain
+    /// absolute path and the whole URL is still first party. The path comes
+    /// from the handshake, and one such as "@evil.example/x" would otherwise
+    /// move the host, and the account token with it.
+    static func ownSessionURL(_ base: String, _ path: String) -> String? {
+        let bad = path.contains { $0 == "@" || $0 == "\\" || $0 == "?" || $0 == "#" || $0.isWhitespace }
+        guard path.hasPrefix("/"), !path.hasPrefix("//"), !bad else { return nil }
+        var b = base
+        while b.hasSuffix("/") { b.removeLast() }
+        let url = b + path
+        return isFirstParty(url) ? url : nil
+    }
+
     /// Catalog plugins whose handshake offers user sessions get polled here.
     private func discoverOwnSessions(_ bases: [(String, String)]) async {
         var found: [FlareSource] = []
@@ -296,7 +309,8 @@ final class SourcesStore: ObservableObject {
             guard let (data, resp) = try? await Backend.session.data(for: req),
                   (resp as? HTTPURLResponse)?.statusCode == 200,
                   let h = try? JSONDecoder().decode(Handshake.self, from: data),
-                  let us = h.extensions?.user_sessions, let path = us.path, us.auth == "firebase", h.id == id else { continue }
+                  let us = h.extensions?.user_sessions, let path = us.path, us.auth == "firebase", h.id == id,
+                  Self.ownSessionURL(base, path) != nil else { continue }
             // An own session goes stale in seconds while the phone moves: its
             // cadence is the extension's poll_s, not the mediated refresh_s.
             found.append(FlareSource(id: h.id, name: h.name, base: base, token: nil, refreshS: max(15, min(us.poll_s ?? 15, 300)),
@@ -420,7 +434,15 @@ final class SourcesStore: ObservableObject {
             guard let t = await tokenProvider?() else { perSource[src.id] = nil; rebuild(); return }
             bearer = t
         }
-        var comps = URLComponents(string: base + (src.ownSessionPath ?? "/flare/v1/alerts"))!
+        let target: String
+        if let path = src.ownSessionPath {
+            guard let u = Self.ownSessionURL(base, path) else { return }
+            target = u
+        } else {
+            target = base + "/flare/v1/alerts"
+        }
+        // A plugin URL that does not parse is skipped, never a crash.
+        guard var comps = URLComponents(string: target) else { failed(src, "bad URL"); return }
         comps.queryItems = [URLQueryItem(name: "lat", value: String(format: "%.3f", center.latitude)),
                             URLQueryItem(name: "lon", value: String(format: "%.3f", center.longitude)),
                             URLQueryItem(name: "r", value: "50000")]
