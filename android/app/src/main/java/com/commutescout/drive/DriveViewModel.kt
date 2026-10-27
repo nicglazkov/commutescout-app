@@ -218,6 +218,8 @@ object Engine {
         alerts.fallback = { markers.held() to markers.asOf.value }
         // Neural voices drop rendering work the driver has already passed.
         Neural.renderer.hereAlong = { alerts.hereAlong.value }
+        // A pack from an earlier release updates now, not at the first prompt.
+        Neural.packs(application)
         // The signal is back: the snapshot, spoken alerts and any report
         // made meanwhile all catch up. The marker store does its own.
         Connectivity.onReconnect {

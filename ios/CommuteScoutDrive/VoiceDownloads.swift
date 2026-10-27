@@ -83,16 +83,23 @@ final class VoicePacks: ObservableObject {
     }
 
     /// Called at launch: re-check the sizes of every installed pack, and
-    /// put each pack's state together from what is on disk.
+    /// put each pack's state together from what is on disk. A pack that
+    /// was installed but no longer matches the catalog, because this
+    /// version of the app ships new model files or a file was damaged,
+    /// fetches just those files again, on Wi-Fi unless the driver allowed
+    /// mobile data before. The chosen voice stays chosen; the system
+    /// voice speaks until the files are in.
     private func launchCheck() {
         guard let catalog else { return }
         for pack in catalog.packs {
             let dir = VoicePackFiles.directory(pack.id)
             if FileManager.default.fileExists(atPath: dir.appendingPathComponent(VoicePackFiles.marker).path) {
+                let stale = VoicePackFiles.removeStale(pack)
                 let broken = VoicePackFiles.unmarkBroken(pack)
                 if !broken.isEmpty {
-                    DriveLog.note("voices: \(pack.id) failed its size check at launch (\(broken.joined(separator: ", "))); download it again to repair")
+                    DriveLog.note("voices: \(pack.id) needs \(broken.joined(separator: ", "))\(stale.isEmpty ? "" : " (removed \(stale.joined(separator: ", ")))"); updating")
                     Self.setInstalled(pack.id, false)
+                    download(pack.id, cellular: UserDefaults.standard.bool(forKey: "cs.voices.cellular.\(pack.id)"))
                 }
             }
             publish(pack.id, force: true)
@@ -260,6 +267,7 @@ final class VoicePacks: ObservableObject {
         guard !Self.installedIds.contains(pack.id), running[pack.id, default: []].isEmpty,
               VoicePackFiles.brokenFiles(pack).isEmpty else { return }
         if VoicePackFiles.markInstalledIfComplete(pack) {
+            VoicePackFiles.removeStale(pack)
             NeuralVoices.shared.forget(packId: pack.id)
             Self.setInstalled(pack.id, true)
             DriveLog.note("voices: \(pack.id) installed (\(VoicePackFiles.label(pack.downloadSize)))")

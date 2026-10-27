@@ -43,7 +43,11 @@ final class VoiceCatalogTests: XCTestCase {
             XCTAssertEqual(pack.files.reduce(0) { $0 + $1.size }, pack.downloadSize, pack.id)
             XCTAssertTrue(pack.files.contains { $0.name == "LICENSE" } && pack.files.contains { $0.name == "NOTICE" })
             for f in pack.files {
-                XCTAssertEqual(f.url.lastPathComponent, "\(pack.id).\(f.name)")
+                // "<pack>.<file>", or "<pack>.v2.<file>" for a later build of a file that keeps its name.
+                let asset = f.url.lastPathComponent
+                let tag = asset.hasPrefix(pack.id + ".v") && asset.hasSuffix("." + f.name)
+                    ? asset.dropFirst(pack.id.count + 2).dropLast(f.name.count + 1) : ""
+                XCTAssertTrue(asset == pack.id + "." + f.name || (!tag.isEmpty && tag.allSatisfy(\.isNumber)), asset)
                 XCTAssertEqual(f.sha256.count, 64)
             }
             for v in pack.voices {

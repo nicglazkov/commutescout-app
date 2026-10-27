@@ -33,7 +33,7 @@
           "Disclose that the speech is machine generated (Attachment A item e)"
         ]
       },
-      "attribution": "Supertonic 2 by Supertone Inc. int8 ONNX build by the sherpa-onnx project.",
+      "attribution": "Supertonic 2 by Supertone Inc. int8 ONNX build by the sherpa-onnx project; float16 vocoder converted from Supertone's float32 release.",
       "voices": [
         {
           "id": "supertonic2-en.F3",
@@ -44,9 +44,9 @@
           "gender": "female",
           "default": true,
           "preview": {
-            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.supertonic2-en.F3.m4a",
-            "size": 65869,
-            "sha256": "e6bbec2f3ffce201b8d4e1b4304d6401b53625047b530119b3b53b08e1e77eaf",
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.supertonic2-en.F3.v2.m4a",
+            "size": 132408,
+            "sha256": "d40ff5efbdf5877e114c5ce4e26b2555d2b0c07440710f3cf0d0c4285153e5fc",
             "format": "m4a"
           }
         },
@@ -58,9 +58,9 @@
           "accent": "en-US",
           "gender": "female",
           "preview": {
-            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.supertonic2-en.F2.m4a",
-            "size": 62159,
-            "sha256": "f85552fbf291009e1f4c8c3272cbd4756fc7ef27653627adf3bb3ed6ce2c5e05",
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.supertonic2-en.F2.v2.m4a",
+            "size": 126816,
+            "sha256": "d2ab721a65a9eb2d345e8b2aa5aaadd8f4726b05e9068f0d01b985cd503f91f1",
             "format": "m4a"
           }
         },
@@ -72,9 +72,9 @@
           "accent": "en-US",
           "gender": "male",
           "preview": {
-            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.supertonic2-en.M3.m4a",
-            "size": 58813,
-            "sha256": "fc26f776736ca3a32175e0796110ff3baf94cda7b5630df646184713f0ccf738",
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.supertonic2-en.M3.v2.m4a",
+            "size": 115160,
+            "sha256": "6cb8585994eb115075aee80122f71c47618428f9f1bfc78a5f7428763d1d6420",
             "format": "m4a"
           }
         },
@@ -86,9 +86,9 @@
           "accent": "en-US",
           "gender": "male",
           "preview": {
-            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.supertonic2-en.M1.m4a",
-            "size": 64010,
-            "sha256": "f6fedb8a4166552dfa0fd0d31bb4218797f8699aa7093b035ce2a741edfa9e28",
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.supertonic2-en.M1.v2.m4a",
+            "size": 129279,
+            "sha256": "8db131266a7a38e162e83d99ee168e7334a5d90cd4585eda774fce2375eacddb",
             "format": "m4a"
           }
         }
@@ -104,9 +104,9 @@
         {
           "name": "NOTICE",
           "role": "license",
-          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.NOTICE",
-          "sha256": "68b22013f5254e0fd0e8d63166c593b335eaf27c60227012e2448d3aaaa3692d",
-          "size": 1145
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.v2.NOTICE",
+          "sha256": "78681b1b7fa318ceae49e710b388ac3e40e3225e2976b683fdc6d033eed17f97",
+          "size": 1490
         },
         {
           "name": "duration_predictor.int8.onnx",
@@ -144,11 +144,11 @@
           "size": 40686657
         },
         {
-          "name": "vocoder.int8.onnx",
+          "name": "vocoder.fp16.onnx",
           "role": "vocoder",
-          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.vocoder.int8.onnx",
-          "sha256": "db99c36fb871fbfb128b903662995f2e22213e875f2434f319f8d10ee0f10e90",
-          "size": 25977132
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.vocoder.fp16.onnx",
+          "sha256": "344200466a6bd0ffa36b91553f8ae00dacfedf3fac4085aae8d6edefb04b9818",
+          "size": 50728607
         },
         {
           "name": "voice.bin",
@@ -159,13 +159,13 @@
         }
       ],
       "archive": {
-        "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.zip",
-        "sha256": "6a033400a951f91537af9b058caec30180dabef22f3e19259f6fa33c9b79250d",
-        "size": 81499387,
+        "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/supertonic2-en.v2.zip",
+        "sha256": "34cbe28141c41ff4e4a54885a4376b5d5982042fd681b8278ce8be1c0c7107fa",
+        "size": 108546652,
         "format": "zip",
         "root_dir": "supertonic2-en"
       },
-      "download_size": 96420796
+      "download_size": 121172616
     },
     {
       "id": "kokoro-en-v1_0",
@@ -209,9 +209,9 @@
           "gender": "female",
           "default": true,
           "preview": {
-            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.af_heart.m4a",
-            "size": 52618,
-            "sha256": "0e618ac5e2b729cc2587c73be01ead93cbc3ffba43bfee3ce2f7ffc095584903",
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.af_heart.v2.m4a",
+            "size": 72507,
+            "sha256": "100f486fc4b04c0e4359f5a23526d4ef5bb657f6e4dba72355a9cb07e283b1fa",
             "format": "m4a"
           }
         },
@@ -223,9 +223,9 @@
           "accent": "en-US",
           "gender": "female",
           "preview": {
-            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.af_bella.m4a",
-            "size": 53080,
-            "sha256": "42ce972a185e02721f5ae602019ecf8fb176aeeb48e31fe8bafd7480f0e05507",
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.af_bella.v2.m4a",
+            "size": 72117,
+            "sha256": "4fbbf6fefeec24fe0d87eeaaa18f4b784440228b2ed078e5e2b59de0ef1d6b5d",
             "format": "m4a"
           }
         },
@@ -237,9 +237,9 @@
           "accent": "en-US",
           "gender": "male",
           "preview": {
-            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.am_michael.m4a",
-            "size": 56133,
-            "sha256": "7035d8f015d4cc8f131f3acda6a510bea37faeef0dde1fa4f1c32de84c06de67",
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.am_michael.v2.m4a",
+            "size": 76415,
+            "sha256": "03486b63d53fd66243c0f2ed74384f62af80c03dfe92eb7cca8e65a5b728c094",
             "format": "m4a"
           }
         },
@@ -251,9 +251,9 @@
           "accent": "en-US",
           "gender": "male",
           "preview": {
-            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.am_fenrir.m4a",
-            "size": 51761,
-            "sha256": "fa2c6c9fbaca692f32c31027400ae52388a92014b8add3245737d13eaa644bac",
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.am_fenrir.v2.m4a",
+            "size": 71158,
+            "sha256": "082e0f0b03ae1a0647830aa6aaf0cf19de8132015d0e33235bc1afd5db2786a2",
             "format": "m4a"
           }
         },
@@ -265,9 +265,9 @@
           "accent": "en-GB",
           "gender": "female",
           "preview": {
-            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.bf_isabella.m4a",
-            "size": 57495,
-            "sha256": "de39a0b149f3570163d6ae60660d5cbb0d925caa27920fdf1d5ee933a69f880c",
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.bf_isabella.v2.m4a",
+            "size": 78455,
+            "sha256": "1805b08dd5726dc29407db6aad8f6686aa1f54f2a8875d8824543f3c3fd7f9ac",
             "format": "m4a"
           }
         },
@@ -279,9 +279,9 @@
           "accent": "en-GB",
           "gender": "female",
           "preview": {
-            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.bf_emma.m4a",
-            "size": 54301,
-            "sha256": "da74917107ee265ccf1e5e93ab5e4cffc9a19ff8e85df45c3c0f58ceccb66e9e",
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.bf_emma.v2.m4a",
+            "size": 74752,
+            "sha256": "0fafb35d43793f106145beb1adbb53ca419b77ef8cd04ca88e6602c38ec41f49",
             "format": "m4a"
           }
         },
@@ -293,9 +293,9 @@
           "accent": "en-GB",
           "gender": "male",
           "preview": {
-            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.bm_george.m4a",
-            "size": 62392,
-            "sha256": "f4a4fc76ad1f165feba3d0513c1ee8b636616725549b352520b2987b5cdb2e2c",
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.bm_george.v2.m4a",
+            "size": 83257,
+            "sha256": "083805c77c6d41f97d7ec95223008eb5582cdd95f0af7b1184433e67ef5f99f8",
             "format": "m4a"
           }
         },
@@ -307,9 +307,9 @@
           "accent": "en-GB",
           "gender": "male",
           "preview": {
-            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.bm_fable.m4a",
-            "size": 67093,
-            "sha256": "2aa6e6f4f38b2fee333431eb0ee7949477c86f635175fc765c6bab4d0e046347",
+            "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/preview.kokoro-en-v1_0.bm_fable.v2.m4a",
+            "size": 90178,
+            "sha256": "3f49bcc9587b5f2ff8b38cf194b3f57a7e5d9df6195977000c863d6b4a2cab24",
             "format": "m4a"
           }
         }
@@ -325,9 +325,9 @@
         {
           "name": "NOTICE",
           "role": "license",
-          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.NOTICE",
-          "sha256": "47c5a3603363569f4f81a6fea28a074246ecf31b94094df6faa699f226fc032f",
-          "size": 3374
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.v2.NOTICE",
+          "sha256": "ea52158ec6e0d6a85b48d1c1b340728b4a9ed5dd8102dbc221c5927dd3ddc7d2",
+          "size": 3395
         },
         {
           "name": "lexicon-gb-en-extra.txt",
@@ -358,11 +358,11 @@
           "size": 5956885
         },
         {
-          "name": "model.int8.onnx",
+          "name": "model.mixed.onnx",
           "role": "model",
-          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.model.int8.onnx",
-          "sha256": "c94f6e6a71875740daf0cd8d836cd9ea698747b2be71962d7777c04ed3afad21",
-          "size": 114202060
+          "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.model.mixed.onnx",
+          "sha256": "7099946739cb51ebfe3fa7b909bd21fbdb9cf0930676247cef7f747777532fd3",
+          "size": 156846757
         },
         {
           "name": "tokens.txt",
@@ -380,13 +380,13 @@
         }
       ],
       "archive": {
-        "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.zip",
-        "sha256": "934424c731c000b8aaaea08e80f3186f0e98a77e1c8bae0beac0489c1f6bde0d",
-        "size": 106656025,
+        "url": "https://github.com/nicglazkov/commutescout-app/releases/download/voices-v1/kokoro-en-v1_0.v2.zip",
+        "sha256": "d5f632a4d0da9f690149603dd43f17cf4db59b6b1ee22f004dcfd3db553694f3",
+        "size": 149676441,
         "format": "zip",
         "root_dir": "kokoro-en-v1_0"
       },
-      "download_size": 145393006
+      "download_size": 188037724
     }
   ]
 }

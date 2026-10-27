@@ -93,6 +93,22 @@ object PackFiles {
     fun installed(dir: File, pack: VoicePackInfo): Boolean =
         File(dir, MARKER).isFile && pack.files.all { File(dir, it.name).let { f -> f.isFile && f.length() == it.size } }
 
+    /**
+     * Files in the pack's folder that this catalog does not name, such as
+     * a model an earlier release called something else. Parts of current
+     * files stay.
+     */
+    fun stale(dir: File, pack: VoicePackInfo): List<String> {
+        val keep = pack.files.flatMap { listOf(it.name, it.name + ".part") }.toSet() + MARKER
+        return dir.list()?.filter { it !in keep }?.sorted() ?: emptyList()
+    }
+
+    /**
+     * A pack that was installed and no longer matches the catalog: this
+     * version of the app ships new model files, or a file was damaged.
+     */
+    fun needsUpdate(dir: File, pack: VoicePackInfo): Boolean = File(dir, MARKER).isFile && !installed(dir, pack)
+
     /** Where a partial file resumes: its length, or 0 when it is longer than it can be. */
     fun resumeFrom(part: File, expect: PackFile): Long {
         if (!part.isFile) return 0
@@ -113,11 +129,30 @@ class VoicePacks(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val work = WorkManager.getInstance(app)
 
+    init { updateChanged() }
+
     private val _installed = MutableStateFlow(scanInstalled())
     /** Pack ids that are fully downloaded and verified. */
     val installed: StateFlow<Set<String>> = _installed.asStateFlow()
 
     fun dir(packId: String) = File(root, packId)
+
+    /**
+     * At start: a pack installed by an earlier version whose files changed
+     * fetches just those files again, on Wi-Fi. The chosen voice stays
+     * chosen; the system voice speaks until the files are in.
+     */
+    private fun updateChanged() {
+        for (pack in catalog.packs) {
+            val d = dir(pack.id)
+            if (!PackFiles.needsUpdate(d, pack)) continue
+            val stale = PackFiles.stale(d, pack)
+            stale.forEach { File(d, it).delete() }
+            File(d, PackFiles.MARKER).delete()
+            Log.i(TAG, "${pack.id} changed (removed ${stale.joinToString()}); updating on Wi-Fi")
+            enqueue(pack, metered = false, ExistingWorkPolicy.KEEP)
+        }
+    }
 
     private fun scanInstalled(): Set<String> = catalog.packs.filter { PackFiles.installed(dir(it.id), it) }.map { it.id }.toSet()
 
@@ -148,7 +183,9 @@ class VoicePacks(context: Context) {
      * Starts or resumes a pack. Wi-Fi only unless [metered]: then any
      * network, the driver having agreed to the size.
      */
-    fun download(pack: VoicePackInfo, metered: Boolean) {
+    fun download(pack: VoicePackInfo, metered: Boolean) = enqueue(pack, metered, ExistingWorkPolicy.REPLACE)
+
+    private fun enqueue(pack: VoicePackInfo, metered: Boolean, policy: ExistingWorkPolicy) {
         val req = OneTimeWorkRequestBuilder<VoicePackWorker>()
             .setConstraints(Constraints.Builder()
                 .setRequiredNetworkType(if (metered) NetworkType.CONNECTED else NetworkType.UNMETERED)
@@ -157,7 +194,7 @@ class VoicePacks(context: Context) {
             .addTag(if (metered) TAG_METERED else TAG_WIFI)
             .build()
         Log.i(TAG, "download ${pack.id}: ${if (metered) "any network" else "Wi-Fi only"}")
-        work.enqueueUniqueWork(workName(pack.id), ExistingWorkPolicy.REPLACE, req)
+        work.enqueueUniqueWork(workName(pack.id), policy, req)
     }
 
     /** Stops the download and keeps the partial files, so the next one resumes. */
@@ -234,6 +271,7 @@ class VoicePackWorker(context: Context, params: WorkerParameters) : CoroutineWor
                 if (!ok) return@withContext fail("A file did not pass its check. Try again later.", PackFiles.bytesOnDisk(dir, pack))
             }
             File(dir, PackFiles.MARKER).writeText("${pack.id} ${System.currentTimeMillis()}\n")
+            PackFiles.stale(dir, pack).forEach { File(dir, it).delete() }
             Log.i(VoicePacks.TAG, "$packId installed in ${(System.currentTimeMillis() - started) / 1000} s")
             packs.rescan()
             Result.success()

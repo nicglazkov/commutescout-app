@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +22,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,23 +50,30 @@ fun voiceSummary(prefs: Prefs, voices: List<VoiceInfo>): String {
 }
 
 /**
- * The voice for road alerts and turn instructions: every voice the
- * phone's engine has for the driver's language, best first, then speed
- * and pitch, then the engine. A tap picks a voice and plays a sample of
- * a drive, so the choice is made by ear.
+ * The voice for road alerts and turn instructions. One list holds every
+ * voice: Automatic, the CommuteScout voices, and the voices of the phone's
+ * speech engine, best first. A tap picks a voice and plays a sample of a
+ * drive, so the choice is made by ear. A CommuteScout voice that is not on
+ * the phone yet plays its recorded sample and asks before the download;
+ * the downloads themselves are under Downloaded voices, to cancel or delete.
  */
 @Composable
 fun VoicePage(model: DriveViewModel, openLicenses: () -> Unit = {}) {
     val prefs = model.prefs
     val packs = remember { Neural.packs(Engine.app) }
     val installed by packs.installed.collectAsStateWithLifecycle()
+    val listed = packs.catalog.listed
+    val states = listed.associate { p -> p.id to remember(p.id) { packs.state(p) }.collectAsStateWithLifecycle().value }
     val neural = NeuralPick.choose(prefs.voiceName, packs.catalog, installed)
     val neuralAuto = NeuralPick.automatic(packs.catalog, installed)
+    val picked = listed.firstNotNullOfOrNull { p -> p.voices.firstOrNull { it.id == prefs.voiceName }?.let { p to it } }
     val speaker = Engine.alerts.speaker
     val context = LocalContext.current
     val ready by speaker.ready.collectAsStateWithLifecycle()
     val online by Connectivity.online.collectAsStateWithLifecycle()
+    val playing by PreviewPlayer.playing.collectAsStateWithLifecycle()
     var showOthers by remember { mutableStateOf(false) }
+    var offer by remember { mutableStateOf<Pair<VoicePackInfo, VoiceEntry>?>(null) }
     // Read again on coming back from the system's settings, where
     // voices are downloaded and the default engine is set.
     var visits by remember { mutableIntStateOf(0) }
@@ -80,8 +89,17 @@ fun VoicePage(model: DriveViewModel, openLicenses: () -> Unit = {}) {
     val others = VoicePick.others(voices, locale)
     val auto = VoicePick.smartDefault(voices, locale, online)
     val speaking = VoicePick.resolve(prefs.voiceName, voices, locale, online)
+    val neuralVoices = listed.flatMap { p -> p.voices.map { p to it } }
+    val localNeural = neuralVoices.filter { it.second.accent.endsWith("-" + locale.country) }
+    val otherNeural = neuralVoices.filter { it !in localNeural }
+    val automatic = picked == null && voices.none { it.name == prefs.voiceName }
 
-    fun preview() = Engine.alerts.preview(VoiceLabels.preview(Units.spoken(800.0)))
+    // The page's own test sentence, ready by the time the driver taps Test voice.
+    LaunchedEffect(neural?.id, prefs.voiceRate) {
+        neural?.let { Neural.renderer.request(it, prefs.voiceRate, VoiceLabels.preview(Units.spoken(800.0)), Double.NEGATIVE_INFINITY) }
+    }
+
+    fun preview() { PreviewPlayer.stop(); Engine.alerts.preview(VoiceLabels.preview(Units.spoken(800.0))) }
     fun openSystem() {
         runCatching { context.startActivity(Intent(TTS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             .onFailure { Log.w("Voice", "no text-to-speech settings screen: $it") }
@@ -101,62 +119,88 @@ fun VoicePage(model: DriveViewModel, openLicenses: () -> Unit = {}) {
         // Automatic with a neural pack on the phone: its own sample, at once.
         if (v == null && neuralAuto != null) PreviewPlayer.play(neuralAuto.voice) else preview()
     }
-
-    NeuralVoicesSection(model, packs, installed, neural)
-    GroupTitle("System voices")
-
-    if (!ready) {
-        PageGroup {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading voices")
-            }
-        }
-    } else {
-        PageGroup {
-            VoiceRow("Automatic", neuralAuto?.let { "Uses ${it.name} � ${NeuralLabels.GENERATED}" }
-                ?: auto?.let { "Uses " + VoiceLabels.full(it, voices) } ?: "Uses the speech engine's default voice",
-                prefs.voiceName.isEmpty(), "voice-auto") { pick(null) }
-            mine.forEach { v ->
-                VoiceRow(VoiceLabels.title(v, voices), VoiceLabels.detail(v), prefs.voiceName == v.name, "voice-${v.name}", v.installed) { pick(v) }
-            }
-            if (mine.isEmpty()) Text("No voice on this phone speaks ${locale.getDisplayLanguage(Locale.US)}. Download one in text-to-speech settings.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (others.isNotEmpty()) TextButton({ showOthers = !showOthers }, Modifier.testTag("voice-others")) {
-                Text(if (showOthers) "Hide other accents and languages" else "Show other accents and languages (${others.size})")
-            }
-        }
-        if (prefs.voiceName.isNotEmpty() && neural == null && speaking?.name != prefs.voiceName) {
-            Note(if (voices.any { it.name == prefs.voiceName && it.network } && !online)
-                "No connection: " + (speaking?.let { VoiceLabels.title(it, voices) } ?: "the engine's default voice") + " speaks until the signal is back."
-                else "The chosen voice is no longer on this phone, so " + (speaking?.let { VoiceLabels.title(it, voices) } ?: "the engine's default voice") + " speaks instead.")
-        }
-        Note("Tap a voice to hear it. Voices that need a connection are free and stream over mobile data; with no signal, the best voice on this phone speaks instead.")
-        if (showOthers && others.isNotEmpty()) {
-            GroupTitle("Other accents and languages")
-            PageGroup {
-                others.forEach { v ->
-                    VoiceRow(VoiceLabels.title(v, voices), VoiceLabels.detail(v), prefs.voiceName == v.name, "voice-${v.name}", v.installed) { pick(v) }
-                }
-            }
+    // On the phone: picked like any voice. Downloading: picked, and its
+    // recorded sample plays. Otherwise the sample plays and the download is offered.
+    fun pickNeural(pack: VoicePackInfo, v: VoiceEntry) {
+        when (states[pack.id]) {
+            is PackState.Installed -> { prefs.voiceName = v.id; preview() }
+            is PackState.Downloading, is PackState.Waiting -> { prefs.voiceName = v.id; PreviewPlayer.play(v) }
+            else -> { PreviewPlayer.play(v); offer = pack to v }
         }
     }
+    fun choose(pack: VoicePackInfo, v: VoiceEntry, metered: Boolean) {
+        prefs.voiceName = v.id
+        packs.download(pack, metered)
+        offer = null
+    }
+
+    @Composable
+    fun NeuralRow(pack: VoicePackInfo, v: VoiceEntry) {
+        var detail = NeuralLabels.accent(v.accent) + " · " + v.gender.replaceFirstChar { it.uppercase() } + " · " + NeuralLabels.GENERATED
+        val status = when (val s = states[pack.id]) {
+            is PackState.Installed -> null
+            is PackState.Downloading -> "Downloading ${percent(s.done, s.total)}"
+            is PackState.Waiting -> if (s.metered) "Waiting for a connection" else "Waiting for Wi-Fi"
+            is PackState.Paused -> "Paused at ${percent(s.done, s.total)}"
+            is PackState.Failed -> "Download did not finish"
+            else -> { detail += " · ${Units.bytes(pack.downloadSize)} download"; null }
+        }
+        VoiceRow(v.name, detail, prefs.voiceName == v.id, "voice-${v.id}", status = if (playing == v.id) "Playing a sample" else status) { pickNeural(pack, v) }
+    }
+
+    @Composable
+    fun SystemRow(v: VoiceInfo) {
+        VoiceRow(VoiceLabels.title(v, voices), VoiceLabels.detail(v), prefs.voiceName == v.name, "voice-${v.name}", v.installed) { pick(v) }
+    }
+
+    GroupTitle("Voice")
+    PageGroup {
+        VoiceRow("Automatic", neuralAuto?.let { "Uses ${it.name} · ${NeuralLabels.GENERATED}" }
+            ?: auto?.let { "Uses " + VoiceLabels.full(it, voices) } ?: "Uses the speech engine's default voice",
+            automatic, "voice-auto") { pick(null) }
+        localNeural.forEach { (p, v) -> NeuralRow(p, v) }
+        if (!ready) {
+            Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading the phone's voices")
+            }
+        }
+        mine.forEach { SystemRow(it) }
+        if (mine.isEmpty() && ready) Text("No voice on this phone speaks ${locale.getDisplayLanguage(Locale.US)}. Download one in text-to-speech settings.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Other accents on request; the picked voice stays in sight whatever its accent.
+        otherNeural.filter { showOthers || it.second.id == prefs.voiceName }.forEach { (p, v) -> NeuralRow(p, v) }
+        others.filter { showOthers || it.name == prefs.voiceName }.forEach { SystemRow(it) }
+        val more = others.size + otherNeural.size
+        if (more > 0) TextButton({ showOthers = !showOthers }, Modifier.testTag("voice-others")) {
+            Text(if (showOthers) "Hide other accents and languages" else "Show other accents and languages ($more)")
+        }
+    }
+    val fallback = speaking?.let { VoiceLabels.title(it, voices) } ?: "the engine's default voice"
+    if (picked != null && neural == null) {
+        Note("${picked.second.name} speaks once ${picked.first.title.lowercase()} finish downloading. Until then, $fallback speaks.")
+    } else if (picked == null && prefs.voiceName.isNotEmpty() && speaking?.name != prefs.voiceName) {
+        Note(if (voices.any { it.name == prefs.voiceName && it.network } && !online) "No connection: $fallback speaks until the signal is back."
+            else "The chosen voice is no longer on this phone, so $fallback speaks instead.")
+    }
+    Note("Tap a voice to choose it and hear it. CommuteScout voices run on this phone and need no connection once downloaded. " +
+        "System voices that need a connection are free and stream over mobile data; with no signal, the best voice on this phone speaks instead.")
 
     GroupTitle("Speed and pitch")
     PageGroup {
         SliderRow("Speed", VoiceLabels.rate(prefs.voiceRate), prefs.voiceRate, VoiceLabels.MIN_RATE..VoiceLabels.MAX_RATE, 7, "voice-rate",
             { prefs.voiceRate = (it * 10).roundToInt() / 10f }) { preview() }
-        SliderRow("Pitch", VoiceLabels.pitch(prefs.voicePitch), prefs.voicePitch, VoiceLabels.MIN_PITCH..VoiceLabels.MAX_PITCH, 7, "voice-pitch",
-            { prefs.voicePitch = (it * 20).roundToInt() / 20f }, enabled = neural == null) { preview() }
-        if (neural != null) Text("Pitch applies to system voices only.", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (neural == null) SliderRow("Pitch", VoiceLabels.pitch(prefs.voicePitch), prefs.voicePitch, VoiceLabels.MIN_PITCH..VoiceLabels.MAX_PITCH, 7, "voice-pitch",
+            { prefs.voicePitch = (it * 20).roundToInt() / 20f }) { preview() }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button({ preview() }, Modifier.testTag("voice-test"), enabled = ready) { Text("Test voice") }
             TextButton({ prefs.voiceRate = 1f; prefs.voicePitch = 1f }, Modifier.testTag("voice-reset"),
                 enabled = prefs.voiceRate != 1f || prefs.voicePitch != 1f) { Text("Reset") }
         }
     }
-    Note(if (neural != null) "Used for road alerts and turn instructions. ${neural.name} prepares each sentence ahead of time, so a new one can take a few seconds to test."
+    Note(if (neural != null) "Used for road alerts and turn instructions. ${neural.name} keeps its own pitch and prepares each sentence ahead of time, so a new one can take a few seconds to test."
         else "Used for road alerts and turn instructions.")
+
+    VoicePackGroup(packs, listed, states, prefs)
 
     if (engines.size > 1) {
         GroupTitle("Speech engine")
@@ -177,10 +221,10 @@ fun VoicePage(model: DriveViewModel, openLicenses: () -> Unit = {}) {
     }
 
     PageGroup {
-        LinkRow("Download more voices") { openDownloads() }
+        LinkRow("Download more system voices") { openDownloads() }
         LinkRow("Text-to-speech settings") { openSystem() }
     }
-    Note("More natural voices are free to download. Pick a voice there, then come back to choose it here.")
+    Note("Voices added to the phone's speech engine appear in the list above.")
     PageGroup {
         Row(Modifier.fillMaxWidth().clickable(onClick = openLicenses).padding(vertical = 6.dp).testTag("voice-licenses"), verticalAlignment = Alignment.CenterVertically) {
             Text("Voice licenses", Modifier.weight(1f))
@@ -188,17 +232,38 @@ fun VoicePage(model: DriveViewModel, openLicenses: () -> Unit = {}) {
                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+
+    offer?.let { (pack, v) ->
+        val left = (pack.downloadSize - PackFiles.bytesOnDisk(packs.dir(pack.id), pack)).coerceAtLeast(0)
+        val onWifi = Connectivity.onWifi.value
+        fun dismiss() { offer = null; PreviewPlayer.stop() }
+        AlertDialog(onDismissRequest = { dismiss() },
+            title = { Text("Download ${v.name}?") },
+            text = { Text("${v.name} comes in ${pack.title.lowercase()}, a ${Units.bytes(left)} download with ${pack.voices.size - 1} more voices. " +
+                "Until it finishes, the system voice speaks." + if (onWifi) "" else " You can wait for Wi-Fi, and the download starts when you connect.") },
+            confirmButton = {
+                if (onWifi) TextButton({ choose(pack, v, metered = false) }, Modifier.testTag("voice-offer-download")) { Text("Download") }
+                else TextButton({ choose(pack, v, metered = true) }, Modifier.testTag("voice-metered-yes")) { Text("Use mobile data") }
+            },
+            dismissButton = {
+                if (onWifi) TextButton({ dismiss() }) { Text("Cancel") }
+                else TextButton({ choose(pack, v, metered = false) }, Modifier.testTag("voice-metered-wait")) { Text("Wait for Wi-Fi") }
+            })
+    }
 }
 
-/** A choice with a radio button: a voice or an engine, and a line about it. */
+private fun percent(done: Long, total: Long): String = "${if (total <= 0) 0 else (done * 100 / total).coerceIn(0, 100)}%"
+
+/** A choice with a radio button: a voice or an engine, a line about it, and a download's progress when there is one. */
 @Composable
-private fun VoiceRow(title: String, detail: String, selected: Boolean, tag: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun VoiceRow(title: String, detail: String, selected: Boolean, tag: String, enabled: Boolean = true, status: String? = null, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 2.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
         RadioButton(selected, null, enabled = enabled)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(title, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (status != null) Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         }
     }
 }

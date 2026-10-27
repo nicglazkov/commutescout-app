@@ -51,6 +51,25 @@ final class NeuralPlanTests: XCTestCase {
         XCTAssertEqual(NeuralPlan.speed(rate: 0.4, normalRate: 0.5), 0.8, accuracy: 0.0001)
     }
 
+    func testCleanRemovesTheOffsetFadesTheEndsAndSetsTheLevel() {
+        // One second of a 200 Hz tone at 0.02 on Kokoro's 0.025 offset.
+        let sr = 24000
+        let x = (0..<sr).map { Float(0.025 + 0.02 * sin(2 * Double.pi * 200 * Double($0) / Double(sr))) }
+        let y = NeuralPlan.clean(x, sampleRate: sr)
+        XCTAssertEqual(y.count, x.count)
+        XCTAssertEqual(y.first, 0)
+        XCTAssertEqual(y.last, 0)
+        let tail = y[sr / 2 ..< sr]
+        XCTAssertEqual(Double(tail.reduce(0, +)) / Double(tail.count), 0, accuracy: 0.002, "no DC left")
+        let rms = (tail.reduce(0) { $0 + Double($1 * $1) } / Double(tail.count)).squareRoot()
+        XCTAssertEqual(rms, 0.057, accuracy: 0.005, "gain is capped at 4x")
+        // Loud speech is turned down to the level, never clipped.
+        let loud = NeuralPlan.clean((0..<sr).map { Float(0.9 * sin(2 * Double.pi * 200 * Double($0) / Double(sr))) }, sampleRate: sr)
+        XCTAssertLessThanOrEqual(loud.map(abs).max() ?? 1, 0.95)
+        let lt = loud[sr / 2 ..< sr]
+        XCTAssertEqual((lt.reduce(0) { $0 + Double($1 * $1) } / Double(lt.count)).squareRoot(), 0.1, accuracy: 0.01)
+    }
+
     func testWavHeaderDescribesMono16BitAudio() {
         let d = NeuralPlan.wav([0, 0.5, -0.5, 1], sampleRate: 24000)
         XCTAssertEqual(d.count, 44 + 8)

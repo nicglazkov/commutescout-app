@@ -74,6 +74,46 @@ enum NeuralPlan {
         !samples.isEmpty && samples.allSatisfy(\.isFinite) && samples.contains { $0 != 0 }
     }
 
+    /// What every clip gets before it plays (scripts/voices/clean.py is
+    /// the reference): a 30 Hz high-pass, because Kokoro's output sits on
+    /// a DC offset of about 0.025 that clicks where a clip starts and
+    /// ends; a gain that brings speech to -20 dBFS RMS, at most 4x and
+    /// never past a 0.95 peak, so every voice is about as loud as the
+    /// next; and 5 ms fades at both ends.
+    static func clean(_ samples: [Float], sampleRate: Int) -> [Float] {
+        guard !samples.isEmpty, sampleRate > 0 else { return samples }
+        let r = exp(-2 * Double.pi * 30 / Double(sampleRate))
+        var y = [Double](repeating: 0, count: samples.count)
+        var px = Double(samples[0].isFinite ? samples[0] : 0), py = 0.0
+        for (i, s) in samples.enumerated() {
+            let x = Double(s.isFinite ? s : 0)
+            py = x - px + r * py
+            px = x
+            y[i] = py
+        }
+        // Speech level: the RMS of the 20 ms frames within 30 dB of the loudest.
+        let n = max(1, sampleRate / 50)
+        var frames: [Double] = []
+        var i = 0
+        while i < y.count {
+            let f = y[i..<min(i + n, y.count)]
+            frames.append((f.reduce(0) { $0 + $1 * $1 } / Double(f.count)).squareRoot())
+            i += n
+        }
+        let top = frames.max() ?? 0
+        let loud = frames.filter { $0 >= top * pow(10, -30.0 / 20) }
+        let level = loud.isEmpty ? 0 : (loud.reduce(0) { $0 + $1 * $1 } / Double(loud.count)).squareRoot()
+        let peak = y.reduce(0) { max($0, abs($1)) }
+        let gain = level <= 0 || peak <= 0 ? 1 : min(0.1 / level, 4, 0.95 / peak)
+        let k = min(sampleRate / 200, y.count / 2)
+        return y.indices.map { j in
+            var v = y[j] * gain
+            if j < k { v *= Double(j) / Double(k) }
+            if j >= y.count - k { v *= Double(y.count - 1 - j) / Double(k) }
+            return Float(v)
+        }
+    }
+
     /// 16-bit mono PCM in a WAV container, for AVAudioPlayer.
     static func wav(_ samples: [Float], sampleRate: Int) -> Data {
         var d = Data(capacity: 44 + samples.count * 2)

@@ -33,7 +33,11 @@ class VoiceCatalogTest {
             assertEquals(p.id, p.downloadSize, p.files.sumOf { it.size })
             for (f in p.files) {
                 assertTrue(f.name, Regex("[0-9a-f]{64}").matches(f.sha256))
-                assertTrue(f.url, f.url.endsWith("/${catalog.release}/${p.id}.${f.name}"))
+                // "<pack>.<file>", or "<pack>.v2.<file>" for a later build of a file that keeps its name.
+                val asset = f.url.substringAfterLast("/")
+                val tag = asset.removePrefix(p.id + ".v").removeSuffix("." + f.name)
+                assertTrue(f.url, f.url.contains("/${catalog.release}/") &&
+                    (asset == p.id + "." + f.name || (asset.startsWith(p.id + ".v") && asset.endsWith("." + f.name) && tag.isNotEmpty() && tag.all { it.isDigit() })))
             }
             assertTrue(p.files.any { it.name == "LICENSE" } && p.files.any { it.name == "NOTICE" })
             for (v in p.voices) {
