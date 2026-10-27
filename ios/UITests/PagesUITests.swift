@@ -20,9 +20,12 @@ final class PagesUITests: XCTestCase {
         try? png.write(to: URL(fileURLWithPath: "/tmp/cs-page-\(name).png"))
     }
 
+    /// Taps a row by its label. Settings is a lazy Form: a row below the
+    /// fold does not exist until it is scrolled to, so swipe for it.
     private func open(_ row: String) {
         let cell = app.staticTexts[row].firstMatch
-        XCTAssertTrue(cell.waitForExistence(timeout: 8), row)
+        for _ in 0 ..< 3 where !(cell.waitForExistence(timeout: 3) && cell.isHittable) { app.swipeUp() }
+        XCTAssertTrue(cell.waitForExistence(timeout: 5), row)
         cell.tap()
     }
 
