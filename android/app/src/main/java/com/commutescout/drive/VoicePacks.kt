@@ -128,6 +128,9 @@ class VoicePacks(context: Context) {
     private val root = File(app.noBackupFilesDir, "voices")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val work = WorkManager.getInstance(app)
+    // The driver's last network choice per pack, so an update after an app
+    // release follows it instead of waiting for Wi-Fi again.
+    private val prefs = app.getSharedPreferences("cs.voices", Context.MODE_PRIVATE)
 
     init { updateChanged() }
 
@@ -139,8 +142,9 @@ class VoicePacks(context: Context) {
 
     /**
      * At start: a pack installed by an earlier version whose files changed
-     * fetches just those files again, on Wi-Fi. The chosen voice stays
-     * chosen; the system voice speaks until the files are in.
+     * fetches just those files again, on Wi-Fi unless the driver allowed
+     * mobile data for that pack before. The chosen voice stays chosen; the
+     * system voice speaks until the files are in.
      */
     private fun updateChanged() {
         for (pack in catalog.packs) {
@@ -149,8 +153,9 @@ class VoicePacks(context: Context) {
             val stale = PackFiles.stale(d, pack)
             stale.forEach { File(d, it).delete() }
             File(d, PackFiles.MARKER).delete()
-            Log.i(TAG, "${pack.id} changed (removed ${stale.joinToString()}); updating on Wi-Fi")
-            enqueue(pack, metered = false, ExistingWorkPolicy.KEEP)
+            val metered = prefs.getBoolean(meteredKey(pack.id), false)
+            Log.i(TAG, "${pack.id} changed (removed ${stale.joinToString()}); updating")
+            enqueue(pack, metered, ExistingWorkPolicy.KEEP)
         }
     }
 
@@ -183,7 +188,12 @@ class VoicePacks(context: Context) {
      * Starts or resumes a pack. Wi-Fi only unless [metered]: then any
      * network, the driver having agreed to the size.
      */
-    fun download(pack: VoicePackInfo, metered: Boolean) = enqueue(pack, metered, ExistingWorkPolicy.REPLACE)
+    fun download(pack: VoicePackInfo, metered: Boolean) {
+        prefs.edit().putBoolean(meteredKey(pack.id), metered).apply()
+        enqueue(pack, metered, ExistingWorkPolicy.REPLACE)
+    }
+
+    private fun meteredKey(packId: String) = "metered.$packId"
 
     private fun enqueue(pack: VoicePackInfo, metered: Boolean, policy: ExistingWorkPolicy) {
         val req = OneTimeWorkRequestBuilder<VoicePackWorker>()

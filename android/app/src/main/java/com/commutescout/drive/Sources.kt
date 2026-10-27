@@ -137,6 +137,19 @@ fun isFirstParty(base: String): Boolean {
 }
 
 /**
+ * The URL an own session is polled at, or null unless [path] is a plain
+ * absolute path and the whole URL is still first party. The path comes from
+ * the handshake, and one such as "@evil.example/x" would otherwise move the
+ * host, and the account token with it.
+ */
+fun ownSessionUrl(base: String, path: String): String? {
+    val bad = path.any { it == '@' || it == '\\' || it == '?' || it == '#' || it.isWhitespace() }
+    if (!path.startsWith("/") || path.startsWith("//") || bad) return null
+    val url = base.trimEnd('/') + path
+    return if (isFirstParty(url)) url else null
+}
+
+/**
  * The catalog and the driver's own sources. Public sources are drawn
  * through commutescout.com (mediated); direct sources are polled here
  * with the tile-snapped center, never the raw position.
@@ -265,7 +278,7 @@ class SourcesStore(context: Context) {
             val h = runCatching { Backend.json.decodeFromString<Handshake>(text) }.getOrNull() ?: continue
             val us = h.extensions?.user_sessions ?: continue
             val path = us.path ?: continue
-            if (us.auth != "firebase" || h.id != id) continue
+            if (us.auth != "firebase" || h.id != id || ownSessionUrl(base, path) == null) continue
             // An own session goes stale in seconds while the phone moves: its
             // cadence is the extension's poll_s, not the mediated refresh_s.
             found += FlareSource(h.id, h.name, base, null, max(15, minOf(us.poll_s ?: 15, 300)), h.capabilities?.get("report") == true,
@@ -362,10 +375,10 @@ class SourcesStore(context: Context) {
         // out, the mediated copy from commutescout.com is what shows.
         val own = src.ownSessionPath
         val bearer = if (own != null) (tokenProvider?.invoke() ?: run { perSource.remove(src.id); rebuild(); return }) else src.token
-        val path = own ?: "/flare/v1/alerts"
+        val target = if (own != null) ownSessionUrl(base, own) ?: return else "$base/flare/v1/alerts"
         val text = try {
             withContext(Dispatchers.IO) {
-                val b = Request.Builder().url("$base$path?lat=%.3f&lon=%.3f&r=50000".format(java.util.Locale.US, c.lat, c.lon)).header("Accept", "application/json")
+                val b = Request.Builder().url("$target?lat=%.3f&lon=%.3f&r=50000".format(java.util.Locale.US, c.lat, c.lon)).header("Accept", "application/json")
                 bearer?.let { b.header("Authorization", "Bearer $it") }
                 Backend.http.newCall(b.build()).execute().use { r ->
                     if (r.code == 429 || r.code >= 500) throw BackendError("answered ${r.code}", r.code)

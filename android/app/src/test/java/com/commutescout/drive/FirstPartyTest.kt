@@ -1,6 +1,8 @@
 package com.commutescout.drive
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -22,5 +24,18 @@ class FirstPartyTest {
         assertFalse(isFirstParty("https://commutescout.com:8443"))
         assertFalse(isFirstParty("https://a@evil.example"))
         assertFalse(isFirstParty("not a url"))
+    }
+
+    @Test fun ownSessionPathCannotMoveTheHost() {
+        val base = "https://commutescout.com"
+        assertEquals("https://commutescout.com/flare/v1/me/alerts", ownSessionUrl(base, "/flare/v1/me/alerts"))
+        assertEquals("https://commutescout.com/x", ownSessionUrl("$base/", "/x"))
+        assertNull(ownSessionUrl(base, "@evil.example/x"))
+        assertNull(ownSessionUrl(base, "/x@evil.example"))
+        assertNull(ownSessionUrl(base, ".evil.example/x"))
+        assertNull(ownSessionUrl(base, "//evil.example/x"))
+        assertNull(ownSessionUrl(base, "/x?y=1"))
+        assertNull(ownSessionUrl(base, "/x y"))
+        assertNull(ownSessionUrl("https://example.com", "/x"))
     }
 }
