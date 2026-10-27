@@ -1281,7 +1281,7 @@ object AutoDrive {
         model.simulating.value = true
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
             delay(3000)
-            val place = Place(name = "Los Altos, CA", lat = 37.372, lon = -122.110, kind = PlaceKind.recent)
+            val place = Place(name = "Palo Alto, CA", lat = 37.442, lon = -122.143, kind = PlaceKind.recent)
             model.show(place)
             delay(1500)
             model.routes(place)
