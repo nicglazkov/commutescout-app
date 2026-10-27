@@ -13,6 +13,16 @@ export PATH="/opt/homebrew/bin:$PATH" LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 DD="$HOME/src/csdrive-dd"
 SIM="${SIM:-iPhone 17}"
 
+# The app calls FirebaseApp.configure() at launch, and Firebase aborts the
+# app when GoogleService-Info.plist is missing or named anything else. The
+# file is gitignored, so a fresh copy of the tree has to bring it along;
+# 0.5.6 build 202610270117 shipped it as gsi.plist and crashed on launch.
+if [ ! -f CommuteScoutDrive/GoogleService-Info.plist ]; then
+  echo "ios/CommuteScoutDrive/GoogleService-Info.plist is missing; the app would crash at launch." >&2
+  echo "Copy it from ~/src/commutescout-app/ios/CommuteScoutDrive/ (keep the name)." >&2
+  exit 1
+fi
+
 # The app version lives in VERSION at the repo root (both apps read it);
 # the build number is the minute the build started.
 VERSION="$(tr -d '[:space:]' < ../VERSION)"
