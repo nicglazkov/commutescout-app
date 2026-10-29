@@ -52,6 +52,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .sound, .list]
     }
+
+    /// A tapped alert opens the event it names. Before this the tap only
+    /// brought the app forward, wherever the map happened to be.
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse) async {
+        let info = response.notification.request.content.userInfo
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+              let ref = AlertRef.from(userInfo: info) else { return }
+        await MainActor.run { AlertInbox.shared.deliver(ref) }
+    }
 }
 
 @MainActor

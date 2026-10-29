@@ -174,6 +174,17 @@ struct RoadMarker: Decodable, Identifiable, Hashable {
     var discovered: String? = nil    // wildfires, ISO 8601
     var updated: String? = nil       // chain controls and toll rates, ISO 8601
     var src: String? = nil           // the agency or network behind the record
+    // What the website's popup shows beyond the basics.
+    var detail: String? = nil        // a clean sentence some state feeds send
+    var logN: Int? = nil             // CHP dispatch-log entries the feed shares
+    var windows: Int? = nil          // closure windows scheduled at the same spot
+    var road: String? = nil          // plugin reports: the road
+    var confirmations: Int? = nil    // plugin reports: times confirmed
+    var reliability: Double? = nil   // plugin reports: 0 to 1
+    var data: String? = nil          // plugin reports: who the data comes from
+    var ttlS: Double? = nil          // plugin reports: how long a report lives
+    var sourceURL: String? = nil     // plugin reports: the plugin's page
+    var trust: String? = nil         // plugin reports: what the plugin says of itself
     // Cameras.
     var image: String? = nil         // still image, refetched each time it is shown
     var stream: String? = nil        // live video page, when the agency publishes one
@@ -217,6 +228,10 @@ struct RoadMarker: Decodable, Identifiable, Hashable {
         case area, dir, reported, county, lanes, since, until, work, facility, tier, acres, contained
         case discovered, updated, src, image, stream, direction, near, message, lines, blank
         case station, wind, gust, rh, precip, surface, corridor, pricing, entries, path, end, segs, poly
+        case detail, windows, road, confirmations, reliability, data, trust
+        case logN = "log_n"
+        case ttlS = "ttl_s"
+        case sourceURL = "source_url"
         case flareKind = "flare_kind"
         case delayMin = "delay_min"
         case airC = "air_c"
