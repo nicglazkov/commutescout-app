@@ -117,6 +117,14 @@ final class AppModel: ObservableObject {
     @Published var muted = false
     @Published var preview: Route?          // the alternative under consideration
     @Published var selectedMarker: RoadMarker?
+    /// A watch alert being shown in the event sheet, and what became of
+    /// its event. Nil for a marker the person tapped on the map.
+    @Published var alertFocus: AlertFocus?
+    /// The shown marker dropped out of the live data while its sheet was
+    /// open: the sheet says so instead of closing.
+    @Published var selectedVanished = false
+    /// An alert tapped during a trip, opened when the trip ends.
+    private var parkedAlert: AlertRef?
     @Published var heading: CLLocationDirection = 0
     var viewCenter: CLLocationCoordinate2D?      // what the map shows, from the hook
     var viewZoom: Double = 14
@@ -189,6 +197,9 @@ final class AppModel: ObservableObject {
             child.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         }
         Connectivity.shared.onReconnect { [weak self] in self?.reconnected() }
+        markers.$stamp.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.checkSelectedStillThere() }
+            .store(in: &cancellables)
+        AlertInbox.shared.handler = { [weak self] ref in self?.openAlert(ref) }
         resumable = SavedTrip.load()
         if let trip = resumable { DriveLog.note("a trip was running when the app closed; offering it back") }
         Task { await followOnceAllowed() }
@@ -457,7 +468,7 @@ final class AppModel: ObservableObject {
 
     func show(_ place: Place) {
         preview = nil
-        selectedMarker = nil
+        clearMarker()
         origin = nil
         state = .found(place)
         camera = .center(place.coordinate, zoom: max(viewZoom, 14), pitch: prefs.is3D ? 45 : 0, direction: 0)
@@ -473,11 +484,93 @@ final class AppModel: ObservableObject {
         // On a trip the bottom belongs to the trip bar; a card there
         // would cover it and the speedometer. The tap speaks the thing.
         if state.isNavigating { alerts.say(m); return }
+        select(m)
+    }
+
+    /// Show one marker in the event sheet, as a plain map tap does.
+    func select(_ m: RoadMarker) {
+        alertFocus = nil
+        selectedVanished = false
         selectedMarker = m
         if case .found = state { state = .browsing }
     }
 
-    func clearMarker() { selectedMarker = nil }
+    func clearMarker() {
+        selectedMarker = nil
+        alertFocus = nil
+        selectedVanished = false
+    }
+
+    // MARK: tapped alerts
+
+    /// A watch alert was tapped: go to the event and open its sheet at
+    /// once with what the alert said, then ask what became of it. The
+    /// sheet is never empty and never shows a different event as if it
+    /// were the one in the alert.
+    func openAlert(_ ref: AlertRef) {
+        DriveLog.note("alert opened: \(ref.kind)")
+        // On a trip the screen belongs to the trip: the alert waits
+        // for the trip to end.
+        if state.isNavigating {
+            parkedAlert = ref
+            toast = "Watch alert saved. It opens when this trip ends."
+            return
+        }
+        preview = nil
+        if case .found = state { state = .browsing }
+        focusEvent(ref.coordinate)
+        selectedVanished = false
+        selectedMarker = ref.localMatch(in: allMarkers)
+        alertFocus = AlertFocus(ref: ref)
+        Task { await checkAlert(ref) }
+    }
+
+    /// Put an event in the upper part of the map, above the event panel
+    /// that covers the lower half, rather than at the screen's center.
+    func focusEvent(_ c: CLLocationCoordinate2D, zoom: Double = 14) {
+        // MapLibre's world is 512 points wide at zoom 0.
+        let metersPerPoint = 40_075_016 * cos(c.latitude * .pi / 180) / (512 * pow(2, zoom))
+        let shift = 0.22 * UIScreen.main.bounds.height * metersPerPoint / 111_320
+        camera = .center(CLLocationCoordinate2D(latitude: c.latitude - shift, longitude: c.longitude),
+                         zoom: zoom, pitch: 0, direction: 0)
+    }
+
+    /// Ask again, after a failed check.
+    func recheckAlert() {
+        guard let ref = alertFocus?.ref else { return }
+        alertFocus?.status = .loading
+        Task { await checkAlert(ref) }
+    }
+
+    private func checkAlert(_ ref: AlertRef) async {
+        let reply = try? await EventAPI.status(ref)
+        // The person may have moved on while the answer was on its way.
+        guard alertFocus?.ref == ref else { return }
+        let (status, marker, nearby) = AlertFocus.resolve(reply, local: ref.localMatch(in: allMarkers))
+        alertFocus?.status = status
+        alertFocus?.checkedAt = Date()
+        alertFocus?.nearby = nearby
+        selectedMarker = marker
+        if let marker, marker.lat != ref.lat || marker.lon != ref.lon {
+            focusEvent(marker.coordinate)
+        }
+        DriveLog.note("alert status: \(reply?.state ?? "unreachable")")
+    }
+
+    /// After a refresh: a shown marker that is no longer reported is
+    /// said to be gone, rather than the sheet closing under the person.
+    private func checkSelectedStillThere() {
+        guard let m = selectedMarker, !selectedVanished, m.isEvent, markers.asOf != nil else { return }
+        guard marker(for: m.key) == nil else { return }
+        // Direct plugin markers and anything fetched for the sheet alone
+        // are not in the store: only a key that was there and left counts.
+        guard markers.knew(m.key) else { return }
+        selectedVanished = true
+        if alertFocus != nil {
+            alertFocus?.status = .gone
+            alertFocus?.checkedAt = Date()
+        }
+    }
 
     /// The phone went to the background with no trip running: let go of
     /// GPS and stop the polling, so a pocketed phone does not hold a
@@ -710,7 +803,7 @@ final class AppModel: ObservableObject {
             DriveLog.note("route start: \(DriveLog.meters(route.distance)) \(Int(route.steps.reduce(0) { $0 + $1.duration } / 60)) min, "
                           + "\(route.geometry.count) pts, simulated=\(simulating), alertsAhead=\(Int(prefs.alertAheadMeters)) m")
             preview = nil
-            selectedMarker = nil
+            clearMarker()
             origin = nil
             places.noteRecent(name: place.name, coordinate: place.coordinate)
             prerenderSpeech(route, from: 0)
@@ -748,6 +841,7 @@ final class AppModel: ObservableObject {
         applyIdleTimer()
         speechWarmth()
         follow()
+        if let ref = parkedAlert { parkedAlert = nil; openAlert(ref) }
     }
 
     /// With a CommuteScout voice, every spoken instruction of the route

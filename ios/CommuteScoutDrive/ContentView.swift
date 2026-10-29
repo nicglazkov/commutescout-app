@@ -16,6 +16,8 @@ struct ContentView: View {
     @State private var showLayers = false
     @State private var showReport = false
     @State private var showTools = false
+    /// The event panel's height as laid out, so the map buttons sit above it.
+    @State private var panelHeight: CGFloat = 0
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -135,9 +137,11 @@ struct ContentView: View {
                 }
             }
             .padding(.bottom, isNavigating ? 124 : bottomCardHeight + 12)
-            VStack {
-                Spacer()
-                bottomCard
+            GeometryReader { geo in
+                VStack {
+                    Spacer()
+                    bottomCard(available: geo.size.height)
+                }
             }
         }
         .onAppear { model.isDark = colorScheme == .dark }
@@ -163,18 +167,12 @@ struct ContentView: View {
 
     private var isNavigating: Bool { model.state.isNavigating }
 
-    /// Roughly how tall the bottom card is, so the map buttons sit above it.
+    private var showsEvent: Bool { model.selectedMarker != nil || model.alertFocus != nil }
+
+    /// How tall the bottom card is, so the map buttons sit above it. The
+    /// event panel measures itself; pulled up past this it covers them.
     private var bottomCardHeight: CGFloat {
-        if let m = model.selectedMarker {
-            // A camera shows a picture and a toll shows its rates, so
-            // both cards are taller than the rest.
-            switch m.kind {
-            case "camera": return 350
-            case "toll": return 330
-            case "sign", "rwis": return 260
-            default: return 170
-            }
-        }
+        if showsEvent { return min(panelHeight, 380) }
         switch model.state {
         case .browsing: return model.resumable == nil ? 0 : 140
         case .found: return 150
@@ -244,9 +242,12 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder private var bottomCard: some View {
-        if let m = model.selectedMarker {
-            MarkerCard(marker: m)
+    @ViewBuilder private func bottomCard(available: CGFloat) -> some View {
+        if showsEvent, !isNavigating {
+            EventPanel(available: available)
+                .background(GeometryReader { g in Color.clear.preference(key: PanelHeight.self, value: g.size.height) })
+                .onPreferenceChange(PanelHeight.self) { panelHeight = $0 }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
         } else {
             switch model.state {
             case .browsing:
@@ -499,4 +500,9 @@ struct LayersSheet: View {
             .toolbar { Button("Done") { dismiss() } }
         }
     }
+}
+
+private struct PanelHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

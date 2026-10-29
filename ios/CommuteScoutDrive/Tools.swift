@@ -108,8 +108,8 @@ struct AlertsListView: View {
                 }
                 ForEach(sorted) { m in
                     Button {
-                        model.selectedMarker = m
-                        model.camera = .center(m.coordinate, zoom: 14, pitch: 0, direction: 0)
+                        model.select(m)
+                        model.focusEvent(m.coordinate)
                         dismissTools()
                     } label: {
                         HStack(spacing: 10) {

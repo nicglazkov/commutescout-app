@@ -64,6 +64,18 @@ enum AutoDrive {
             }
             return
         }
+        // "-csOpenAlert kind,lat,lon[,id[,title]]" acts as a tapped watch
+        // alert, so the alert sheet can be tried without sending a push.
+        if let i = all.firstIndex(of: "-csOpenAlert"), i + 1 < all.count {
+            let p = all[i + 1].split(separator: ",", maxSplits: 4).map(String.init)
+            if p.count >= 3, let lat = Double(p[1]), let lon = Double(p[2]) {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                AlertInbox.shared.deliver(AlertRef(
+                    id: p.count > 3 ? p[3] : nil, kind: AlertRef.markerKind(p[0]), lat: lat, lon: lon,
+                    title: p.count > 4 ? p[4] : nil, body: nil, watch: "Test area",
+                    sentAt: Date().addingTimeInterval(-600)))
+            }
+        }
         #endif
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
@@ -99,7 +111,7 @@ enum AutoDrive {
             if let all = try? await LiveData.markers(in: (33.9, -118.4, 34.2, -118.0), kinds: "camera"),
                let m = all.first(where: { ($0.stream != nil) == wantVideo && $0.image != nil && ($0.stream ?? "").contains("CCTV-196") == wantVideo }) {
                 model.camera = .center(m.coordinate, zoom: 15, pitch: 0, direction: 0)
-                model.selectedMarker = m
+                model.select(m)
             }
         }
         if args.contains("-csFocusMarker") {

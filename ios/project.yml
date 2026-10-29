@@ -139,6 +139,9 @@ targets:
       - path: CommuteScoutDrive/VoicePackFiles.swift
       - path: CommuteScoutDrive/KokoroText.swift
       - path: CommuteScoutDrive/NeuralPlan.swift
+      - path: CommuteScoutDrive/Backend.swift
+      - path: CommuteScoutDrive/EventText.swift
+      - path: CommuteScoutDrive/EventAlerts.swift
       - path: ../shared/voices.json
         buildPhase: resources
     settings:

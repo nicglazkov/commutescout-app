@@ -99,6 +99,11 @@ final class MarkerStore: ObservableObject {
 
     func marker(for key: String) -> RoadMarker? { held[key]?.marker }
 
+    /// Every key this store has held this session, so a marker that
+    /// left the live data can be told from one that was never in it.
+    private var everHeld: Set<String> = []
+    func knew(_ key: String) -> Bool { everHeld.contains(key) }
+
     /// Backgrounded with no trip: the timed refreshes stop.
     private var paused = false
     func pause() { paused = true; task?.cancel() }
@@ -171,6 +176,7 @@ final class MarkerStore: ObservableObject {
 
     private func publish() {
         markers = held.values.map(\.marker)
+        everHeld.formUnion(held.keys)
         stamp &+= 1
     }
 
@@ -447,72 +453,6 @@ enum MarkerIcons {
     }()
 }
 
-/// What a tapped marker says: the website's popup, on the phone.
-struct MarkerCard: View {
-    @EnvironmentObject var model: AppModel
-    let marker: RoadMarker
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
-                MarkerGlyph(marker: marker, size: 28)
-                VStack(alignment: .leading, spacing: 2) {
-                    if marker.kind == "plugin" {
-                        Text((marker.source ?? "Plugin").uppercased()).font(.caption2.weight(.bold))
-                            .foregroundStyle(Color(PluginStyle.color(PluginStyle.sourceId(marker)))).lineLimit(1)
-                    } else if let heading = MarkerIcons.heading[marker.kind] {
-                        Text(heading).font(.caption2.weight(.bold)).foregroundStyle(MarkerIcons.tint(marker.kind))
-                    }
-                    Text(marker.displayTitle).font(.headline).lineLimit(3)
-                    ForEach(marker.detailLines, id: \.self) { line in
-                        Text(line).font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let here = model.here {
-                        Text(Units.distance(AlertsEngine.meters(here, marker.coordinate)) + " from you")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                Button { model.clearMarker() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                    .accessibilityIdentifier("marker-close")
-            }
-            details
-            HStack(spacing: 8) {
-                Button {
-                    model.show(Place(name: marker.displayTitle, coordinate: marker.coordinate, kind: .recent))
-                } label: {
-                    Label("Navigate here", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
-                        .frame(maxWidth: .infinity).padding(.vertical, 10)
-                }
-                .buttonStyle(.borderedProminent)
-                if marker.kind == "plugin" {
-                    ConfirmButtons(marker: marker)
-                }
-                ShareLink(item: marker.webURL) {
-                    Image(systemName: "square.and.arrow.up").padding(.vertical, 10).padding(.horizontal, 14)
-                }
-                .buttonStyle(.bordered)
-            }
-        }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .padding(12)
-    }
-
-    /// What this kind of marker shows beyond its title: a picture for a
-    /// camera, a board for a sign, readings for a weather station, rates
-    /// for a toll. Every other kind says everything in its detail lines.
-    @ViewBuilder private var details: some View {
-        switch marker.kind {
-        case "camera": CameraView(marker: marker)
-        case "sign": SignBoard(marker: marker)
-        case "rwis": WeatherReadings(marker: marker)
-        case "toll": TollRates(marker: marker)
-        default: EmptyView()
-        }
-    }
-}
-
 /// A roadside camera's picture. Most agencies publish a still that is
 /// replaced every minute or so, which is why a fresh one is asked for
 /// each time the card opens; a few also run live video, on their own
@@ -704,57 +644,6 @@ struct SignBoard: View {
                 Text("Source: \(src)").font(.caption2).foregroundStyle(.secondary)
             }
         }
-    }
-}
-
-/// A roadside weather station's readings. Temperatures and wind arrive
-/// in Celsius and miles per hour; they are shown in whatever the driver
-/// has chosen. A station with nothing to report says so rather than
-/// showing an empty box.
-struct WeatherReadings: View {
-    let marker: RoadMarker
-
-    private var facts: [(String, String)] {
-        var out: [(String, String)] = []
-        if let air = marker.airC { out.append(("Air", Units.temperature(celsius: air))) }
-        if let pave = marker.paveC { out.append(("Pavement", Units.temperature(celsius: pave))) }
-        if let wind = marker.wind {
-            // A direction on a calm wind reads as noise, so it is left off.
-            var from = ""
-            if let dir = marker.windDir, !dir.text.isEmpty, wind >= 1 { from = " from the " + dir.text }
-            let gust = marker.gust.map { ", gusts \(Units.speed(mph: $0))" } ?? ""
-            out.append(("Wind", Units.speed(mph: wind) + from + gust))
-        } else if let gust = marker.gust {
-            out.append(("Wind", "gusts " + Units.speed(mph: gust)))
-        }
-        if let rh = marker.rh { out.append(("Humidity", "\(Int(rh.rounded()))%")) }
-        if let precip = marker.precip, !precip.isEmpty { out.append(("Precipitation", precip.capitalized)) }
-        if let surface = marker.surface, !surface.isEmpty { out.append(("Surface", surface.capitalized)) }
-        // Visibility only matters when it is short. Anything past five
-        // kilometres is a clear day and says nothing useful.
-        if let vis = marker.visM, vis < 5_000 { out.append(("Visibility", Units.distance(vis))) }
-        return out
-    }
-
-    var body: some View {
-        let readings = facts
-        VStack(alignment: .leading, spacing: 4) {
-            if readings.isEmpty {
-                Text("This station is online. It has no readings right now.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            ForEach(Array(readings.enumerated()), id: \.offset) { _, fact in
-                HStack {
-                    Text(fact.0).font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Text(fact.1).font(.caption.weight(.semibold))
-                }
-            }
-            if let src = marker.src {
-                Text("Source: \(src)").font(.caption2).foregroundStyle(.secondary)
-            }
-        }
-        .accessibilityIdentifier("weather-readings")
     }
 }
 
