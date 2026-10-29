@@ -277,6 +277,9 @@ object Engine {
     }
 }
 
+/** A camera move the screen makes once; [nonce] tells two asks for the same spot apart. */
+data class FocusRequest(val lat: Double, val lon: Double, val zoom: Double, val nonce: Long)
+
 @kotlinx.serialization.Serializable
 private data class SpeedLimitAnswer(val kmh: Double? = null, val mph: Double? = null)
 
@@ -290,8 +293,13 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     private val _hasPermission = MutableStateFlow(false)
     val hasPermission = _hasPermission.asStateFlow()
     val simulating = MutableStateFlow(false)
-    private val _selectedMarker = MutableStateFlow<RoadMarker?>(null)
-    val selectedMarker = _selectedMarker.asStateFlow()
+    /** The event sheet: a tapped marker, or the event a tapped alert names. */
+    private val _sheet = MutableStateFlow<EventSheet?>(null)
+    val sheet = _sheet.asStateFlow()
+    /** A spot the map should move to now (an alert, "Show on map"); the screen clears it. */
+    private val _focus = MutableStateFlow<FocusRequest?>(null)
+    val focus = _focus.asStateFlow()
+    private var statusJob: Job? = null
     /** A trip that was running when the app last closed, offered back. */
     private val _resumable = MutableStateFlow(TripStore.load())
     val resumable = _resumable.asStateFlow()
@@ -385,6 +393,9 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             Engine.alerts.startFreeDrive()
         }
         viewModelScope.launch { Engine.flushReports()?.let { toast(it) } }
+        // A refresh that drops the marker in the open sheet says so in the
+        // sheet; the sheet never closes by itself.
+        viewModelScope.launch { Engine.markers.markers.collect { noteVanished() } }
         viewModelScope.launch {
             navigationUiState.collect { s ->
                 // Arrived: nothing left to resume.
@@ -437,24 +448,77 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         }
     }
 
-    /** A push notification was tapped: the map goes to the spot in its link. */
-    fun open(url: String) {
-        val u = runCatching { android.net.Uri.parse(url) }.getOrNull() ?: return
-        val f = u.getQueryParameter("focus")?.split(",")?.mapNotNull { it.trim().toDoubleOrNull() } ?: return
-        if (f.size < 2) return
-        Log.i("DriveViewModel", "open from notification: $url")
-        wantedView = listOf(f[0], f[1], 13.0)
-        val k = u.getQueryParameter("k")
-        if (k != null) viewModelScope.launch {
-            // The markers may still be loading; the nearest of that kind within 300 m.
-            val at = LatLon(f[0], f[1])
-            repeat(10) {
-                val near = markers.held().filter { it.kind == k && AlertsEngine.meters(LatLon(it.lat, it.lon), at) < 300 }
-                    .minByOrNull { AlertsEngine.meters(LatLon(it.lat, it.lon), at) }
-                if (near != null) { _selectedMarker.value = near; return@launch }
+    /**
+     * A watch alert was tapped. The map goes to the spot and the sheet
+     * opens at once, showing the alert's own words while the server is
+     * asked what became of the event: still there, changed, cleared or
+     * gone. Old pushes carry only a link; they work the same way.
+     */
+    fun openAlert(alert: AlertTap) {
+        Log.i("DriveViewModel", "open alert: ${alert.kind} ${alert.eventId ?: "(no id)"}")
+        if (_state.value is DriveState.Found) _state.value = DriveState.Browsing
+        focusOn(alert.lat, alert.lon)
+        val now = System.currentTimeMillis()
+        val local = EventResolve.nearest(heldMarkers(), alert)
+        _sheet.value = EventSheet(local, alert, EventStatus(EventState.LOADING), shownAt = now)
+        checkStatus(alert)
+    }
+
+    /** "Try again" on a status that could not be checked. */
+    fun retryStatus() {
+        val s = _sheet.value ?: return
+        val alert = s.alert ?: return
+        _sheet.value = s.copy(status = EventStatus(EventState.LOADING))
+        checkStatus(alert)
+    }
+
+    private fun checkStatus(alert: AlertTap) {
+        statusJob?.cancel()
+        statusJob = viewModelScope.launch {
+            val answer = if (alert.kind == null) null else runCatching { EventApi.status(alert) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; Log.w("DriveViewModel", "event status: $it") }
+                .getOrNull()
+            // No answer: the map decides. On a cold launch the markers can
+            // still be loading, so it is given a few seconds to find it.
+            if (answer == null) repeat(5) {
+                if (EventResolve.nearest(heldMarkers(), alert) != null) return@repeat
                 kotlinx.coroutines.delay(1000)
             }
+            val (marker, status) = EventResolve.resolve(alert, answer, heldMarkers(), System.currentTimeMillis())
+            val cur = _sheet.value
+            if (cur?.alert != alert) return@launch
+            _sheet.value = EventSheet(marker, alert, status, shownAt = System.currentTimeMillis())
+            // A changed event can sit somewhere else now.
+            if (marker != null && AlertsEngine.meters(LatLon(marker.lat, marker.lon), LatLon(alert.lat, alert.lon)) > EventResolve.NEAR_METERS) {
+                focusOn(marker.lat, marker.lon)
+            }
         }
+    }
+
+    /** Every marker this phone holds, including the plugins it asks directly. */
+    private fun heldMarkers(): List<RoadMarker> = markers.held() + Engine.sources.directMarkers.value
+
+    /** Move the map to a spot, zoomed to street level. */
+    fun focusOn(lat: Double, lon: Double, zoom: Double = 14.0) {
+        _focus.value = FocusRequest(lat, lon, zoom, System.nanoTime())
+    }
+
+    fun focusDone(request: FocusRequest) { if (_focus.value == request) _focus.value = null }
+
+    /**
+     * The open sheet's marker left the map on a refresh. With an alert
+     * behind it the sheet goes back to what the alert said; a marker
+     * tapped on the map stays, with the banner saying it is gone.
+     */
+    private fun noteVanished() {
+        val s = _sheet.value ?: return
+        val m = s.marker ?: return
+        if (s.status?.state == EventState.LOADING || s.status?.state == EventState.GONE) return
+        if (Engine.sources.directMarkers.value.any { it.key == m.key }) return
+        if (!Engine.markers.dropped(m, s.shownAt)) return
+        Log.i("DriveViewModel", "the marker in the sheet is no longer reported")
+        val gone = EventStatus(EventState.GONE, checkedAt = System.currentTimeMillis())
+        _sheet.value = if (s.alert != null) s.copy(marker = null, status = gone) else s.copy(status = gone)
     }
 
     /**
@@ -572,7 +636,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
 
     fun show(place: Place) {
         origin = null
-        _selectedMarker.value = null
+        clearMarker()
         _state.value = DriveState.Found(place)
     }
 
@@ -580,11 +644,17 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
 
     fun showMarker(key: String) {
         val m = marker(key) ?: return
-        _selectedMarker.value = m
+        showMarker(m)
+    }
+
+    /** A marker in the sheet as an ordinary tap shows it: no alert, no banner. */
+    fun showMarker(m: RoadMarker) {
+        statusJob?.cancel()
+        _sheet.value = EventSheet(m, shownAt = System.currentTimeMillis())
         if (_state.value is DriveState.Found) _state.value = DriveState.Browsing
     }
 
-    fun clearMarker() { _selectedMarker.value = null }
+    fun clearMarker() { statusJob?.cancel(); _sheet.value = null }
 
     /** A long press on the map: a pin named by the platform geocoder. */
     fun dropPin(lat: Double, lon: Double) {
@@ -618,7 +688,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             return
         }
         _state.value = DriveState.Routing
-        _selectedMarker.value = null
+        clearMarker()
         // A newer request, or Cancel, replaces this one: its answer must
         // not land on top of whatever the driver moved on to.
         routeJob?.cancel()
@@ -673,7 +743,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             Engine.alerts.start(route.geometry.map { LatLon(it.lat, it.lng) })
             // A neural voice renders every spoken instruction now, so none waits on the engine.
             runCatching { Neural.prerenderRoute(route, prefs) }.onFailure { Log.w("DriveViewModel", "prerender: $it") }
-            _selectedMarker.value = null
+            clearMarker()
             // The "from" place of the Directions sheet is for this one trip.
             origin = null
             _state.value = DriveState.Navigating(place)

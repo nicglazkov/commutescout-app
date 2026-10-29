@@ -182,7 +182,8 @@ fun DriveScreen(model: DriveViewModel) {
     val uiState by model.navigationUiState.collectAsStateWithLifecycle()
     val here by model.here.collectAsStateWithLifecycle()
     val hasPermission by model.hasPermission.collectAsStateWithLifecycle()
-    val selected by model.selectedMarker.collectAsStateWithLifecycle()
+    val sheet by model.sheet.collectAsStateWithLifecycle()
+    val focus by model.focus.collectAsStateWithLifecycle()
     val siteMarkers by model.markers.markers.collectAsStateWithLifecycle()
     val directMarkers by model.sources.directMarkers.collectAsStateWithLifecycle()
     val hiddenSources by model.sources.hidden.collectAsStateWithLifecycle()
@@ -297,6 +298,19 @@ fun DriveScreen(model: DriveViewModel) {
             }
         }
     }
+    // A tapped alert or "Show on map": the camera goes to the spot, with
+    // room left at the bottom for the sheet. On a cold launch the map is
+    // not drawn yet, so it waits for a projection first.
+    LaunchedEffect(focus) {
+        val f = focus ?: return@LaunchedEffect
+        repeat(50) { if (mapState.cameraState.projection == null) delay(200) }
+        mapState.cameraMode = NavigationCameraMode.FREE
+        runCatching {
+            mapState.cameraState.animateTo(CameraPosition(target = Position(f.lon, f.lat), zoom = f.zoom,
+                tilt = if (prefs.is3D) 45.0 else 0.0, padding = PaddingValues(bottom = 260.dp)))
+        }
+        model.focusDone(f)
+    }
     // 2D or 3D, applied to whatever the camera is doing now.
     LaunchedEffect(prefs.is3D) {
         val p = mapState.cameraState.position
@@ -347,7 +361,7 @@ fun DriveScreen(model: DriveViewModel) {
                 }
             },
             onTapExit = { model.stopNavigation() },
-            onMapClick = { _, _ -> if (selected != null) { model.clearMarker(); NavigationMapClickResult.Consume } else NavigationMapClickResult.Pass },
+            onMapClick = { _, _ -> if (sheet != null) { model.clearMarker(); NavigationMapClickResult.Consume } else NavigationMapClickResult.Pass },
             onMapLongClick = { position, _ ->
                 if (!uiState.isNavigating()) { model.dropPin(position.lat, position.lng); NavigationMapClickResult.Consume } else NavigationMapClickResult.Pass
             },
@@ -385,9 +399,13 @@ fun DriveScreen(model: DriveViewModel) {
             }
         }
 
+        // An expanded event sheet reaches past the middle of the screen,
+        // where the side buttons would land on the search row: they step
+        // aside until it is lowered again.
+        val tallCard = !isNavigating && cardDp > h * 0.5f
         // Map controls: 2D/3D, compass when turned, my location. While
         // navigating Ferrostar draws its own zoom and recenter buttons.
-        Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = 12.dp,
+        if (!tallCard) Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = 12.dp,
             bottom = if (isNavigating) 118.dp else aboveCard), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (!isNavigating && abs(bearing) > 1.0) {
                 RoundIcon(Icons.Default.Navigation, "Face north", tint = Color(0xFFD32F2F), rotate = -bearing.toFloat(), tag = "compass") {
@@ -409,7 +427,7 @@ fun DriveScreen(model: DriveViewModel) {
         }
         // The speedometer while browsing, left of the side buttons; on a
         // trip it is in the stack above.
-        if (prefs.showSpeedLimit && speedMps >= 0 && !isNavigating) {
+        if (prefs.showSpeedLimit && speedMps >= 0 && !isNavigating && !tallCard) {
             Box(Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = 12.dp, bottom = aboveCard)) {
                 Speedometer(speedMps, model.limitKmh(uiState))
             }
@@ -424,8 +442,8 @@ fun DriveScreen(model: DriveViewModel) {
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { cardPx = it.height }) {
             if (isNavigating) {
                 // Ferrostar's trip bar owns the bottom while navigating.
-            } else if (selected != null) {
-                MarkerCard(selected!!, here, model)
+            } else if (sheet != null) {
+                EventPanel(sheet!!, here, model)
             } else when (val s = state) {
                 is DriveState.Browsing -> resumable?.let { ResumeCard(it, model) }
                 is DriveState.Found -> PlaceCard(s.place, here, model)
@@ -872,7 +890,7 @@ fun parseCoordinates(s: String): LatLon? {
     return LatLon(lat, lon)
 }
 
-private fun share(context: android.content.Context, url: String) {
+internal fun share(context: android.content.Context, url: String) {
     context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, url) }, null))
 }
 
@@ -910,64 +928,6 @@ private fun PlaceCard(place: Place, here: LatLon?, model: DriveViewModel) {
     }
 }
 
-/** What a tapped marker says: the website's popup, on the phone. */
-@Composable
-private fun MarkerCard(marker: RoadMarker, here: LatLon?, model: DriveViewModel) {
-    val context = LocalContext.current
-    Card(Modifier.padding(12.dp).fillMaxWidth().safeDrawingPadding().testTag("marker-card"), elevation = CardDefaults.cardElevation(6.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                MarkerGlyph(marker, 28.dp)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    val plugin = marker.kind == "plugin"
-                    Text(if (plugin) (marker.source ?: "Plugin").uppercase() else MarkerIcons.label(marker.kind),
-                        style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                        color = if (plugin) PluginStyle.color(PluginStyle.sourceId(marker)) else MarkerIcons.color(marker.kind))
-                    Text(marker.cardTitle, style = MaterialTheme.typography.titleMedium, maxLines = 3)
-                    marker.detailLines.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    here?.let { Text(Units.distance(AlertsEngine.meters(it, LatLon(marker.lat, marker.lon))) + " from you",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
-                IconButton({ model.clearMarker() }) { Icon(Icons.Default.Close, "Close") }
-            }
-            Column(Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                MarkerExtras(marker)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button({ model.show(Place(name = marker.displayTitle, lat = marker.lat, lon = marker.lon, kind = PlaceKind.recent)) }, Modifier.weight(1f)) {
-                    Icon(Icons.Default.Navigation, null); Spacer(Modifier.width(6.dp)); Text("Navigate here")
-                }
-                OutlinedButton({ share(context, marker.webUrl) }) { Icon(Icons.Default.Share, "Share") }
-            }
-            if (marker.kind == "plugin") marker.id?.let { ConfirmRow(it, model) }
-        }
-    }
-}
-
-/** What a marker card shows beyond its title, one body per kind. */
-@Composable
-private fun MarkerExtras(marker: RoadMarker) {
-    when (marker.kind) {
-        "camera" -> CameraShot(marker)
-        "sign" -> SignBoard(marker)
-        "rwis" -> WeatherReadings(marker)
-        "toll" -> TollPrices(marker)
-        // A fire's dot is where it was reported; its outline is where
-        // it is. Saying which one is on screen is the difference
-        // between a fire being near a road and being on it.
-        "wildfire" -> Note(
-            if (marker.perimeter.isEmpty()) "No mapped perimeter yet. The dot marks the reported origin."
-            else "The outline is the mapped burn footprint."
-        )
-    }
-    // Roadside markers name the agency behind them, as the website does.
-    // The older kinds already say where they came from in their own lines.
-    val roadside = marker.kind in Prefs.snapshotOnlyKinds || marker.kind == "toll"
-    marker.src?.takeIf { it.isNotBlank() && roadside }?.let { Note("Source: $it") }
-}
-
 @Composable
 private fun Note(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -990,7 +950,7 @@ private fun Reading(label: String, value: String) {
  * when the picture was taken. Video plays in the card on a tap.
  */
 @Composable
-private fun CameraShot(marker: RoadMarker) {
+internal fun CameraShot(marker: RoadMarker) {
     val url = marker.image
     val video = marker.stream?.takeIf { it.endsWith(".m3u8", ignoreCase = true) }
     var shot by remember(url) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
@@ -1086,7 +1046,7 @@ private fun CameraVideo(url: String) {
 
 /** The sign's board, read the way a driver reads it. */
 @Composable
-private fun SignBoard(marker: RoadMarker) {
+internal fun SignBoard(marker: RoadMarker) {
     val lines = marker.signLines
     if (lines.isEmpty()) { Note("This sign is blank right now."); return }
     Column(
@@ -1100,42 +1060,9 @@ private fun SignBoard(marker: RoadMarker) {
     }
 }
 
-/**
- * What the roadside station is reading. Temperatures arrive in Celsius,
- * wind in miles per hour and visibility in metres whatever the driver
- * has chosen, so each one is converted on the way to the screen.
- */
-@Composable
-private fun WeatherReadings(marker: RoadMarker) {
-    val miles = Units.useMiles
-    fun temperature(c: Double) = if (miles) "${Math.round(c * 9 / 5 + 32)} F" else "${Math.round(c)} C"
-    fun speed(mph: Double) = if (miles) "${Math.round(mph)} mph" else "${Math.round(mph * 1.609344)} km/h"
-
-    val readings = buildList {
-        marker.air_c?.let { add("Air" to temperature(it)) }
-        marker.pave_c?.let { add("Pavement" to temperature(it)) }
-        val wind = marker.wind
-        val gust = marker.gust
-        if (wind != null || gust != null) {
-            val head = wind?.let { speed(it) } ?: "calm"
-            // A direction on calm wind is noise, so it is left off.
-            val from = marker.windFrom?.takeIf { (wind ?: 0.0) >= 1.0 }?.let { " from the $it" } ?: ""
-            val gusting = gust?.let { ", gusting ${speed(it)}" } ?: ""
-            add("Wind" to head + from + gusting)
-        }
-        marker.rh?.let { add("Humidity" to "${Math.round(it)}%") }
-        marker.precip?.takeIf { it.isNotBlank() }?.let { add("Precipitation" to it.replace('_', ' ')) }
-        marker.surface?.takeIf { it.isNotBlank() }?.let { add("Surface" to it) }
-        // Visibility is worth the line only when it is short enough to matter.
-        marker.vis_m?.takeIf { it < 5000 }?.let { add("Visibility" to Units.distance(it)) }
-    }
-    if (readings.isEmpty()) { Note("This station is online. It has no readings right now."); return }
-    readings.forEach { (label, value) -> Reading(label, value) }
-}
-
 /** What the corridor costs now, and where each price applies. */
 @Composable
-private fun TollPrices(marker: RoadMarker) {
+internal fun TollPrices(marker: RoadMarker) {
     marker.tollRange?.let {
         Text(it + if (marker.pricing == "live") " right now" else "", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
     }
@@ -1162,7 +1089,7 @@ private fun TollPrices(marker: RoadMarker) {
 
 /** Confirm a plugin report or mark it gone, as on the website; sign-in is asked for first. */
 @Composable
-private fun ConfirmRow(alertId: String, model: DriveViewModel) {
+internal fun ConfirmRow(alertId: String, model: DriveViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var voted by remember(alertId) { mutableStateOf<String?>(null) }

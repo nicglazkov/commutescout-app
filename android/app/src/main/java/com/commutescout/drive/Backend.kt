@@ -47,6 +47,22 @@ object Backend {
     }
 }
 
+/** What became of an alerted event, and a CHP call's dispatch log. */
+object EventApi {
+    /** /api/event-status for a tapped alert; it takes either kind naming. */
+    suspend fun status(alert: AlertTap): EventStatusAnswer {
+        val kind = alert.kind ?: throw BackendError("The alert does not say what kind of event it is.")
+        return Backend.get("/api/event-status", mapOf(
+            "id" to (alert.eventId ?: ""), "kind" to kind,
+            "lat" to Backend.num(alert.lat), "lon" to Backend.num(alert.lon),
+        ))
+    }
+
+    /** /api/incident/{id}; a 404 means CHP has cleared the call. */
+    suspend fun incident(id: String): IncidentDetail =
+        Backend.get("/api/incident/" + URLEncoder.encode(id, "UTF-8").replace("+", "%20"), emptyMap())
+}
+
 /** A refused request; [code] is the HTTP status when there was one, else 0. */
 class BackendError(message: String, val code: Int = 0) : Exception(message)
 
@@ -177,6 +193,19 @@ data class RoadMarker(
     val gp_min: Double? = null,         // minutes in the regular lanes
     val lane_min: Double? = null,       // minutes in the express lanes
     val entries: List<TollEntry>? = null,
+    // What the event sheet says beyond the dot, as the web map does.
+    // Every number is read as a Double: one float where an Int was
+    // expected would fail the whole map answer, not just the field.
+    val detail: String? = null,         // a clean sentence from out-of-state feeds
+    val log_n: Double? = null,          // CHP dispatch log entries
+    val windows: Double? = null,        // closure windows scheduled at this spot
+    val road: String? = null,           // plugins
+    val confirmations: Double? = null,
+    val reliability: Double? = null,    // 0 to 1
+    val data: String? = null,           // where a plugin's data comes from
+    val ttl_s: Double? = null,          // a plugin alert's lifetime; a day or more is fixed in place
+    val source_url: String? = null,
+    val trust: String? = null,
 ) {
     val key: String get() = "$kind:${id ?: "%.4f,%.4f".format(lat, lon)}"
 
