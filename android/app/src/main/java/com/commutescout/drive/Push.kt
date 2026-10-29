@@ -78,6 +78,12 @@ class PushRegistrar(private val context: Context, private val account: Account) 
 }
 
 class PushService : FirebaseMessagingService() {
+    companion object {
+        /** What a watch alert's push carries beyond its link; MainActivity reads them back. */
+        val EVENT_KEYS = listOf("event_id", "event_kind", "event_lat", "event_lon", "event_title",
+            "event_body", "event_watch", "event_sent_at")
+    }
+
     override fun onNewToken(token: String) {
         CoroutineScope(Dispatchers.IO).launch { Engine.push.register(token) }
     }
@@ -88,9 +94,12 @@ class PushService : FirebaseMessagingService() {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             message.data["url"]?.let { putExtra("csUrl", it) }
+            // The same keys a background push puts on the launch intent,
+            // so a tap opens the event either way.
+            message.data.forEach { (k, v) -> putExtra(k, v) }
         }
         val pending = PendingIntent.getActivity(
-            this, body.hashCode(), intent,
+            this, (message.data["event_id"] ?: body).hashCode(), intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         PushRegistrar.ensureChannel(this)

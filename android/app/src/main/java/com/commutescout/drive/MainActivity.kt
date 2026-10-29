@@ -48,7 +48,8 @@ class MainActivity : ComponentActivity() {
                 Surface { DriveScreen(model) }
             }
         }
-        intent?.getStringExtra("csUrl")?.let { model.open(it) }
+        // A rotation brings the same intent back: the alert was opened already.
+        if (savedInstanceState == null) intent?.let { openAlert(it) }
         // Test hooks, debug builds only: the same flags as the iOS app.
         if (BuildConfig.DEBUG) {
             if (intent?.getBooleanExtra("csResetPlaces", false) == true) Engine.places.removeAll()
@@ -59,13 +60,38 @@ class MainActivity : ComponentActivity() {
             intent?.getStringExtra("csView")?.split(",")?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 3 }?.let { model.wantedView = it }
             // "csTour" zooms and pans through a set of views, for a recording.
             if (intent?.getBooleanExtra("csTour", false) == true) model.wantedTour = true
+            // "csOpenAlert" = "kind,lat,lon" acts out a tapped watch alert;
+            // csAlertId, csAlertTitle, csAlertBody and csAlertWatch fill in
+            // the rest of the push. The kind takes either naming.
+            intent?.getStringExtra("csOpenAlert")?.split(",")?.takeIf { it.size >= 3 }?.let { p ->
+                AlertTap.parse(mapOf(
+                    "event_kind" to p[0], "event_lat" to p[1], "event_lon" to p[2],
+                    "event_id" to intent.getStringExtra("csAlertId"),
+                    "event_title" to (intent.getStringExtra("csAlertTitle") ?: "Test alert"),
+                    "event_body" to (intent.getStringExtra("csAlertBody") ?: "A test alert from a debug build."),
+                    "event_watch" to (intent.getStringExtra("csAlertWatch") ?: "Home area"),
+                    "event_sent_at" to (System.currentTimeMillis() / 1000 - 25 * 60).toString(),
+                ))?.let { model.openAlert(it) }
+            }
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent.getStringExtra("csUrl")?.let { model.open(it) }
+        openAlert(intent)
+    }
+
+    /**
+     * A tapped watch alert. The system draws the notification while the
+     * app is in the background and puts the push's data keys on this
+     * intent itself (event_id, url, ...); in the foreground PushService
+     * draws it and copies the same keys, plus csUrl.
+     */
+    private fun openAlert(intent: Intent) {
+        val extras = intent.extras ?: return
+        val keys = listOf("url", "csUrl") + PushService.EVENT_KEYS
+        AlertTap.parse(keys.associateWith { extras.getString(it) })?.let { model.openAlert(it) }
     }
 
     override fun onStart() {

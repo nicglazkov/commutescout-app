@@ -244,10 +244,8 @@ fun AlertsListSheet(model: DriveViewModel, mapState: NavigationMapState, onClose
                 items(list ?: emptyList(), key = { it.key }) { m ->
                     Row(Modifier.fillMaxWidth().clickable {
                         model.showMarker(m.key)
-                        scope.launch {
-                            mapState.cameraMode = NavigationCameraMode.FREE
-                            mapState.cameraState.animateTo(CameraPosition(target = Position(m.lon, m.lat), zoom = 14.0))
-                        }
+                        // The same camera as a tapped alert: the event above the sheet.
+                        model.focusOn(m.lat, m.lon)
                         onClose()
                     }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         MarkerGlyph(m)

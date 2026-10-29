@@ -144,8 +144,9 @@ object Units {
         else -> "%.0f KB".format(n / 1e3)
     }
 
-    fun distance(meters: Double): String {
-        if (useMiles) {
+    /** [miles] defaults to the driver's choice; tests and pure code pass it. */
+    fun distance(meters: Double, miles: Boolean = useMiles): String {
+        if (miles) {
             val mi = meters / 1609.344
             if (mi < 0.1) return "${(meters * 3.28084 / 10).toInt() * 10} ft"
             return if (mi < 10) "%.1f mi".format(mi) else "${mi.toInt()} mi"

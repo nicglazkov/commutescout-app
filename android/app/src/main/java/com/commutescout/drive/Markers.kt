@@ -112,6 +112,24 @@ class MarkerStore {
 
     fun marker(key: String): RoadMarker? = byKey[key]
 
+    /** The box and kinds the last viewport answer covered, for [dropped]. */
+    private var liveBox: DoubleArray? = null
+    private var liveKinds: Set<String> = emptySet()
+
+    /**
+     * The last viewport answer, fetched after [sinceMs], covered this
+     * marker's spot and kind and no longer has it: the agency stopped
+     * reporting it. A marker that merely went off screen, or whose
+     * layer is off, is not dropped.
+     */
+    fun dropped(m: RoadMarker, sinceMs: Long): Boolean {
+        val at = _liveAt.value ?: return false
+        val b = liveBox ?: return false
+        if (at <= sinceMs || EventKinds.queryKind(m.kind) !in liveKinds) return false
+        if (m.lat < b[0] || m.lon < b[1] || m.lat > b[2] || m.lon > b[3]) return false
+        return _live.value.none { it.key == m.key }
+    }
+
     /**
      * Everything held, not cut to the view: the last viewport answer and
      * the whole snapshot area, each less what has gone stale. What the
@@ -176,6 +194,8 @@ class MarkerStore {
                     Log.i("Markers", "fetch failed (${e.message}), next timed refresh in ${backoffMs / 1000} s")
                     return@launch
                 }
+                liveBox = b
+                liveKinds = k.split(",").toSet()
                 _live.value = found
                 fetchedAt = System.currentTimeMillis()
                 _liveAt.value = fetchedAt
