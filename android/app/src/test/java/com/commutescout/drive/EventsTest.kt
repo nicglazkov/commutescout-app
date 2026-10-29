@@ -246,4 +246,13 @@ class EventsTest {
         assertEquals(listOf("Source: Flare (approved by CommuteScout)"), c.footer)
         assertEquals("https://example.test/a", c.link)
     }
+
+    @Test fun theCameraCentresSouthOfTheEvent() {
+        // At zoom 14 near Palo Alto a dp is about 3.8 m; 0.22 of an 800 dp screen is 176 dp.
+        val mpp = EventCamera.metersPerDp(37.442, 14.0)
+        assertEquals(3.79, mpp, 0.01)
+        val centre = EventCamera.centerLat(37.442, 14.0, 800.0)
+        assertEquals(37.442 - 176 * mpp / 111_320.0, centre, 1e-9)
+        assertTrue(centre < 37.442)
+    }
 }

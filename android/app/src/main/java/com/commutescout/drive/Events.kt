@@ -176,6 +176,21 @@ data class DispatchUnit(val unit: Int? = null, val steps: List<UnitStep> = empty
 @Serializable
 data class UnitStep(val status: String? = null, val time: String? = null)
 
+/**
+ * Where the camera centres to show an event above the event sheet.
+ * Centring on the event itself puts it under the sheet's top edge, so
+ * the centre moves south by 0.22 of the screen height: the event sits
+ * in the upper part of the map. The same sum as the iPhone app, in dp,
+ * with MapLibre's 512-unit world.
+ */
+object EventCamera {
+    fun metersPerDp(lat: Double, zoom: Double): Double =
+        40075016.0 * kotlin.math.cos(Math.toRadians(lat)) / (512.0 * Math.pow(2.0, zoom))
+
+    fun centerLat(lat: Double, zoom: Double, screenHeightDp: Double): Double =
+        lat - 0.22 * screenHeightDp * metersPerDp(lat, zoom) / 111_320.0
+}
+
 /** Where an alert's event is now, put together from the server and the map. */
 object EventResolve {
     /** How far from the alert a marker of the same kind still counts as it. */

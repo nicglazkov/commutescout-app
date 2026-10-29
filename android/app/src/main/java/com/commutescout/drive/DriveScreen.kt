@@ -301,13 +301,15 @@ fun DriveScreen(model: DriveViewModel) {
     // A tapped alert or "Show on map": the camera goes to the spot, with
     // room left at the bottom for the sheet. On a cold launch the map is
     // not drawn yet, so it waits for a projection first.
+    val screenHeightDp = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp
     LaunchedEffect(focus) {
         val f = focus ?: return@LaunchedEffect
         repeat(50) { if (mapState.cameraState.projection == null) delay(200) }
         mapState.cameraMode = NavigationCameraMode.FREE
+        val centre = EventCamera.centerLat(f.lat, f.zoom, screenHeightDp.toDouble())
         runCatching {
-            mapState.cameraState.animateTo(CameraPosition(target = Position(f.lon, f.lat), zoom = f.zoom,
-                tilt = if (prefs.is3D) 45.0 else 0.0, padding = PaddingValues(bottom = 260.dp)))
+            mapState.cameraState.animateTo(CameraPosition(target = Position(f.lon, centre), zoom = f.zoom,
+                tilt = if (prefs.is3D) 45.0 else 0.0, bearing = 0.0))
         }
         model.focusDone(f)
     }
@@ -402,7 +404,15 @@ fun DriveScreen(model: DriveViewModel) {
         // An expanded event sheet reaches past the middle of the screen,
         // where the side buttons would land on the search row: they step
         // aside until it is lowered again.
-        val tallCard = !isNavigating && cardDp > h * 0.5f
+        // The room between the top row (search, Settings, Tools, 2D:
+        // about 172 dp under the status bar) and the top of the card. The
+        // stack needs 116 dp, 168 with the compass; with less it would
+        // land on the 2D button, so it steps aside instead.
+        val topInset = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
+        val cardTop = with(LocalDensity.current) { cardPx.toDp() }.coerceAtLeast(
+            WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding())
+        val room = h - topInset - 172.dp - cardTop - 12.dp
+        val tallCard = !isNavigating && room < (if (abs(bearing) > 1.0) 168.dp else 116.dp)
         // Map controls: 2D/3D, compass when turned, my location. While
         // navigating Ferrostar draws its own zoom and recenter buttons.
         if (!tallCard) Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = 12.dp,

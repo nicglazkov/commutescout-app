@@ -123,17 +123,19 @@ fun EventPanel(sheet: EventSheet, here: LatLon?, model: DriveViewModel) {
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 12.dp, tonalElevation = 2.dp,
     ) {
-        Column(Modifier.navigationBarsPadding().animateContentSize(spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
+        // Never taller than its content, never taller than its height
+        // allows: the scrolling part takes what the grabber and the
+        // action row leave, measured rather than guessed.
+        Column(Modifier.navigationBarsPadding().heightIn(max = if (expanded) screen * 0.85f else screen * 0.5f)
+            .animateContentSize(spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
             .testTag("event-sheet")) {
             // The grabber: tap to switch heights, drag to resize or close.
             Box(Modifier.fillMaxWidth().height(22.dp).then(dragging).clickable { expanded = !expanded }
                 .semantics { contentDescription = if (expanded) "Show less" else "Show more" }, contentAlignment = Alignment.Center) {
                 Box(Modifier.size(width = 36.dp, height = 5.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)))
             }
-            // The panel's own height limit, less the grabber and the action row.
-            val maxBody = (if (expanded) screen * 0.85f else screen * 0.45f) - 96.dp
             Column(
-                Modifier.fillMaxWidth().heightIn(max = maxBody.coerceAtLeast(120.dp)).verticalScroll(rememberScrollState())
+                Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp).padding(bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -142,7 +144,14 @@ fun EventPanel(sheet: EventSheet, here: LatLon?, model: DriveViewModel) {
                 sheet.status?.let { StatusBanner(it, sheet.alert, marker?.kind, now) { model.retryStatus() } }
                 if (marker != null && card != null) {
                     MarkerBody(marker, card, here, model, expanded) { expanded = true }
-                } else sheet.alert?.let { YourAlert(it, now) }
+                } else sheet.alert?.let { YourAlert(it, now, expanded) }
+            }
+            // Outside the scrolling part, so a collapsed panel always says
+            // there is more and how to get it.
+            if (!expanded && marker != null) {
+                TextButton({ expanded = true }, Modifier.padding(horizontal = 4.dp).testTag("more-details")) {
+                    Text(if ((card?.dispatchCount ?: 0) > 0) "More details and the dispatch log" else "More details")
+                }
             }
             Actions(sheet, model)
         }
@@ -199,7 +208,7 @@ private fun StatusBanner(status: EventStatus, alert: AlertTap?, kind: String?, n
 
 /** What the alert said, when there is no marker to show instead. */
 @Composable
-private fun YourAlert(alert: AlertTap, now: Long) {
+private fun YourAlert(alert: AlertTap, now: Long, expanded: Boolean) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         .padding(12.dp).testTag("your-alert"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -211,8 +220,12 @@ private fun YourAlert(alert: AlertTap, now: Long) {
                         .padding(horizontal = 8.dp, vertical = 2.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        alert.title?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)) }
-        alert.body?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        // Collapsed, long alerts are cut at a few lines rather than
+        // pushing the time sent out of sight.
+        alert.title?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis) }
+        alert.body?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = if (expanded) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis) }
         alert.sentAt?.let {
             Text("Sent " + EventText.clock(it * 1000, now, ZoneId.systemDefault()), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
