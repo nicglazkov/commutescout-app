@@ -43,6 +43,7 @@ object DGIcons {
         "recent" to listOf("M3.5,12a8.5,8.5 0 1,0 17,0a8.5,8.5 0 1,0 -17,0z", "M12 7.5V12l3 2"),
         "search" to listOf("M4,10.5a6.5,6.5 0 1,0 13,0a6.5,6.5 0 1,0 -13,0z", "M15.5 15.5L21 21"),
         "layers" to listOf("M12 3l9 5-9 5-9-5z", "M3 13l9 5 9-5"),
+        "grid" to listOf("M4 4h6v6H4z", "M14 4h6v6h-6z", "M4 14h6v6H4z", "M14 14h6v6h-6z"),
         "locate" to listOf("M3 11l18-8-8 18-2-8z"),
         "report" to listOf("M4 20V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H8z", "M12 7.5v4M12 13.6v.2"),
         "close" to listOf("M6 6l12 12M18 6L6 18"),

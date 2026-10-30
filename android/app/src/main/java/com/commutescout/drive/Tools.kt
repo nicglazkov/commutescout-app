@@ -91,7 +91,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import com.stadiamaps.ferrostar.maplibreui.runtime.NavigationMapState
 
-enum class Tool { MARKETPLACE, LAYERS, ALERTS, DIRECTIONS, WATCHES, ASK, SOURCES }
+enum class Tool { MARKETPLACE, ALERTS, DIRECTIONS, WATCHES, ASK, SOURCES }
 
 /** A tool sheet's head: its title on the left, a round close on the right. */
 @Composable
@@ -122,8 +122,6 @@ fun ToolsSheet(onPick: (Tool) -> Unit, onClose: () -> Unit) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 16.dp)) {
             fun pick(t: Tool) = sheet.close { onPick(t) }
             Group {
-                SRow("Layers and base map", Modifier.tag("tool-layers"), icon = "layers", tileColor = DG.low, chevron = true, onClick = { pick(Tool.LAYERS) })
-                RowDivider()
                 SRow("Alerts nearby", Modifier.tag("tool-alerts"), icon = "bell", tileColor = DG.high, chevron = true, onClick = { pick(Tool.ALERTS) })
                 RowDivider()
                 SRow("Directions from another place", Modifier.tag("tool-directions"), icon = "route", tileColor = DG.low, chevron = true, onClick = { pick(Tool.DIRECTIONS) })
@@ -133,12 +131,6 @@ fun ToolsSheet(onPick: (Tool) -> Unit, onClose: () -> Unit) {
                 SRow("Watch areas", Modifier.tag("tool-watches"), icon = "eye", tileColor = DG.good, chevron = true, onClick = { pick(Tool.WATCHES) })
                 RowDivider()
                 SRow("Ask about the roads", Modifier.tag("tool-ask"), icon = "help", tileColor = DG.mid, chevron = true, onClick = { pick(Tool.ASK) })
-            }
-            GroupHead("Plugins")
-            Group {
-                SRow("Plugin marketplace", Modifier.tag("tool-marketplace"), icon = "store", tileColor = DG.plug, chevron = true, onClick = { pick(Tool.MARKETPLACE) })
-                RowDivider()
-                SRow("My plugins and private sources", Modifier.tag("tool-sources"), icon = "piece", tileColor = DG.plug, chevron = true, onClick = { pick(Tool.SOURCES) })
             }
             Spacer(Modifier.height(12.dp))
             Group {
@@ -355,12 +347,9 @@ fun SourcesSheet(model: DriveViewModel, onClose: () -> Unit) {
 
     @Composable
     fun PluginRow(s: FlareSource, mineToo: Boolean) {
-        val on = s.id !in hidden
         SRow(s.name, Modifier.tag("source-${s.id}"), lead = { PluginTile(s, 32.dp) },
             sub = listOfNotNull(if (mineToo) s.base?.removePrefix("https://") else Market.maker(s), if (s.ok == false) "not answering" else null).joinToString(" · "),
-            onClick = { details = s.id }) {
-            DGSwitch(on, { v -> model.sources.setShown(s.id, v); model.markers.refresh(true) })
-        }
+            value = if (s.id in hidden) "Off" else null, chevron = true, onClick = { details = s.id })
     }
 
     SheetLayer(onClose, snaps = listOf(.92f), modifier = Modifier.tag("sources-sheet")) { sheet ->

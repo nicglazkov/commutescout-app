@@ -465,7 +465,7 @@ fun DriveScreen(model: DriveViewModel) {
                 .withProgressView { _, _, _ -> }
                 .withRoadNameView { _, _, _ -> }
                 .withCustomOverlayView { modifier ->
-                if (!uiState.isNavigating() && !MapDrawing.cover && prefs.welcomeDone && !showSettings) {
+                if (!uiState.isNavigating() && !MapDrawing.cover && prefs.welcomeDone && !showSettings && !showLayers) {
                     BrowsingOverlay(modifier, model, offlineNotice, onSettings = { showSettings = true },
                         note = if (tripDone) navNote else null,
                         banner = bannerItem?.let { next -> {
@@ -510,7 +510,7 @@ fun DriveScreen(model: DriveViewModel) {
         val cardTop = with(LocalDensity.current) { cardPx.toDp() }.coerceAtLeast(
             WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding())
         val room = h - topInset - 172.dp - cardTop - 12.dp
-        val tallCard = !isNavigating && room < (if (abs(bearing) > 1.0) 168.dp else 116.dp)
+        val tallCard = !isNavigating && room < (if (abs(bearing) > 1.0) 232.dp else 180.dp)
         // Map controls: 2D/3D, compass when turned, my location. While
         // navigating Ferrostar draws its own zoom and recenter buttons.
         if (!tallCard && !isNavigating && !MapDrawing.cover && !searchFocused.value && prefs.welcomeDone && !showSettings && !showLayers && (state is DriveState.Browsing || state is DriveState.Routing)) Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = DG.gutter, bottom = aboveCard),
@@ -520,7 +520,8 @@ fun DriveScreen(model: DriveViewModel) {
                     Modifier.rotate(-bearing.toFloat()).testTag("compass"), tint = DG.high)
             }
             ModeToggle(prefs.is3D, { model.toggle3D() }, Modifier.testTag("perspective"))
-            GlassRound("layers", "Map layers and tools", { showTools = true }, Modifier.testTag("tools"))
+            GlassRound("layers", "Map layers", { showLayers = true }, Modifier.testTag("layers"))
+            GlassRound("grid", "Tools", { showTools = true }, Modifier.testTag("tools"))
             GlassRound("locate", "My location", { mapState.recenter(isNavigating = false) }, Modifier.testTag("locate"))
             // Report, like Waze: one tap from anywhere.
             ReportButton({ model.reportLatLon?.let { reportAt = it } }, Modifier.testTag("report"))
@@ -546,7 +547,7 @@ fun DriveScreen(model: DriveViewModel) {
                 EventPanel(sheet!!, here, model)
             } else when (val s = state) {
                 is DriveState.Browsing -> resumable?.let { ResumeCard(it, model) }
-                    ?: if (!searchFocused.value && !showSettings && !showTools && reportAt == null) PlacesTray(model, here) else Unit
+                    ?: if (!searchFocused.value && !showSettings && !showLayers && !showTools && reportAt == null) PlacesTray(model, here) else Unit
                 is DriveState.Found -> PlaceCard(s.place, here, model) { tool = Tool.WATCHES }
                 is DriveState.Routing -> FindingRoutesCard { model.cancelRouting() }
                 is DriveState.Choosing -> RoutesCard(s.routes, s.place, model) { chosenRoute = it }
@@ -571,9 +572,9 @@ fun DriveScreen(model: DriveViewModel) {
         else -> {}
     }
     if (showSettings) SettingsSheet(model, SettingsPage.of(settingsStart)) { showSettings = false; settingsStart = null; model.applyPrefs() }
-    if (showLayers) LayersSheet(model) { showLayers = false }
+    if (showLayers) SettingsSheet(model, SettingsPage.LAYERS, pageOnly = true) { showLayers = false; model.applyPrefs() }
     if (!prefs.welcomeDone) WelcomeScreen(model) { prefs.welcomeDone = true }
-    if (showTools) ToolsSheet(onPick = { showTools = false; if (it == Tool.LAYERS) showLayers = true else tool = it }) { showTools = false }
+    if (showTools) ToolsSheet(onPick = { showTools = false; tool = it }) { showTools = false }
     when (tool) {
         Tool.ALERTS -> AlertsListSheet(model, mapState) { tool = null }
         Tool.DIRECTIONS -> DirectionsSheet(model) { tool = null }
@@ -1106,11 +1107,6 @@ internal fun ConfirmRow(alertId: String, model: DriveViewModel) {
 @Composable
 private fun RoutesCard(routes: List<Route>, place: Place, model: DriveViewModel, onChosen: (Route) -> Unit) = RoutesSheet(routes, place, model, onChosen)
 
-
-/** What the map shows: the same layers as the website's Layers tool. */
-/** The map's layers and styles, in the Day Glass+ sheet Settings uses. */
-@Composable
-private fun LayersSheet(model: DriveViewModel, onClose: () -> Unit) = LayersOverlay(model, onClose)
 
 /** Scripted drive for automated testing: `--ez csAutoDrive true` on launch (debug only). */
 object AutoDrive {

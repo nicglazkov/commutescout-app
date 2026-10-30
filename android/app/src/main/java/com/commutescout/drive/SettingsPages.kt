@@ -540,56 +540,31 @@ private fun Limit(value: String, label: String, mine: Boolean, modifier: Modifie
  * sheet on the map, so a switch means the same thing in both.
  */
 @Composable
-fun LayersContent(model: DriveViewModel, withStyles: Boolean = false) {
+fun LayersContent(model: DriveViewModel) {
     val prefs = model.prefs
+    val nav = LocalSettingsNav.current
     val catalog by model.sources.catalog.collectAsStateWithLifecycle()
+    val mine by model.sources.mine.collectAsStateWithLifecycle()
     val off by model.sources.hidden.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { model.sources.loadCatalog() }
-    if (withStyles) {
-        GroupHead("Map style")
-        BaseMapCards(prefs.mapStyle) { prefs.mapStyle = it }
-    }
-    GroupHead("Show")
-    Box(Modifier.padding(horizontal = 14.dp)) {
-        Segmented(Prefs.SourceFilter.entries.map { it.label }, prefs.sourceFilter.ordinal, {
-            prefs.sourceFilter = Prefs.SourceFilter.entries[it]; model.layersChanged()
-        }, tagPrefix = "source-filter")
-    }
-    GroupFoot(when (prefs.sourceFilter) {
-        Prefs.SourceFilter.ALL -> "Everything the map can show: agency data and the plugins you installed."
-        Prefs.SourceFilter.OFFICIAL -> "Agency data only: state DOT and 511 feeds, cameras, signs and weather stations."
-        Prefs.SourceFilter.PLUGINS -> "Plugin alerts only, with what each plugin loads."
-    })
-    if (prefs.sourceFilter != Prefs.SourceFilter.PLUGINS) {
-        GroupHead("Official sources")
-        Group {
-            SwitchRow("Traffic", prefs.traffic, { prefs.traffic = it }, icon = "traffic", tileColor = DG.mid, tag = "switch-Traffic")
-            Prefs.layerKinds.filter { it.key != "plugin" }.forEach { k ->
-                RowDivider()
-                SwitchRow(k.label, prefs.isChosen(k.key), { prefs.setShown(k.key, it); model.layersChanged() },
-                    icon = layerIcon(k.key), tileColor = DG.low, tag = "switch-${k.label}")
-            }
+    GroupHead("Official sources", Modifier.padding(top = 4.dp))
+    Group {
+        SwitchRow("Traffic", prefs.traffic, { prefs.traffic = it }, icon = "traffic", tileColor = DG.mid, tag = "switch-Traffic")
+        Prefs.layerKinds.filter { it.key != "plugin" }.forEach { k ->
+            RowDivider()
+            SwitchRow(k.label, prefs.isChosen(k.key), { prefs.setShown(k.key, it); model.layersChanged() },
+                icon = layerIcon(k.key), tileColor = DG.low, tag = "switch-${k.label}")
         }
     }
-    if (prefs.sourceFilter != Prefs.SourceFilter.OFFICIAL) {
-        GroupHead("Plugins", trailing = { Tag("Not official", TagLook.PLUGIN, icon = "puzzle") })
-        Group(plugin = true) {
-            val label = Prefs.layerKinds.firstOrNull { it.key == "plugin" }?.label ?: "Show plugin alerts"
-            SwitchRow(label, prefs.isChosen("plugin"), { prefs.setShown("plugin", it); model.layersChanged() }, icon = "puzzle", tileColor = DG.plug,
-                tag = "switch-$label")
-            catalog.forEach { p ->
-                RowDivider(58.dp, plugin = true)
-                val on = p.id !in off
-                SRow(p.name, Modifier.tag("plugin-switch-${p.id}"), sub = if (p.kinds.isEmpty()) "Alerts" else "Loads " + p.kindsLabel,
-                    lead = { PluginBadge(p.id, PluginStyle.oneCategory(p.kinds), 32.dp) },
-                    onClick = { model.sources.setOn(p.id, !on); model.layersChanged(); model.markers.refresh(true) }) {
-                    com.commutescout.drive.design.DGSwitch(on, { model.sources.setOn(p.id, it); model.layersChanged(); model.markers.refresh(true) },
-                        Modifier.tag("switch-${p.name}"))
-                }
-            }
-            if (catalog.isEmpty()) Text("No plugin is installed. Find one in the marketplace.", Modifier.padding(16.dp), style = PageType.rowSub, color = DG.sub)
-        }
-        GroupFoot("A plugin’s alerts are badges in its own color, and this says what each one puts on the map.")
+    GroupFoot("Agency data: state DOT and 511 feeds, cameras, signs and weather stations.")
+    Spacer(Modifier.height(14.dp))
+    Group {
+        val on = catalog.count { it.id !in off } + mine.size
+        SRow("Plugins", Modifier.tag("layers-plugins"), icon = "puzzle", tileColor = DG.plug, value = if (on == 0) "None" else "$on on", chevron = true,
+            onClick = { nav?.push(SettingsPage.PLUGINS) })
+        RowDivider()
+        SRow("Map style", Modifier.tag("layers-map-style"), icon = "map", tileColor = Color(0xFF5B6CF0), value = MapStyles.name(prefs.mapStyle), chevron = true,
+            onClick = { nav?.push(SettingsPage.MAP_STYLE) })
     }
 }
 
@@ -612,7 +587,18 @@ fun PluginsPage(model: DriveViewModel) {
     if (showMine) SourcesSheet(model) { showMine = false }
     statusOf?.let { PluginStatusSheet(model, it) { statusOf = null } }
     LaunchedEffect(Unit) { model.sources.loadCatalog() }
-    GroupHead("Plugins", Modifier.padding(top = 0.dp), trailing = { Tag("Not official", TagLook.PLUGIN, icon = "puzzle") })
+    GroupHead("Show on the map", Modifier.padding(top = 0.dp))
+    Box(Modifier.padding(horizontal = 14.dp)) {
+        Segmented(Prefs.SourceFilter.entries.map { it.label }, model.prefs.sourceFilter.ordinal, {
+            model.prefs.sourceFilter = Prefs.SourceFilter.entries[it]; model.layersChanged()
+        }, tagPrefix = "source-filter")
+    }
+    GroupFoot(when (model.prefs.sourceFilter) {
+        Prefs.SourceFilter.ALL -> "Everything the map can show: agency data and the plugins you installed."
+        Prefs.SourceFilter.OFFICIAL -> "Agency data only. Your plugins stay installed, and their alerts stay off the map."
+        Prefs.SourceFilter.PLUGINS -> "Plugin alerts only, with no agency data on the map."
+    })
+    GroupHead("Plugins", trailing = { Tag("Not official", TagLook.PLUGIN, icon = "puzzle") })
     Group(plugin = true) {
         if (catalog.isEmpty()) Text("No plugin is listed right now.", Modifier.padding(16.dp), style = PageType.rowSub, color = DG.sub)
         catalog.forEachIndexed { i, p ->
@@ -625,9 +611,9 @@ fun PluginsPage(model: DriveViewModel) {
     GroupFoot("Open one to see whether it is answering, what it loads, and to install or uninstall it. Plugin data follows you and no one else.")
     Spacer(Modifier.height(14.dp))
     Group {
-        SRow("Browse the marketplace", icon = "store", tileColor = DG.plug, chevron = true, onClick = { showMarket = true })
+        SRow("Browse the marketplace", Modifier.tag("plugins-market"), icon = "store", tileColor = DG.plug, chevron = true, onClick = { showMarket = true })
         RowDivider()
-        SRow("My plugins and private sources", icon = "key", tileColor = DG.faint, chevron = true, onClick = { showMine = true })
+        SRow("My plugins and private sources", Modifier.tag("plugins-mine"), icon = "key", tileColor = DG.faint, chevron = true, onClick = { showMine = true })
     }
 }
 

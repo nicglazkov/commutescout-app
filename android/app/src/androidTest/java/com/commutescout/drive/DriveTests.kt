@@ -178,6 +178,8 @@ class DriveTests {
         waitFor { !tagExists("settings-back") }
     }
     private fun openTool(t: String) { tag("tools").performClick(); waitFor { tagExists("tools-sheet") }; tag(t).performClick() }
+    private fun openPluginsRow(t: String) { openSettingsPage("Plugins"); scrollTo(tag(t)).performClick() }
+    private fun closeSettings() { settingsHome(); click("settings-close"); waitFor { !tagExists("settings-sheet") } }
     /** A tap on the scrim above the sheet closes it, as a person would.
      *  Injected by the system so Compose's idle wait cannot stall on the map. */
     private fun closeSheet(sheetTag: String) {
@@ -310,7 +312,10 @@ class DriveTests {
     @Test fun layerSwitchesForEveryKind() {
         openSettingsPage("Map layers")
         val traffic = scrollTo(tag("switch-Traffic")); traffic.performClick(); traffic.performClick()
-        for (k in Prefs.layerKinds) { val sw = scrollTo(tag("switch-${k.label}")); sw.performClick(); sw.performClick() }
+        for (k in Prefs.layerKinds.filter { it.key != "plugin" }) { val sw = scrollTo(tag("switch-${k.label}")); sw.performClick(); sw.performClick() }
+        assertTrue("Map layers is official layers only", !tagExists("switch-Plugin alerts"))
+        scrollTo(tag("layers-plugins")).assertIsDisplayed()
+        scrollTo(tag("layers-map-style")).assertIsDisplayed()
         openSettingsPage("About")
         scrollTo(text("Version", sub = true)).assertIsDisplayed()
         scrollTo(text("Privacy")).assertIsDisplayed()
@@ -336,7 +341,7 @@ class DriveTests {
     @Test fun toolsOpenEachPage() {
         openTool("tool-alerts"); waitFor { tagExists("alerts-sheet") }; closeSheet("alerts-sheet")
         openTool("tool-ask"); waitFor { tagExists("ask-sheet") }; closeSheet("ask-sheet")
-        openTool("tool-sources"); waitFor { tagExists("sources-sheet") }
+        openPluginsRow("plugins-mine"); waitFor { tagExists("sources-sheet") }
         waitFor { exists("Approved plugins") || exists("Public plugins") }
         scrollTo(tag("add-source")).performClick()
         waitFor { tagExists("source-url") }
@@ -346,16 +351,35 @@ class DriveTests {
         scrollTo(tag("source-add")).performClick()
         waitFor { exists("must start with https://") }
         closeSheet("sources-sheet")
+        closeSettings()
         openTool("tool-watches"); waitFor { tagExists("watches-sheet") }
         assertTrue(exists("Sign in") || exists("watch"))
         closeSheet("watches-sheet")
-        openTool("tool-layers"); waitFor { tagExists("layers-sheet") }
+        // The map's Layers button is Settings > Map layers, and links to the one style picker.
+        tag("layers").performClick(); waitFor { tagExists("settings-sheet") }
+        assertTrue("no home page behind it", !tagExists("settings-back"))
+        scrollTo(tag("switch-Traffic")).assertIsDisplayed()
+        scrollTo(tag("layers-map-style")).performClick()
+        waitFor { tagExists("basemap-slate") }
         for (st in listOf("slate", "positron")) scrollTo(tag("basemap-$st")).performClick()
-        closeSheet("layers-sheet")
+        click("settings-back")
+        waitFor { tagExists("layers-plugins") }
+        click("settings-close")
+        waitFor { !tagExists("settings-sheet") }
+    }
+
+    @Test fun oneEntryForEachJob() {
+        tag("tools").performClick(); waitFor { tagExists("tools-sheet") }
+        for (gone in listOf("tool-layers", "tool-marketplace", "tool-sources")) assertTrue("$gone is not a tool", !tagExists(gone))
+        closeSheet("tools-sheet")
+        // Hiding every plugin at once lives on the Plugins page.
+        openSettingsPage("Plugins")
+        for (f in listOf(1, 2, 0)) scrollTo(tag("source-filter-$f")).performClick()
+        closeSettings()
     }
 
     @Test fun marketplaceTilesAndInstall() {
-        openTool("tool-marketplace"); waitFor { tagExists("marketplace-sheet") }
+        openPluginsRow("plugins-market"); waitFor { tagExists("marketplace-sheet") }
         waitFor(20_000) { tagExists("plugin-card") || exists("No plugin is listed yet") }
         if (tagExists("plugin-card")) {
             val btns = compose.onAllNodes(androidx.compose.ui.test.hasTestTag("install-wz-flare"), useUnmergedTree = true)
@@ -367,6 +391,7 @@ class DriveTests {
             }
         }
         closeSheet("marketplace-sheet")
+        closeSettings()
     }
 
     @Test fun alertsNearbyRowShowsTheMarkerCard() {
