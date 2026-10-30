@@ -51,6 +51,17 @@ class Account(context: Context) {
     val signedIn: Boolean get() = _user.value != null
     val displayName: String get() = _user.value?.displayName ?: _user.value?.email ?: "Signed in"
 
+    val email: String? get() = _user.value?.email
+    /** The avatar letter. */
+    val initial: String get() = displayName.trim().take(1).uppercase().ifEmpty { "?" }
+
+    /** Today's API use and limits, from /api/keys; null when signed out or unreachable. */
+    suspend fun apiUsage(): ApiUsage? {
+        val t = token() ?: return null
+        return runCatching { Backend.send("GET", "/api/keys", t) }.getOrNull()
+            ?.takeIf { it.first in 200..299 }?.let { ApiUsage.parse(it.second) }
+    }
+
     /** A fresh ID token for the server, or null when signed out. */
     suspend fun token(): String? = runCatching { _user.value?.getIdToken(false)?.await()?.token }.getOrNull()
 

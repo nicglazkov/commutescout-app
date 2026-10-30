@@ -12,7 +12,10 @@ import java.util.Locale
  * state so screens update the moment it changes.
  */
 class Prefs(context: Context) {
+    private val appContext: Context = context.applicationContext ?: context
     private val p: SharedPreferences = context.getSharedPreferences("cs.prefs", Context.MODE_PRIVATE)
+    /** A phone that had this app before the first-run screen counts as past it. */
+    private val upgraded = p.all.isNotEmpty() && !p.contains("welcome.done")
 
     enum class Theme(val label: String) { SYSTEM("System"), LIGHT("Light"), DARK("Dark") }
     /**
@@ -78,7 +81,11 @@ class Prefs(context: Context) {
         theme = Theme.SYSTEM; mapStyle = MapStyle.AUTO; is3D = false; traffic = false; hiddenKinds = offByDefault; sourceFilter = SourceFilter.ALL
         spokenAlerts = true; alertAheadMeters = 1500.0; showSpeedLimit = true; keepAwake = true
         avoidTolls = false; avoidHighways = false; avoidFerries = false; stripAheadMeters = 16093.0
-        advancedAlerts = false; alertRulesRaw = ""; useMiles = true
+        advancedAlerts = false; alertRulesRaw = ""; distanceUnit = DistanceChoice.MILES
+        clockUnit = ClockChoice.AUTO; tempUnit = TempChoice.AUTO
+        alertDelivery = AlertDelivery.VOICE; alertChipsOff = AlertChips.offByDefault; pluginAlertsOff = emptySet(); speakPluginAlerts = false
+        // UI tests start on the map, not on the first-run screen.
+        welcomeDone = true
         voiceName = ""; voiceEngine = ""; voiceRate = 1f; voicePitch = 1f
     }
 
@@ -93,7 +100,22 @@ class Prefs(context: Context) {
     var sourceFilter by state(runCatching { SourceFilter.valueOf(p.getString("layers.sources", "ALL")!!) }.getOrDefault(SourceFilter.ALL)) {
         p.edit().putString("layers.sources", it.name).apply()
     }
-    var spokenAlerts by state(p.getBoolean("spokenalerts", true)) { p.edit().putBoolean("spokenalerts", it).apply() }
+    /** How alerts reach the driver: spoken, a chime, or only on screen. */
+    var alertDelivery by state(runCatching { AlertDelivery.valueOf(p.getString("alerts.delivery", null)!!) }.getOrElse {
+        if (p.getBoolean("spokenalerts", true)) AlertDelivery.VOICE else AlertDelivery.SILENT
+    }) { p.edit().putString("alerts.delivery", it.name).apply() }
+    /** Alerts are spoken (the old switch, kept for the engine and the summary). */
+    var spokenAlerts: Boolean
+        get() = alertDelivery == AlertDelivery.VOICE
+        set(v) { alertDelivery = if (v) AlertDelivery.VOICE else AlertDelivery.SILENT }
+    /** Kinds of official alert that do not alert (they still show on the map), by [AlertChips] key. */
+    var alertChipsOff by state(p.getStringSet("alerts.chips.off", null)?.toSet() ?: AlertChips.offByDefault) { p.edit().putStringSet("alerts.chips.off", it).apply() }
+    /** Plugins, by source id, whose alerts do not alert. Their markers stay on the map. */
+    var pluginAlertsOff by state(p.getStringSet("alerts.plugins.off", null)?.toSet() ?: emptySet()) { p.edit().putStringSet("alerts.plugins.off", it).apply() }
+    /** Plugin alerts are spoken too; off, they chime. */
+    var speakPluginAlerts by state(p.getBoolean("alerts.plugins.speak", false)) { p.edit().putBoolean("alerts.plugins.speak", it).apply() }
+    /** The first-run screen is done (or skipped). */
+    var welcomeDone by state(p.getBoolean("welcome.done", false) || upgraded) { p.edit().putBoolean("welcome.done", it).apply() }
     var alertAheadMeters by state(p.getFloat("alertahead", 1500f).toDouble()) { p.edit().putFloat("alertahead", it.toFloat()).apply() }
     var showSpeedLimit by state(p.getBoolean("speedlimit", true)) { p.edit().putBoolean("speedlimit", it).apply() }
     var keepAwake by state(p.getBoolean("keepawake", true)) { p.edit().putBoolean("keepawake", it).apply() }
@@ -103,7 +125,29 @@ class Prefs(context: Context) {
     var stripAheadMeters by state(p.getFloat("alerts.strip", 16093f).toDouble()) { p.edit().putFloat("alerts.strip", it.toFloat()).apply() }
     var advancedAlerts by state(p.getBoolean("alerts.advanced", false)) { p.edit().putBoolean("alerts.advanced", it).apply() }
     var alertRulesRaw by state(p.getString("alerts.rules", "")!!) { p.edit().putString("alerts.rules", it).apply() }
-    var useMiles by state(if (p.contains("miles")) p.getBoolean("miles", true) else localeMiles()) { p.edit().putBoolean("miles", it).apply() }
+    /** Distance: match the phone's region, or miles or kilometers. An old Miles or Kilometers pick carries over. */
+    var distanceUnit by state(runCatching { DistanceChoice.valueOf(p.getString("units.distance", null)!!) }.getOrElse {
+        if (p.contains("miles")) (if (p.getBoolean("miles", true)) DistanceChoice.MILES else DistanceChoice.KM) else DistanceChoice.AUTO
+    }) { p.edit().putString("units.distance", it.name).apply(); syncUnitStyle() }
+    var clockUnit by state(runCatching { ClockChoice.valueOf(p.getString("units.clock", "AUTO")!!) }.getOrDefault(ClockChoice.AUTO)) {
+        p.edit().putString("units.clock", it.name).apply(); syncUnitStyle()
+    }
+    var tempUnit by state(runCatching { TempChoice.valueOf(p.getString("units.temp", "AUTO")!!) }.getOrDefault(TempChoice.AUTO)) {
+        p.edit().putString("units.temp", it.name).apply(); syncUnitStyle()
+    }
+    /** What the phone itself says, read each time: the driver can change it while the app runs. */
+    val phoneMiles: Boolean get() = localeMiles()
+    val phone24: Boolean get() = runCatching { android.text.format.DateFormat.is24HourFormat(appContext) }.getOrDefault(false)
+    val phoneFahrenheit: Boolean get() = runCatching {
+        androidx.core.text.util.LocalePreferences.getTemperatureUnit() == androidx.core.text.util.LocalePreferences.TemperatureUnit.FAHRENHEIT
+    }.getOrElse { UnitRules.regionFahrenheit(Locale.getDefault().country) }
+    var useMiles: Boolean
+        get() = UnitRules.miles(distanceUnit, phoneMiles)
+        set(v) { distanceUnit = if (v) DistanceChoice.MILES else DistanceChoice.KM }
+    val use24h: Boolean get() = UnitRules.h24(clockUnit, phone24)
+    val useFahrenheit: Boolean get() = UnitRules.fahrenheit(tempUnit, phoneFahrenheit)
+    /** Hands the resolved clock and temperature to the formatters that cannot read Prefs. */
+    fun syncUnitStyle() { UnitStyle.h24 = use24h; UnitStyle.fahrenheit = useFahrenheit }
     /**
      * The voice for alerts and turn instructions, by the engine's name
      * for it; empty picks the best one on the phone for the language.
@@ -166,7 +210,8 @@ class Prefs(context: Context) {
      * repeats closer, and whether it is spoken at all.
      */
     @kotlinx.serialization.Serializable
-    data class AlertRule(val enabled: Boolean = true, val speak: Boolean = true, val firstMeters: Double = 1500.0, val repeatMeters: Double = 0.0)
+    data class AlertRule(val enabled: Boolean = true, val speak: Boolean = true, val firstMeters: Double = 1500.0, val repeatMeters: Double = 0.0,
+                         /** A short chime when it is not spoken. */ val chime: Boolean = false)
 
     val alertKinds = listOf(
         "incident" to "Incidents", "lane_closure" to "Closures and lane work", "chain_control" to "Chain controls",
@@ -188,6 +233,14 @@ class Prefs(context: Context) {
 
     fun rule(kind: String): AlertRule =
         if (!advancedAlerts) AlertRule(true, spokenAlerts, alertAheadMeters, 0.0) else alertRules[kind] ?: AlertRule()
+
+    /**
+     * The rule the engine uses for one marker: the per-kind rule, then
+     * the alert chips, the plugin switches and how alerts reach the
+     * driver (voice, a chime or silent). Plugin alerts chime unless
+     * Speak plugin alerts is on.
+     */
+    fun ruleFor(m: RoadMarker): AlertRule = AlertChips.apply(rule(ruleKind(m)), m, alertDelivery, alertChipsOff, pluginAlertsOff, speakPluginAlerts)
 
     fun setRule(kind: String, r: AlertRule) { alertRules = alertRules + (kind to r) }
 
@@ -225,7 +278,7 @@ class Prefs(context: Context) {
     /** A fingerprint of everything that changes how routes are asked for. */
     val routingKey: String get() = "$avoidTolls|$avoidHighways|$avoidFerries|$useMiles"
 
-    private fun localeMiles(): Boolean = Locale.getDefault().country in setOf("US", "GB", "LR", "MM")
+    private fun localeMiles(): Boolean = UnitRules.regionMiles(Locale.getDefault().country)
 
     private fun <T> state(initial: T, save: (T) -> Unit) = object : kotlin.properties.ReadWriteProperty<Any?, T> {
         private var s = mutableStateOf(initial)

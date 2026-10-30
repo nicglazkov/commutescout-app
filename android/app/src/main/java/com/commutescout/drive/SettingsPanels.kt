@@ -1,6 +1,14 @@
 package com.commutescout.drive
 
 import android.graphics.BitmapFactory
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import com.commutescout.drive.design.DG
+import com.commutescout.drive.design.DGIcon
+import com.commutescout.drive.design.PageType
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -102,31 +110,60 @@ fun BaseMapPreview(model: DriveViewModel, height: Int = 180) {
 }
 
 /** The base maps as cards: a picture of each, the way the website shows them. Tapping one applies it at once. */
+/** The map styles the picker offers, in order, with the line under each. Gray is the OUTDOORS key, kept for saved choices. */
+object MapStyles {
+    data class Look(val style: Prefs.MapStyle, val name: String, val about: String)
+    val looks = listOf(
+        Look(Prefs.MapStyle.POSITRON, "Positron", "Soft and light, so alerts stand out"),
+        Look(Prefs.MapStyle.BRIGHT, "Bright", "More color for roads, parks and water"),
+        Look(Prefs.MapStyle.SLATE, "Slate", "Cool blue-gray, easy on the eyes"),
+        Look(Prefs.MapStyle.OUTDOORS, "Gray", "Neutral, with no color but alerts"),
+        Look(Prefs.MapStyle.LIGHT, "Light", "Classic street map colors"),
+        Look(Prefs.MapStyle.DARK, "Dark", "Dim, for driving at night"),
+    )
+    /** The card that shows as chosen: Match theme reads as Positron by day and Dark at night. */
+    fun chosen(choice: Prefs.MapStyle, dark: Boolean): Prefs.MapStyle =
+        if (choice == Prefs.MapStyle.AUTO) (if (dark) Prefs.MapStyle.DARK else Prefs.MapStyle.POSITRON) else choice
+    fun name(choice: Prefs.MapStyle, dark: Boolean): String = chosen(choice, dark).let { c -> looks.first { it.style == c }.name }
+}
+
+/** The map styles as picture cards, two to a row: a blue ring and a check on the chosen one. */
 @Composable
 fun BaseMapCards(choice: Prefs.MapStyle, dark: Boolean, onPick: (Prefs.MapStyle) -> Unit) {
     val context = LocalContext.current
-    val styles = Prefs.MapStyle.entries
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        styles.chunked(3).forEach { pair ->
+    val chosen = MapStyles.chosen(choice, dark)
+    Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        MapStyles.looks.chunked(2).forEach { pair ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                pair.forEach { s ->
-                    val picked = s == choice
-                    val bitmap = remember(s, dark) {
-                        runCatching { context.assets.open("thumbs/${s.flavor(dark)}.webp").use { BitmapFactory.decodeStream(it) } }.getOrNull()
+                pair.forEach { look ->
+                    val s = look.style
+                    val picked = s == chosen
+                    val bitmap = remember(s) {
+                        runCatching { context.assets.open("thumbs/${s.flavor(false)}.webp").use { BitmapFactory.decodeStream(it) } }.getOrNull()
                     }
-                    Column(Modifier.weight(1f).clickable { onPick(s) }.testTag("basemap-${s.name.lowercase()}")) {
-                        Box(Modifier.fillMaxWidth().aspectRatio(1.5f).clip(RoundedCornerShape(8.dp))
-                            .border(BorderStroke(if (picked) 2.5.dp else 1.dp,
-                                if (picked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(8.dp))) {
-                            bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxWidth(), contentScale = ContentScale.Crop) }
-                            if (picked) Icon(Icons.Default.CheckCircle, "Chosen", Modifier.align(Alignment.TopEnd).padding(6.dp),
-                                tint = MaterialTheme.colorScheme.primary)
+                    val ring by androidx.compose.animation.animateColorAsState(if (picked) DG.low else DG.hair, label = "ring")
+                    val shape = RoundedCornerShape(20.dp)
+                    Column(Modifier.weight(1f).clip(shape).background(Color.White.copy(alpha = .85f))
+                        .border(if (picked) 2.dp else 1.dp, ring, shape)
+                        .clickable { onPick(s) }.testTag("basemap-${s.name.lowercase()}")
+                        .semantics { selected = picked }) {
+                        Box(Modifier.fillMaxWidth().aspectRatio(1.65f).padding(6.dp).clip(RoundedCornerShape(14.dp)).background(DG.bg)) {
+                            bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                         }
-                        Text(s.label, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = if (picked) FontWeight.SemiBold else FontWeight.Normal)
+                        Column(Modifier.padding(start = 12.dp, end = 10.dp, top = 4.dp, bottom = 12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(look.name, style = PageType.rowLabel.copy(fontWeight = FontWeight.Bold), color = DG.ink)
+                                if (s == Prefs.MapStyle.POSITRON) Text("  Default", style = PageType.note, color = DG.sub)
+                                Spacer(Modifier.weight(1f))
+                                if (picked) Box(Modifier.size(22.dp).clip(CircleShape).background(DG.low), contentAlignment = Alignment.Center) {
+                                    DGIcon("check", Color.White, 14.dp, stroke = 3f)
+                                }
+                            }
+                            Text(look.about, style = PageType.rowSub, color = DG.sub, minLines = 2)
+                        }
                     }
                 }
-                repeat(3 - pair.size) { Spacer(Modifier.weight(1f)) }
+                repeat(2 - pair.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }

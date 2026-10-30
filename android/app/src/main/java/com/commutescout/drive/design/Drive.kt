@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import com.commutescout.drive.LaneLayout
 import com.commutescout.drive.PluginBadge
 import com.commutescout.drive.PluginStyle
+import com.commutescout.drive.UnitStyle
 import com.commutescout.drive.RoadMarker
 import com.commutescout.drive.Units
 import com.stadiamaps.ferrostar.core.NavigationUiState
@@ -325,7 +326,7 @@ fun SpeedDisc(speedMps: Double, limitKmh: Double?, modifier: Modifier = Modifier
 @Composable
 fun TripBar(ui: NavigationUiState, onEnd: () -> Unit, modifier: Modifier = Modifier) {
     val p = ui.progress
-    val eta = p?.let { LocalTime.now().plusSeconds(it.durationRemaining.toLong()).format(DateTimeFormatter.ofPattern("h:mm a")) } ?: "--"
+    val eta = p?.let { LocalTime.now().plusSeconds(it.durationRemaining.toLong()).format(DateTimeFormatter.ofPattern(UnitStyle.clockPattern, java.util.Locale.US)) } ?: "--"
     Row(modifier.fillMaxWidth().height(76.dp).glass(RoundedCornerShape(30.dp), elevation = 20.dp, strong = true)
         .padding(start = 20.dp, end = 12.dp).testTag("trip-bar"), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {

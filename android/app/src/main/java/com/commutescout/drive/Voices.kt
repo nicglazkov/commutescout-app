@@ -307,6 +307,10 @@ class Speaker(
         tts?.stop()
     }
 
+    /** A system voice to say the next sentences instead of the chosen one: the Voice page's play buttons. Null for the chosen voice. */
+    @Volatile var trial: String? = null
+        set(v) { field = v; applied = null }
+
     /** Pick the voice again before the next sentence: voices may have been downloaded or removed. */
     fun invalidate() { applied = null }
 
@@ -325,7 +329,7 @@ class Speaker(
     fun speak(text: String, id: String, flush: Boolean = false): Boolean {
         val t = tts ?: return false
         if (!_ready.value) return false
-        val neural = runCatching { Neural.active(prefs) }.getOrNull()
+        val neural = if (trial != null) null else runCatching { Neural.active(prefs) }.getOrNull()
         // Sentences already in the queue keep their order, whatever voice comes next.
         if (neural != null || SpeechQueue.busy(this)) {
             if (flush) t.stop()
@@ -347,11 +351,12 @@ class Speaker(
     private fun applyVoice() {
         val t = tts ?: return
         val online = Connectivity.online.value
-        val key = "${prefs.voiceName}|${prefs.voiceRate}|${prefs.voicePitch}|$online"
+        val name = trial ?: prefs.voiceName
+        val key = "$name|${prefs.voiceRate}|${prefs.voicePitch}|$online"
         if (key == applied) return
         applied = key
         val all = runCatching { t.voices?.toList() }.getOrNull().orEmpty()
-        val pick = VoicePick.resolve(prefs.voiceName, all.map(VoiceInfo::of), Locale.getDefault(), online)
+        val pick = VoicePick.resolve(name, all.map(VoiceInfo::of), Locale.getDefault(), online)
         val voice = pick?.let { p -> all.firstOrNull { it.name == p.name } }
         if (voice == null || t.setVoice(voice) != TextToSpeech.SUCCESS) {
             t.language = Locale.getDefault()

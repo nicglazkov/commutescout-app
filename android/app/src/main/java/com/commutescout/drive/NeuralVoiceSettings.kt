@@ -1,5 +1,11 @@
 package com.commutescout.drive
 
+import com.commutescout.drive.design.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
@@ -84,76 +90,69 @@ object PreviewPlayer {
 fun VoicePackGroup(packs: VoicePacks, listed: List<VoicePackInfo>, states: Map<String, PackState>, prefs: Prefs) {
     val shown = listed.filter { states[it.id] != null && states[it.id] != PackState.NotInstalled }
     if (shown.isEmpty()) return
-    var confirmDelete by remember { mutableStateOf<VoicePackInfo?>(null) }
-
-    GroupTitle("Downloaded voices")
-    PageGroup {
-        shown.forEachIndexed { i, pack ->
-            if (i > 0) HorizontalDivider()
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(pack.title, style = MaterialTheme.typography.titleSmall)
-                Text("${pack.voices.size} voices · ${Units.bytes(pack.downloadSize)} · ${NeuralLabels.GENERATED}",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                PackControls(pack, states.getValue(pack.id), onResume = { packs.download(pack, metered = false) },
-                    onMetered = { packs.download(pack, metered = true) }, onCancel = { packs.cancel(pack.id) }, onDelete = { confirmDelete = pack })
-            }
-        }
-    }
-    Note("One download adds every voice in a set. If a voice cannot say a sentence in time, the system voice says it.")
-
-    confirmDelete?.let { pack ->
-        AlertDialog(onDismissRequest = { confirmDelete = null },
-            title = { Text("Delete ${pack.title.lowercase()}?") },
-            text = { Text("This frees ${Units.bytes(packs.bytes(pack.id))}. Directions use the system voice until you download a voice again.") },
-            confirmButton = { TextButton({
+    val nav = LocalSettingsNav.current
+    fun delete(pack: VoicePackInfo) {
+        nav?.confirm(ConfirmRequest("Delete ${pack.title.lowercase()}?",
+            "This frees ${Units.bytes(packs.bytes(pack.id))}. Directions use the system voice until you download a voice again.",
+            listOf(ConfirmAction("Cancel"), ConfirmAction("Delete", BtnStyle.DANGER, "voice-delete-yes") {
                 if (pack.voices.any { it.id == prefs.voiceName }) prefs.voiceName = ""
                 PreviewPlayer.stop()
                 packs.delete(pack.id)
                 Engine.alerts.speaker.invalidate(); Engine.tts.speaker.invalidate()
-                confirmDelete = null
-            }, Modifier.testTag("voice-delete-yes")) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
-            dismissButton = { TextButton({ confirmDelete = null }) { Text("Cancel") } })
+            })))
     }
+    GroupHead("Downloaded voices")
+    Group {
+        shown.forEachIndexed { i, pack ->
+            if (i > 0) RowDivider(16.dp)
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(pack.title, style = PageType.rowLabel.copy(fontWeight = FontWeight.SemiBold), color = DG.ink)
+                Text("${pack.voices.size} voices · ${Units.bytes(pack.downloadSize)} · ${NeuralLabels.GENERATED}", style = PageType.rowSub, color = DG.sub)
+                PackControls(pack, states.getValue(pack.id), onResume = { packs.download(pack, metered = false) },
+                    onMetered = { packs.download(pack, metered = true) }, onCancel = { packs.cancel(pack.id) }, onDelete = { delete(pack) })
+            }
+        }
+    }
+    GroupFoot("One download adds every voice in a set. If a voice cannot say a sentence in time, the system voice says it.")
 }
 
 @Composable
 private fun PackControls(pack: VoicePackInfo, state: PackState, onResume: () -> Unit, onMetered: () -> Unit, onCancel: () -> Unit, onDelete: () -> Unit) {
     val tag = "voice-pack-${pack.id}"
+    @Composable fun Line(text: String, color: androidx.compose.ui.graphics.Color = DG.sub, buttons: @Composable () -> Unit) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text, Modifier.weight(1f), style = PageType.rowSub, color = color)
+            buttons()
+        }
+    }
+    @Composable fun Small(label: String, t: String, style: BtnStyle = BtnStyle.PLAIN, onClick: () -> Unit) {
+        DGButton(label, onClick, Modifier.padding(start = 6.dp).tag(t), style = style)
+    }
+    @Composable fun Bar(done: Long, total: Long, t: String? = null) {
+        Box(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(DG.ink.copy(alpha = .07f)).then(if (t != null) Modifier.tag(t) else Modifier)) {
+            Box(Modifier.fillMaxWidth(fraction(done, total)).height(6.dp).clip(CircleShape).background(DG.low))
+        }
+    }
     when (state) {
         PackState.NotInstalled -> {}
-        is PackState.Paused -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Paused · ${Units.bytes(state.done)} of ${Units.bytes(state.total)}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onDelete, Modifier.testTag("$tag-delete")) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-            TextButton(onResume, Modifier.testTag("$tag-download")) { Text("Resume") }
+        is PackState.Paused -> Line("Paused · ${Units.bytes(state.done)} of ${Units.bytes(state.total)}") {
+            Small("Delete", "$tag-delete", BtnStyle.WARN, onDelete); Small("Resume", "$tag-download", onClick = onResume)
         }
-        is PackState.Waiting -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            LinearProgressIndicator({ fraction(state.done, state.total) }, Modifier.fillMaxWidth())
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (state.metered) "Waiting for a connection" else "Waiting for Wi-Fi", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                if (!state.metered) TextButton(onMetered, Modifier.testTag("$tag-metered")) {
-                    Text("Use mobile data (${Units.bytes((state.total - state.done).coerceAtLeast(0))})")
-                }
-                TextButton(onCancel, Modifier.testTag("$tag-cancel")) { Text("Cancel") }
+        is PackState.Waiting -> {
+            Bar(state.done, state.total)
+            Line(if (state.metered) "Waiting for a connection" else "Waiting for Wi-Fi") {
+                if (!state.metered) Small("Use data (${Units.bytes((state.total - state.done).coerceAtLeast(0))})", "$tag-metered", onClick = onMetered)
+                Small("Cancel", "$tag-cancel", onClick = onCancel)
             }
         }
-        is PackState.Downloading -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            LinearProgressIndicator({ fraction(state.done, state.total) }, Modifier.fillMaxWidth().testTag("$tag-progress"))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Downloading · ${Units.bytes(state.done)} of ${Units.bytes(state.total)}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                TextButton(onCancel, Modifier.testTag("$tag-cancel")) { Text("Cancel") }
-            }
+        is PackState.Downloading -> {
+            Bar(state.done, state.total, "$tag-progress")
+            Line("Downloading · ${Units.bytes(state.done)} of ${Units.bytes(state.total)}") { Small("Cancel", "$tag-cancel", onClick = onCancel) }
         }
-        is PackState.Failed -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(state.reason, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            TextButton(onDelete, Modifier.testTag("$tag-delete")) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-            TextButton(onResume, Modifier.testTag("$tag-download")) { Text("Try again") }
+        is PackState.Failed -> Line(state.reason, DG.highInk) {
+            Small("Delete", "$tag-delete", BtnStyle.WARN, onDelete); Small("Try again", "$tag-download", onClick = onResume)
         }
-        is PackState.Installed -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Downloaded · ${Units.bytes(state.bytes)}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onDelete, Modifier.testTag("$tag-delete")) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-        }
+        is PackState.Installed -> Line("Downloaded · ${Units.bytes(state.bytes)}") { Small("Delete", "$tag-delete", BtnStyle.WARN, onDelete) }
     }
 }
 
@@ -168,7 +167,7 @@ fun VoiceLicensesPage() {
     val context = LocalContext.current
     val packs = remember { Neural.packs(Engine.app) }
     val installed by packs.installed.collectAsStateWithLifecycle()
-    Note("CommuteScout voices are computer generated. Each pack keeps its own license.")
+    GroupFoot("CommuteScout voices are computer generated. Each pack keeps its own license.", Modifier.padding(bottom = 4.dp))
     for (pack in packs.catalog.listed) {
         var notice by remember(pack.id, installed) { mutableStateOf<String?>(null) }
         var license by remember(pack.id, installed) { mutableStateOf<String?>(null) }
@@ -181,32 +180,28 @@ fun VoiceLicensesPage() {
                 license = runCatching { File(dir, "LICENSE").readText() }.getOrNull()
             }
         }
-        GroupTitle(pack.title)
-        PageGroup {
-            Text(pack.engineVersion, style = MaterialTheme.typography.titleSmall)
-            Text(pack.attribution, style = MaterialTheme.typography.bodyMedium)
-            Text("License: ${pack.license.name}", style = MaterialTheme.typography.bodyMedium)
-            if (pack.license.url.isNotEmpty()) LinkRow("License and model card") {
-                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(pack.license.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        GroupHead(pack.title)
+        Group {
+            SRow(pack.engineVersion, sub = pack.attribution)
+            RowDivider(18.dp)
+            SRow("License", value = pack.license.name)
+            if (pack.license.url.isNotEmpty()) {
+                RowDivider(18.dp)
+                SRow("License and model card", chevron = true, onClick = {
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(pack.license.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                })
             }
+            RowDivider(18.dp)
             if (pack.id !in installed) {
-                Text("The full LICENSE and NOTICE show here once the pack is downloaded.", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("The full LICENSE and NOTICE show here once the pack is downloaded.", Modifier.padding(16.dp), style = PageType.rowSub, color = DG.sub)
             } else {
                 notice?.let {
-                    Text("NOTICE", style = MaterialTheme.typography.labelLarge)
-                    Text(it, fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.testTag("voice-notice-${pack.id}"))
+                    Text(it, Modifier.padding(16.dp).testTag("voice-notice-${pack.id}"), fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = DG.ink)
+                    RowDivider(18.dp)
                 }
-                TextButton({ showLicense = !showLicense }, Modifier.testTag("voice-license-${pack.id}")) {
-                    Text(if (showLicense) "Hide LICENSE" else "Show LICENSE")
-                }
-                if (showLicense) license?.let { Text(it, fontFamily = FontFamily.Monospace, fontSize = 11.sp) }
+                SRow(if (showLicense) "Hide LICENSE" else "Show LICENSE", Modifier.testTag("voice-license-${pack.id}"), onClick = { showLicense = !showLicense })
+                if (showLicense) license?.let { Text(it, Modifier.padding(16.dp), fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = DG.ink) }
             }
         }
     }
-}
-
-@Composable
-private fun Note(text: String) {
-    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
 }

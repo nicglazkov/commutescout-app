@@ -233,6 +233,8 @@ fun DriveScreen(model: DriveViewModel) {
     val mapState = rememberNavigationMapState()
     val scope = rememberCoroutineScope()
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var settingsStart by remember { mutableStateOf(DebugLaunch.takeSettings()) }
+    LaunchedEffect(Unit) { if (settingsStart != null) showSettings = true }
     var showLayers by remember { mutableStateOf(false) }
     var reportAt by rememberSaveable(stateSaver = latLonSaver) { mutableStateOf<LatLon?>(null) }
     val toastText by model.toast.collectAsStateWithLifecycle()
@@ -265,7 +267,8 @@ fun DriveScreen(model: DriveViewModel) {
         model.setLocationPermission(fine || coarse)
         if (coarse && !fine) model.toast("Precise location gives better alerts. Turn it on in Settings.")
     }
-    LaunchedEffect(Unit) { if (!hasPermission) launcher.launch(permissions) }
+    // The first-run screen asks for location itself, a step at a time.
+    LaunchedEffect(Unit) { if (!hasPermission && prefs.welcomeDone) launcher.launch(permissions) }
 
     // Ferrostar follows the driver while browsing; a pin or a route
     // preview takes the camera over, and Browsing hands it back.
@@ -454,7 +457,7 @@ fun DriveScreen(model: DriveViewModel) {
                 .withProgressView { _, _, _ -> }
                 .withRoadNameView { _, _, _ -> }
                 .withCustomOverlayView { modifier ->
-                if (!uiState.isNavigating()) {
+                if (!uiState.isNavigating() && prefs.welcomeDone && !showSettings) {
                     BrowsingOverlay(modifier, model, offlineNotice, onSettings = { showSettings = true },
                         note = if (tripDone) navNote else null,
                         banner = bannerItem?.let { next -> {
@@ -501,7 +504,7 @@ fun DriveScreen(model: DriveViewModel) {
         val tallCard = !isNavigating && room < (if (abs(bearing) > 1.0) 168.dp else 116.dp)
         // Map controls: 2D/3D, compass when turned, my location. While
         // navigating Ferrostar draws its own zoom and recenter buttons.
-        if (!tallCard && !isNavigating) Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = DG.gutter, bottom = aboveCard),
+        if (!tallCard && !isNavigating && prefs.welcomeDone && !showSettings && !showLayers) Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = DG.gutter, bottom = aboveCard),
             verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             if (abs(bearing) > 1.0) {
                 GlassRound("nav", "Face north", { scope.launch { mapState.cameraState.animateTo(mapState.cameraState.position.copy(bearing = 0.0)) } },
@@ -564,8 +567,9 @@ fun DriveScreen(model: DriveViewModel) {
         "system" -> DebugScenes.System()
         else -> {}
     }
-    if (showSettings) SettingsSheet(model) { showSettings = false; model.applyPrefs() }
+    if (showSettings) SettingsSheet(model, SettingsPage.of(settingsStart)) { showSettings = false; settingsStart = null; model.applyPrefs() }
     if (showLayers) LayersSheet(model) { showLayers = false }
+    if (!prefs.welcomeDone) WelcomeScreen(model) { prefs.welcomeDone = true }
     if (showTools) ToolsSheet(onPick = { showTools = false; if (it == Tool.LAYERS) showLayers = true else tool = it }) { showTools = false }
     when (tool) {
         Tool.ALERTS -> AlertsListSheet(model, mapState) { tool = null }
@@ -1309,42 +1313,9 @@ private fun RoutesCard(routes: List<Route>, place: Place, model: DriveViewModel,
 
 
 /** What the map shows: the same layers as the website's Layers tool. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** The map's layers and styles, in the Day Glass+ sheet Settings uses. */
 @Composable
-private fun LayersSheet(model: DriveViewModel, onClose: () -> Unit) {
-    val prefs = model.prefs
-    val context = LocalContext.current
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("layers-sheet")) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Layers", style = MaterialTheme.typography.titleLarge)
-            Heading("Base map")
-            // The same cards as Settings, so the choice looks the same everywhere.
-            BaseMapCards(prefs.mapStyle, model.isDark) { prefs.mapStyle = it }
-            ToggleRow("Traffic", prefs.traffic) { prefs.traffic = it }
-            ToggleRow("3D perspective", prefs.is3D) { model.toggle3D() }
-            Heading("Sources")
-            Choice("Show", Prefs.SourceFilter.entries.map { it.label }, prefs.sourceFilter.ordinal) {
-                prefs.sourceFilter = Prefs.SourceFilter.entries[it]; model.layersChanged()
-            }
-            Heading("On the road")
-            Prefs.layerKinds.forEach { k -> ToggleRow(k.label, prefs.isChosen(k.key)) { prefs.setShown(k.key, it); model.layersChanged() } }
-            Heading("Plugins")
-            val catalog by model.sources.catalog.collectAsStateWithLifecycle()
-            val off by model.sources.hidden.collectAsStateWithLifecycle()
-            LaunchedEffect(Unit) { model.sources.loadCatalog() }
-            catalog.forEach { p ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    PluginBadge(p.id, PluginStyle.oneCategory(p.kinds), 22.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Text(p.name, Modifier.weight(1f), maxLines = 2)
-                    Switch(p.id !in off, { on -> model.sources.setOn(p.id, on); model.markers.refresh(true) },
-                        Modifier.testTag("plugin-switch-${p.id}"))
-                }
-            }
-            LinkRow("Where this data comes from") { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://commutescout.com/data-sources"))) }
-        }
-    }
-}
+private fun LayersSheet(model: DriveViewModel, onClose: () -> Unit) = LayersOverlay(model, onClose)
 
 /** Scripted drive for automated testing: `--ez csAutoDrive true` on launch (debug only). */
 object AutoDrive {

@@ -172,6 +172,12 @@ object Units {
         return if (km < 1.5) "one kilometer" else "${Math.round(km)} kilometers"
     }
 
+    /** A clock time in the driver's clock: "8:42 AM" or "08:42". */
+    fun clock(ms: Long): String = UnitRules.clock(java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalTime(), UnitStyle.h24)
+
+    /** A temperature in the driver's units, from Celsius. */
+    fun temperature(celsius: Double): String = UnitRules.temperature(celsius, UnitStyle.fahrenheit ?: useMiles)
+
     fun duration(seconds: Double): String {
         val m = (seconds / 60).toInt()
         if (m < 60) return "$m min"
