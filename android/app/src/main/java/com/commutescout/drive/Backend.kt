@@ -439,3 +439,15 @@ object LiveData {
         return Backend.get<MapData>("/api/mapdata", query).markers
     }
 }
+
+/** Leave later: drive time if you leave now or at the next few marks (GET /api/leave-later). */
+object LeaveLaterApi {
+    /** The answer, or null on any error (400, 429, 503, no answer): the row then stays hidden. */
+    suspend fun get(from: LatLon, to: LatLon, window: Int = 60, step: Int = 10): LeaveLaterAnswer? = runCatching {
+        Backend.get<LeaveLaterAnswer>("/api/leave-later", mapOf(
+            "from" to Backend.num(from.lat, 5) + "," + Backend.num(from.lon, 5),
+            "to" to Backend.num(to.lat, 5) + "," + Backend.num(to.lon, 5),
+            "window" to window.toString(), "step" to step.toString(),
+        ))
+    }.onFailure { android.util.Log.i("LeaveLater", "no answer: $it") }.getOrNull()?.takeIf { LeaveLater.usable(it) }
+}

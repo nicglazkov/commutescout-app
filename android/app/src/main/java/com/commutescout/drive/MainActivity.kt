@@ -74,6 +74,8 @@ class MainActivity : ComponentActivity() {
             // that page; csFixtures fills it with made-up data, signed out.
             if (intent?.getBooleanExtra("csFixtures", false) == true) MorePages.fixtures = true
             intent?.getStringExtra("csPage")?.let { MorePages.wanted = it }
+            // "csArrive" shows the arrive sheet for a made-up trip, for screenshots.
+            if (intent?.getBooleanExtra("csArrive", false) == true) model.showArriveDemo()
             // "csView" = "lat,lon,zoom" puts the camera somewhere, for screenshots.
             intent?.getStringExtra("csView")?.split(",")?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 3 }?.let { model.wantedView = it }
             // "csTour" zooms and pans through a set of views, for a recording.
