@@ -45,9 +45,17 @@ enum DGKind: String, CaseIterable {
     }
 
     init(marker m: RoadMarker) {
-        let words = [m.type, m.label, m.flareKind, m.cls].compactMap { $0?.lowercased() }.joined(separator: " ")
+        self.init(kind: m.kind, words: [m.type, m.label, m.flareKind, m.cls].compactMap { $0?.lowercased() }.joined(separator: " "))
+    }
+
+    /// From a push: the map's kind ("incident") and the alert's title.
+    init(markerKind: String, title: String?) {
+        self.init(kind: markerKind, words: (title ?? "").lowercased())
+    }
+
+    private init(kind: String, words: String) {
         func has(_ any: String...) -> Bool { any.contains { words.contains($0) } }
-        switch m.kind {
+        switch kind {
         case "lane_closure": self = .closure
         case "chain_control": self = .chain
         case "wildfire": self = .fire

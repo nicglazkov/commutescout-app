@@ -293,6 +293,15 @@ final class MapOverlay {
         return nil
     }
 
+    /// Where a cleared watch alert's event was, as a struck-through pin.
+    static func goneFeature(for ref: AlertRef) -> MLNPointFeature {
+        let f = MLNPointFeature(coordinate: ref.coordinate)
+        let k = DGKind(markerKind: ref.kind, title: ref.title)
+        f.attributes = ["key": "gone:" + (ref.id ?? "\(ref.lat),\(ref.lon)"), "kind": ref.kind, "geo": "dot",
+                        "icon": "icon:dg:gone:\(k.rawValue)", "tint": UIColor(DGTone.clear.color).hex]
+        return f
+    }
+
     /// One marker as a feature with everything the layers read.
     static func feature(for m: RoadMarker) -> MLNPointFeature {
         let f = MLNPointFeature(coordinate: m.coordinate)
