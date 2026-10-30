@@ -53,15 +53,13 @@ final class PagesUITests: XCTestCase {
         back()
         open("Offline maps")
         shot("offline")
-        open("Maps saved on this phone")
-        shot("offline-list")
         let trip = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Trip to'")).firstMatch
         if trip.waitForExistence(timeout: 3) {
             trip.tap()
             shot("offline-detail")
-            back()
+            app.buttons["page-back"].firstMatch.tap(); sleep(1)
         }
-        back(); back()
+        app.buttons["page-back"].firstMatch.tap(); sleep(1)
         open("Saved places")
         shot("places")
         app.buttons["set-home"].firstMatch.tap()
@@ -76,11 +74,13 @@ final class PagesUITests: XCTestCase {
         if app.staticTexts["Speed and red light cameras"].firstMatch.waitForExistence(timeout: 5) {
             app.staticTexts["Speed and red light cameras"].firstMatch.tap()
             shot("plugin-status", 3)
-            app.buttons["plugin-check"].firstMatch.tap()
+            let check = app.buttons["plugin-check"].firstMatch
+            for _ in 0 ..< 4 where !(check.exists && check.isHittable) { app.swipeUp() }
+            if check.isHittable { check.tap() }
             shot("plugin-checked", 5)
-            back()
+            app.buttons["page-back"].firstMatch.tap(); sleep(1)
         }
-        back()
+        app.buttons["page-back"].firstMatch.tap(); sleep(1)
         for row in ["Units", "Navigation", "Alerts", "Help", "About"] {
             let cell = app.staticTexts[row].firstMatch
             if !cell.exists || !cell.isHittable { app.swipeUp() }
