@@ -549,6 +549,16 @@ fun DriveScreen(model: DriveViewModel) {
         }
     }
 
+    // Debug builds: csGallery=tool:<name> opens a tool page, plugin:<id> a plugin's page, for screenshots.
+    var debugPlugin by remember { mutableStateOf<String?>(null) }
+    if (BuildConfig.DEBUG) LaunchedEffect(Unit) {
+        val g = model.wantedGallery ?: return@LaunchedEffect
+        delay(1500)
+        if (g == "tool:tools") showTools = true
+        else if (g.startsWith("tool:")) tool = Tool.entries.firstOrNull { it.name.equals(g.removePrefix("tool:"), true) }
+        else if (g.startsWith("plugin:")) debugPlugin = g.removePrefix("plugin:")
+    }
+    debugPlugin?.let { PluginStatusSheet(model, it) { debugPlugin = null } }
     if (BuildConfig.DEBUG) when (model.wantedGallery) {
         "catalog" -> DebugScenes.Catalog()
         "system" -> DebugScenes.System()
