@@ -96,7 +96,7 @@ enum AutoDrive {
         if args.contains("-csWatchCleared") {
             AlertInbox.shared.deliver(AlertRef(
                 id: "sample-crash", kind: "incident", lat: 37.442, lon: -122.143,
-                title: "Crash on US-101", body: "Two vehicles, right lane blocked. CHP is on the way.",
+                title: "Crash on US-101", body: "US-101 S at University Ave",
                 watch: "Home area", sentAt: Date().addingTimeInterval(-25 * 60), status: "cleared"))
         }
         if args.contains("-csWatchSummary") { AlertInbox.shared.deliverSummary() }

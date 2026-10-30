@@ -9,7 +9,7 @@ final class WatchPushTests: XCTestCase {
         var info: [AnyHashable: Any] = [
             "url": "https://commutescout.com/watch",
             "event_id": "chp:77", "event_kind": "incident", "event_lat": "37.442", "event_lon": "-122.143",
-            "event_title": "Crash on US-101", "event_body": "Two vehicles, right lane blocked.",
+            "event_title": "Crash on US-101", "event_body": "US-101 S at University Ave",
             "event_watch": "Home area", "event_status": "cleared", "event_sent_at": "1793205300",
         ]
         if let lanes { info["event_lane_layout"] = lanes }
@@ -51,6 +51,18 @@ final class WatchPushTests: XCTestCase {
         XCTAssertEqual(t.said, "What your alert said")
         let noLanes = WatchClearedText.make(try XCTUnwrap(cleared()), clearedAt: nil, now: now)
         XCTAssertEqual(noLanes.detail, "Cleared.")
+    }
+
+    func testSubtitleIsTheEventsPlaceThenTheWatch() throws {
+        let ref = try XCTUnwrap(cleared())
+        let t = WatchClearedText.make(ref, clearedAt: nil, now: now)
+        XCTAssertEqual(t.place, "US-101 S at University Ave")
+        XCTAssertEqual(t.from, "From your Home area watch")
+        var bare = ref
+        bare.body = "  "
+        let w = WatchClearedText.make(bare, clearedAt: nil, now: now)
+        XCTAssertEqual(w.place, "Home area")
+        XCTAssertNil(w.from)
     }
 
     func testLowerFirstKeepsRoadNames() {
