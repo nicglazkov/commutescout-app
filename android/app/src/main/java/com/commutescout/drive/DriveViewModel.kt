@@ -578,6 +578,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         val trip = _resumable.value ?: return
         if (_here.value == null && !simulating.value) { toast("Waiting for your location. Try again in a moment."); return }
         _resumable.value = null
+        resumedFrom = trip.startedAt
         Log.i("DriveViewModel", "resume trip, saved ${(System.currentTimeMillis() - trip.startedAt) / 1000} s ago")
         start(trip.route, trip.place)
     }
@@ -656,6 +657,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         origin = null
         clearMarker()
         _state.value = DriveState.Found(place)
+        loadPreview(place)
     }
 
     fun clearFound() { if (_state.value is DriveState.Found) _state.value = DriveState.Browsing }
@@ -698,7 +700,14 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     // routes
 
     fun routes(place: Place) {
-        val from = origin?.let { LatLon(it.lat, it.lon) } ?: if (simulating.value) LatLon(37.3382, -121.8863) else _here.value
+        // The place card already fetched these: no second wait.
+        previewFor(place)?.routes?.let { found ->
+            clearMarker()
+            routeJob?.cancel()
+            if (autoStart) { autoStart = false; start(found.first(), place) } else _state.value = DriveState.Choosing(found, place)
+            return
+        }
+        val from = routeFrom()
         if (from == null) {
             // The permission case is the one worth a dialog; a fix on its way is a toast.
             if (!_hasPermission.value) _error.value = "Location is off for CommuteScout Drive. Turn it on in Settings to navigate."
@@ -720,6 +729,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
                     )
                 }
                 if (found.isEmpty()) throw BackendError("No route found. Try a different destination.")
+                if (autoStart) { autoStart = false; start(found.first(), place); return@launch }
                 _state.value = DriveState.Choosing(found, place)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -741,6 +751,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
 
     /** "Finding routes" can take twenty seconds on a weak signal: back to the pin. */
     fun cancelRouting() {
+        autoStart = false
         routeJob?.cancel(); routeJob = null
         if (_state.value is DriveState.Routing) {
             _state.value = routingPlace?.let { DriveState.Found(it) } ?: DriveState.Browsing
@@ -754,6 +765,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             Engine.tripActive = true
             Engine.core.startNavigation(route)
             Engine.tripPlace = place
+            beginTripRecord(route, place)
             TripStore.save(route, place)
             saveTripMap(route, place, manual = false)
             setDestination(place.shortName)
@@ -792,6 +804,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         }
         Engine.alerts.startFreeDrive()
         Neural.tripEnded()
+        endTripRecord()
         _state.value = DriveState.Browsing
     }
 
@@ -799,5 +812,125 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         super.toggleMute()
         // One mute for both voices: guidance and the hazard alerts.
         Engine.alerts.muted = Engine.tts.isMuted
+    }
+
+    // trip pages: a quiet route preview for the place card, what is on
+    // the way, leave later, and the trip the arrive sheet sums up.
+
+    /** Routes fetched for a place card; [routes] null when the fetch failed. */
+    data class Preview(val lat: Double, val lon: Double, val routes: List<Route>?, val at: Long)
+    private val _preview = MutableStateFlow<Preview?>(null)
+    val preview = _preview.asStateFlow()
+    /** Events along each previewed route, one list per route. */
+    private val _onTheWay = MutableStateFlow<List<List<Upcoming>>>(emptyList())
+    val onTheWay = _onTheWay.asStateFlow()
+    private val _leaveLater = MutableStateFlow<Pair<LatLon, LeaveLaterAnswer>?>(null)
+    val leaveLater = _leaveLater.asStateFlow()
+    private var previewJob: Job? = null
+    private var leaveJob: Job? = null
+    private var leaveAsked = 0L
+    private var autoStart = false
+    private var resumedFrom: Long? = null
+
+    private fun routeFrom(): LatLon? = origin?.let { LatLon(it.lat, it.lon) } ?: if (simulating.value) LatLon(37.3382, -121.8863) else _here.value
+
+    private fun Preview.matches(p: Place) = Math.abs(lat - p.lat) < 1e-5 && Math.abs(lon - p.lon) < 1e-5
+
+    /** A fresh preview for [place], if one landed. */
+    fun previewFor(place: Place): Preview? =
+        _preview.value?.takeIf { it.matches(place) && it.routes != null && System.currentTimeMillis() - it.at < 180_000 }
+
+    /** "Go" on the place card: the first route, started now. */
+    fun go(place: Place) { autoStart = true; routes(place) }
+
+    private fun loadPreview(place: Place) {
+        if (previewFor(place) != null) return
+        previewJob?.cancel()
+        _preview.value = null
+        _onTheWay.value = emptyList()
+        val from = routeFrom() ?: return
+        previewJob = viewModelScope.launch {
+            val found = try {
+                withContext(Dispatchers.IO) {
+                    Engine.core.getRoutes(
+                        UserLocation(GeographicCoordinate(from.lat, from.lon), 6.0, null, Instant.now(), null),
+                        listOf(Waypoint(GeographicCoordinate(place.lat, place.lon), WaypointKind.BREAK)),
+                    )
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Throwable) { Log.i("DriveViewModel", "preview: $e"); null }
+            _preview.value = Preview(place.lat, place.lon, found?.takeIf { it.isNotEmpty() }, System.currentTimeMillis())
+            if (found.isNullOrEmpty()) return@launch
+            _onTheWay.value = found.map { wayOf(it, heldMarkers()) }
+            // The markers held are the map's view; the route's own box can
+            // reach past it. A box wider than a long day's drive keeps the view's.
+            val r = found.first()
+            val span = AlertsEngine.meters(LatLon(r.bbox.sw.lat, r.bbox.sw.lng), LatLon(r.bbox.ne.lat, r.bbox.ne.lng))
+            if (span < 400_000) {
+                val more = try {
+                    LiveData.markers(r.bbox.sw.lat - .01, r.bbox.sw.lng - .01, r.bbox.ne.lat + .01, r.bbox.ne.lng + .01)
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Throwable) { null }
+                if (more != null && previewFor(place) != null) _onTheWay.value = found.map { wayOf(it, more + heldMarkers()) }
+            }
+        }
+    }
+
+    /** Events along [route] among the markers held now. */
+    fun eventsOn(route: Route): List<Upcoming> = wayOf(route, heldMarkers())
+
+    private fun wayOf(route: Route, markers: List<RoadMarker>): List<Upcoming> {
+        val shown = markers.filter { prefs.isShown(it.kind) && !it.tooMinorToAnnounce }
+        return OnTheWay.along(route.geometry.map { LatLon(it.lat, it.lng) }, shown)
+    }
+
+    /** Leave later for the routes sheet, asked once per place every five minutes. */
+    fun loadLeaveLater(place: Place) {
+        val to = LatLon(place.lat, place.lon)
+        val have = _leaveLater.value
+        if (have != null && have.first == to && System.currentTimeMillis() - leaveAsked < 300_000) return
+        if (have?.first != to) _leaveLater.value = null
+        val from = routeFrom() ?: return
+        leaveJob?.cancel()
+        leaveAsked = System.currentTimeMillis()
+        leaveJob = viewModelScope.launch {
+            LeaveLaterApi.get(from, to)?.let { _leaveLater.value = to to it }
+        }
+    }
+
+    private val _trip = MutableStateFlow<TripRecord?>(null)
+    /** The trip under way, or just finished, for the arrive sheet. */
+    val trip = _trip.asStateFlow()
+    private var tripWatch: Job? = null
+    /** Debug builds: the arrive sheet with a made-up trip, for screenshots ("csArrive"). */
+    val arriveDemo = MutableStateFlow(false)
+
+    private fun beginTripRecord(route: Route, place: Place) {
+        _trip.value = TripRecord(place, resumedFrom ?: System.currentTimeMillis(), route.distance)
+        resumedFrom = null
+        tripWatch?.cancel()
+        // Every alert that reached the strip ahead is one the driver was told about.
+        tripWatch = viewModelScope.launch {
+            combine(alerts.ahead, alerts.hereAlong) { ahead, along -> ahead.filter { it.alongMeters - along in 0.0..prefs.stripAheadMeters } }
+                .collect { told ->
+                    val t = _trip.value ?: return@collect
+                    val add = told.map { it.marker }.filter { m -> t.warned.none { it.key == m.key } }
+                    if (add.isNotEmpty()) _trip.value = t.copy(warned = t.warned + add)
+                }
+        }
+    }
+
+    /** The trip reached its end: the time it did, once. */
+    fun arrived() { _trip.value?.let { if (it.arrivedAt == null) _trip.value = it.copy(arrivedAt = System.currentTimeMillis()) } }
+
+    private fun endTripRecord() { tripWatch?.cancel(); tripWatch = null; _trip.value = null; arriveDemo.value = false }
+
+    fun endArriveDemo() { arriveDemo.value = false; _trip.value = null }
+
+    fun showArriveDemo() {
+        val now = System.currentTimeMillis()
+        _trip.value = TripRecord(Place(name = "Palo Alto, CA", lat = 37.442, lon = -122.143, kind = PlaceKind.recent),
+            now - 26 * 60_000, 29_934.0, listOf(
+                RoadMarker(kind = "incident", lat = 37.40, lon = -122.10, id = "demo-crash", type = "Trfc Collision-No Inj", route = "US-101 S"),
+                RoadMarker(kind = "lane_closure", lat = 37.38, lon = -122.08, id = "demo-lanes", route = "I-280 S")), now)
+        arriveDemo.value = true
     }
 }

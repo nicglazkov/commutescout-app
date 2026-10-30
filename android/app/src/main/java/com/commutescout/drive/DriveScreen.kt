@@ -341,8 +341,7 @@ fun DriveScreen(model: DriveViewModel) {
     val speedNow = (if (Units.useMiles) speedMps * 2.236936 else speedMps * 3.6).roundToInt()
     val limitShown = limitNow?.let { (if (Units.useMiles) it / 1.609344 else it).roundToInt() }
     val navNote: SysNote? = when {
-        tripDone -> SysNote("arrive", "arrive", Tone.GOOD, "You have arrived", (state as? DriveState.Navigating)?.place?.name,
-            action = "Done", onAction = { model.stopNavigation() }, inline = true)
+        tripDone -> null // the arrive sheet says it
         offlineNotice != null -> SysNote("offline", "offline", Tone.CLEAR, offlineNotice.first, offlineNotice.second)
         online && uiState.isCalculatingNewRoute == true -> SysNote("reroute", "reroute", Tone.LOW, "Rerouting", "Finding a new route from here.")
         fixAge > 12 -> SysNote("gps", "gps", Tone.CLEAR, "GPS signal lost", "Following the route from your last position")
@@ -506,7 +505,7 @@ fun DriveScreen(model: DriveViewModel) {
         val tallCard = !isNavigating && room < (if (abs(bearing) > 1.0) 168.dp else 116.dp)
         // Map controls: 2D/3D, compass when turned, my location. While
         // navigating Ferrostar draws its own zoom and recenter buttons.
-        if (!tallCard && !isNavigating && !MapDrawing.cover && prefs.welcomeDone && !showSettings && !showLayers) Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = DG.gutter, bottom = aboveCard),
+        if (!tallCard && !isNavigating && !MapDrawing.cover && !searchFocused.value && prefs.welcomeDone && !showSettings && !showLayers && (state is DriveState.Browsing || state is DriveState.Routing)) Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = DG.gutter, bottom = aboveCard),
             verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             if (abs(bearing) > 1.0) {
                 GlassRound("nav", "Face north", { scope.launch { mapState.cameraState.animateTo(mapState.cameraState.position.copy(bearing = 0.0)) } },
@@ -540,14 +539,8 @@ fun DriveScreen(model: DriveViewModel) {
             } else when (val s = state) {
                 is DriveState.Browsing -> resumable?.let { ResumeCard(it, model) }
                     ?: if (!searchFocused.value && !showSettings && !showTools && reportAt == null) PlacesTray(model, here) else Unit
-                is DriveState.Found -> PlaceCard(s.place, here, model)
-                is DriveState.Routing -> Card(Modifier.padding(12.dp).fillMaxWidth().safeDrawingPadding()) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(20.dp))
-                        Spacer(Modifier.width(10.dp)); Text("Finding routes", Modifier.weight(1f))
-                        TextButton({ model.cancelRouting() }) { Text("Cancel") }
-                    }
-                }
+                is DriveState.Found -> PlaceCard(s.place, here, model) { tool = Tool.WATCHES }
+                is DriveState.Routing -> FindingRoutesCard { model.cancelRouting() }
                 is DriveState.Choosing -> RoutesCard(s.routes, s.place, model) { chosenRoute = it }
                 else -> {}
             }
@@ -588,6 +581,10 @@ fun DriveScreen(model: DriveViewModel) {
     }
     if (MorePages.offlineOpen) OfflineMapsSheet(model) { MorePages.offlineOpen = false }
     reportAt?.let { at -> ReportSheet(model, at.lat, at.lon) { reportAt = null } }
+    val arriveDemo by model.arriveDemo.collectAsStateWithLifecycle()
+    if (tripDone || arriveDemo) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+        ArriveSheet(model, (state as? DriveState.Navigating)?.place) { if (arriveDemo) model.endArriveDemo() else model.stopNavigation() }
+    }
     // Errors rise in the design's confirm card; the last words stay while it slides away.
     val lastError = remember { mutableStateOf<String?>(null) }
     if (error != null) lastError.value = error
@@ -853,17 +850,7 @@ private fun PlacesTray(model: DriveViewModel, here: LatLon?) {
 /** No signal: what still works, and how old the road reports are. */
 @Composable
 private fun OfflineBanner(title: String, detail: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Row(Modifier.fillMaxWidth().shadow(4.dp, RoundedCornerShape(14.dp))
-        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(14.dp))
-        .padding(horizontal = 14.dp, vertical = 10.dp).testTag("offline-banner"),
-        verticalAlignment = Alignment.Top) {
-        Icon(icon, null, Modifier.size(18.dp), tint = Color(0xFFF57C00))
-        Spacer(Modifier.width(10.dp))
-        Column {
-            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
+    Note("offline", Tone.CLEAR, title, detail, Modifier.fillMaxWidth(), tag = "offline-banner")
 }
 
 /**
@@ -871,21 +858,7 @@ private fun OfflineBanner(title: String, detail: String, icon: androidx.compose.
  * or without a signal, since guidance only needs the saved route.
  */
 @Composable
-private fun ResumeCard(trip: SavedTrip, model: DriveViewModel) {
-    Card(Modifier.padding(12.dp).fillMaxWidth().safeDrawingPadding().testTag("resume-card")) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Column {
-                Text("Resume your trip to ${trip.place.shortName}?", style = MaterialTheme.typography.titleMedium)
-                Text("Started at ${OfflineText.time(trip.startedAt)}. Works without a signal.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button({ model.resume() }, Modifier.weight(1f).testTag("resume-trip")) { Text("Resume") }
-                OutlinedButton({ model.dismissResume() }, Modifier.testTag("dismiss-trip")) { Text("Not now") }
-            }
-        }
-    }
-}
+private fun ResumeCard(trip: SavedTrip, model: DriveViewModel) = ResumeTripCard(trip, model)
 
 @Composable
 private fun RoundIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: Color = MaterialTheme.colorScheme.primary,
@@ -904,135 +877,11 @@ private fun RoundText(text: String, tag: String, onClick: () -> Unit) {
 }
 
 /**
- * Find anything: an address, a place, or coordinates typed as
- * "37.35, -121.94". Saved and recent places match instantly; the server
- * is asked after a short pause and older answers never replace newer ones.
+ * The capsule: search while browsing (see SearchPanel in Trip.kt), the
+ * place's name with a place found, the trip while choosing a route.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SearchBar(model: DriveViewModel, onSettings: () -> Unit) {
-    var text by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<Suggestion>>(emptyList()) }
-    var focused by remember { mutableStateOf(false) }
-    var searching by remember { mutableStateOf(false) }
-    var seq by remember { mutableStateOf(0) }
-    var job by remember { mutableStateOf<Job?>(null) }
-    val scope = rememberCoroutineScope()
-    val focus = LocalFocusManager.current
-    val here by model.here.collectAsStateWithLifecycle()
-    val places by model.places.places.collectAsStateWithLifecycle()
-
-    val q = text.trim().lowercase()
-    val local = if (q.isEmpty()) emptyList() else places.filter {
-        it.name.lowercase().startsWith(q) || it.shortName.lowercase().startsWith(q) ||
-            (it.kind == PlaceKind.home && "home".startsWith(q)) || (it.kind == PlaceKind.work && "work".startsWith(q))
-    }.take(3)
-
-    fun pick(name: String, lat: Double, lon: Double) {
-        focus.clearFocus(); text = ""; results = emptyList()
-        model.show(Place(name = name, lat = lat, lon = lon, kind = PlaceKind.recent))
-    }
-
-    fun schedule(raw: String) {
-        job?.cancel()
-        val t = raw.trim()
-        parseCoordinates(t)?.let { c -> results = listOf(Suggestion("%.5f, %.5f".format(c.lat, c.lon), c.lat, c.lon)); return }
-        if (t.length < 2) { results = emptyList(); return }
-        val mine = ++seq
-        job = scope.launch {
-            delay(120)
-            searching = true
-            try {
-                val found = runCatching { Search.suggest(t, here?.let { it.lat to it.lon }) }.getOrNull()
-                if (found != null && mine == seq) results = found
-            } finally { if (mine == seq) searching = false }
-        }
-    }
-
-    suspend fun submit() {
-        val t = text.trim()
-        parseCoordinates(t)?.let { pick("%.5f, %.5f".format(it.lat, it.lon), it.lat, it.lon); return }
-        local.firstOrNull()?.let { pick(it.name, it.lat, it.lon); return }
-        results.firstOrNull()?.let { pick(it.name, it.lat, it.lon); return }
-        if (t.isEmpty()) return
-        val result = runCatching { Search.geocode(t) }
-        val found = result.getOrNull()?.firstOrNull()
-        // Pressing search used to do nothing at all when nothing came
-        // back. No answer is not the same as no match, so they read differently.
-        if (found != null) pick(found.name, found.lat, found.lon)
-        else model.showError(when {
-            result.isSuccess -> "Nothing found for \"$t\". Try adding a city."
-            !Connectivity.online.value || Connectivity.isOffline(result.exceptionOrNull()) -> OfflineText.SEARCH
-            else -> "Search is not answering right now. Try again in a moment."
-        })
-    }
-
-    Column {
-        Row(Modifier.fillMaxWidth().height(54.dp).glass(RoundedCornerShape(28.dp), elevation = 18.dp, strong = true).padding(start = 18.dp, end = 7.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            DGIcon("search", DG.ink, 22.dp)
-            Spacer(Modifier.width(12.dp))
-            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                if (text.isEmpty()) Text("Where to?", style = DGType.search, color = DG.sub, maxLines = 1)
-                BasicTextField(
-                    value = text, onValueChange = { text = it; schedule(it) },
-                    modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused; searchFocused.value = it.isFocused }.testTag("search"),
-                    textStyle = DGType.search.copy(color = DG.ink), singleLine = true, cursorBrush = SolidColor(DG.low),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { scope.launch { submit() } }),
-                )
-            }
-            when {
-                searching -> CircularProgressIndicator(Modifier.padding(horizontal = 8.dp).size(18.dp), color = DG.low, strokeWidth = 2.dp)
-                text.isNotEmpty() -> GhostRound("close", "Clear", { text = ""; results = emptyList() }, size = 40.dp)
-                else -> GhostRound("gear", "Settings", onSettings, Modifier.testTag("settings"), size = 40.dp, tint = DG.ink)
-            }
-        }
-        if (focused && text.isEmpty()) {
-            // Quick picks in the order the web map uses: Home, Work, up to 5
-            // favorites, then the last 10 destinations. Any of them can be removed.
-            Box(Modifier.padding(top = 8.dp).fillMaxWidth().glass(RoundedCornerShape(26.dp), elevation = 18.dp, strong = true)) {
-                Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
-                    model.places.home?.let { p -> RowItem(Icons.Default.Home, "Home", p.shortName, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
-                    model.places.work?.let { p -> RowItem(Icons.Default.Work, "Work", p.shortName, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
-                    model.places.saved.take(5).forEach { p -> RowItem(Icons.Default.Star, p.shortName, p.name, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
-                    model.places.recents.take(10).forEach { p -> RowItem(Icons.Default.History, p.shortName, p.name, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
-                    if (places.isEmpty()) Text("Type a place, an address, or coordinates like ${exampleCoords(model.here.value)}.",
-                        Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        } else if (focused && text.isNotEmpty()) {
-            Box(Modifier.padding(top = 8.dp).fillMaxWidth().glass(RoundedCornerShape(26.dp), elevation = 18.dp, strong = true)) {
-                Column(Modifier.padding(vertical = 6.dp)) {
-                    local.forEach { p ->
-                        val icon = when (p.kind) { PlaceKind.home -> Icons.Default.Home; PlaceKind.work -> Icons.Default.Work; PlaceKind.saved -> Icons.Default.Star; else -> Icons.Default.History }
-                        RowItem(icon, if (p.kind == PlaceKind.home) "Home" else if (p.kind == PlaceKind.work) "Work" else p.shortName, p.name) { pick(p.name, p.lat, p.lon) }
-                    }
-                    results.forEach { s -> RowItem(Icons.Default.Place, s.name.substringBefore(","), s.name) { pick(s.name, s.lat, s.lon) } }
-                    if (results.isEmpty() && local.isEmpty() && !searching && text.length >= 2)
-                        Text("Nothing yet. Keep typing, or add a city.", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RowItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, sub: String, onRemove: (() -> Unit)? = null, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(36.dp).clip(CircleShape).background(DG.low.tint(.12f)), contentAlignment = Alignment.Center) {
-            Icon(icon, null, Modifier.size(19.dp), tint = DG.low)
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
-            Text(title, style = DGType.row, color = DG.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (sub != title) Text(sub, style = DGType.small, color = DG.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        if (onRemove != null) IconButton(onRemove, Modifier.size(36.dp).testTag("remove-place")) {
-            Icon(Icons.Default.Close, "Remove $title", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
+private fun SearchBar(model: DriveViewModel, onSettings: () -> Unit) = TripCapsule(model, onSettings, searchFocused)
 
 /** "37.35, -121.94", "37.35 -121.94", or with N/S/E/W letters. */
 fun parseCoordinates(s: String): LatLon? {
@@ -1050,39 +899,9 @@ internal fun share(context: android.content.Context, url: String) {
     context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, url) }, null))
 }
 
-/** The pin's card: what it is, how far, Navigate, Save as Home, Work or a star. */
+/** The pin's sheet: what it is, the drive, what is on the way, Save, Watch, Share, routes and Go. */
 @Composable
-private fun PlaceCard(place: Place, here: LatLon?, model: DriveViewModel) {
-    var menu by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    Card(Modifier.padding(12.dp).fillMaxWidth().safeDrawingPadding().testTag("place-card"), elevation = CardDefaults.cardElevation(6.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f)) {
-                    Text(place.shortName, style = MaterialTheme.typography.titleMedium)
-                    Text(place.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-                    here?.let { Text(Units.distance(AlertsEngine.meters(it, LatLon(place.lat, place.lon))) + " away",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
-                IconButton({ model.clearFound() }, Modifier.testTag("place-close")) { Icon(Icons.Default.Close, "Close") }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button({ model.routes(place) }, Modifier.weight(1f).testTag("navigate")) {
-                    Icon(Icons.Default.Navigation, null); Spacer(Modifier.width(6.dp)); Text("Navigate")
-                }
-                Box {
-                    OutlinedButton({ menu = true }, Modifier.testTag("save-menu")) { Icon(Icons.Default.Star, "Save") }
-                    DropdownMenu(menu, { menu = false }) {
-                        DropdownMenuItem({ Text("Save as Home") }, { model.places.set(PlaceKind.home, place.name, place.lat, place.lon); menu = false })
-                        DropdownMenuItem({ Text("Save as Work") }, { model.places.set(PlaceKind.work, place.name, place.lat, place.lon); menu = false })
-                        DropdownMenuItem({ Text("Save to favorites") }, { model.places.set(PlaceKind.saved, place.name, place.lat, place.lon); menu = false })
-                        DropdownMenuItem({ Text("Share") }, { share(context, Backend.mapUrl(place.lat, place.lon)); menu = false })
-                    }
-                }
-            }
-        }
-    }
-}
+private fun PlaceCard(place: Place, here: LatLon?, model: DriveViewModel, onWatch: () -> Unit) = PlaceSheet(place, here, model, onWatch)
 
 @Composable
 private fun Note(text: String) {
@@ -1271,52 +1090,7 @@ internal fun ConfirmRow(alertId: String, model: DriveViewModel) {
 
 /** The alternatives, fastest first, one tap to go. */
 @Composable
-private fun RoutesCard(routes: List<Route>, place: Place, model: DriveViewModel, onChosen: (Route) -> Unit) {
-    var chosen by remember { mutableStateOf(0) }
-    LaunchedEffect(chosen, routes) { routes.getOrNull(chosen)?.let(onChosen) }
-    Card(Modifier.padding(12.dp).fillMaxWidth().safeDrawingPadding().testTag("routes-card"), elevation = CardDefaults.cardElevation(6.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("To ${place.shortName}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                IconButton({ model.show(place) }, Modifier.testTag("routes-close")) { Icon(Icons.Default.Close, "Close") }
-            }
-            routes.forEachIndexed { i, route ->
-                val seconds = route.steps.sumOf { it.duration }
-                val via = route.steps.maxByOrNull { it.distance }?.roadName?.trim()?.substringBefore(";")?.takeIf { it.isNotEmpty() }
-                Row(
-                    Modifier.fillMaxWidth().clickable { chosen = i }.testTag("route-$i")
-                        .background(if (i == chosen) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent, RoundedCornerShape(10.dp))
-                        .padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(if (i == 0) "Fastest" else "Alternate $i", fontWeight = FontWeight.SemiBold)
-                        Text("${Units.duration(seconds)}, ${Units.distance(route.distance)}" + (via?.let { ", via $it" } ?: ""),
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (i == chosen) Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
-                }
-            }
-            Button({ model.start(routes[chosen], place) }, Modifier.fillMaxWidth().testTag("start")) {
-                Icon(Icons.Default.Navigation, null); Spacer(Modifier.width(6.dp)); Text("Start")
-            }
-            // The map along the route, for a drive through a dead zone.
-            // Saved on its own on Wi-Fi when the trip starts; this is the
-            // tap for mobile data, and it says so.
-            val online by Connectivity.online.collectAsStateWithLifecycle()
-            val wifi by Connectivity.onWifi.collectAsStateWithLifecycle()
-            val saving by MapFiles.progress.collectAsStateWithLifecycle()
-            if (online && saving.isNotEmpty()) {
-                Text("Saving the map for this trip", style = MaterialTheme.typography.bodySmall)
-                LinearProgressIndicator(progress = { saving.values.first() }, modifier = Modifier.fillMaxWidth())
-            } else if (online && !(wifi && model.prefs.mapAutoSave)) {
-                TextButton({ model.saveTripMap(routes[chosen], place, manual = true) }, Modifier.testTag("save-trip-map")) {
-                    Text(if (wifi) "Save the map for this trip" else "Save the map for this trip (mobile data)")
-                }
-            }
-        }
-    }
-}
+private fun RoutesCard(routes: List<Route>, place: Place, model: DriveViewModel, onChosen: (Route) -> Unit) = RoutesSheet(routes, place, model, onChosen)
 
 
 /** What the map shows: the same layers as the website's Layers tool. */
@@ -1341,12 +1115,6 @@ object AutoDrive {
             (model.state.value as? DriveState.Choosing)?.let { c -> model.start(c.routes.first(), c.place) }
         }
     }
-}
-
-/** Coordinates near the driver for the search hint, so an example reads as local anywhere in the country. */
-private fun exampleCoords(here: LatLon?): String {
-    val p = here ?: LatLon(39.74, -104.99)
-    return String.format(java.util.Locale.US, "%.2f, %.2f", Math.round(p.lat * 100) / 100.0 + 0.01, Math.round(p.lon * 100) / 100.0 - 0.01)
 }
 
 /** A spot kept through an activity recreate: two doubles, or nothing. */
