@@ -56,8 +56,15 @@ extension MapFiles.LocalFile {
 
 /// Saved maps shown in screenshots and tests, never on a real phone.
 enum OfflineFixtures {
-    /// What the picker's sample box measured from the real index (Palo Alto, about 40 by 48 km).
-    static let areaBytes: Int64 = 48_100_000
+    /// Bytes per square km of the Bay Area box measured from the real index
+    /// (48.1 MB for 40 by 48 km), so fixture sizes still follow the frame.
+    static let bytesPerSqKm = 25_000.0
+
+    static func bytes(widthKm: Double, heightKm: Double) -> Int64 {
+        let v = widthKm * heightKm * bytesPerSqKm
+        // A frame not laid out yet has no size; never trap on it.
+        return v.isFinite && v > 0 ? Int64(min(v, 9e15)) : 0
+    }
     static var on: Bool {
         #if DEBUG
         return ProcessInfo.processInfo.arguments.contains("-csMoreFixtures")
@@ -549,7 +556,7 @@ struct AreaPickerView: View {
                 dim(frame: frame, size: full).allowsHitTesting(false)
                 handle(frame: frame, maxW: maxW, maxH: maxH, fs: fs)
                 topBar.padding(.horizontal, 14).padding(.top, g.safeAreaInsets.top + 6)
-                VStack { Spacer(); card(bytes: OfflineFixtures.on ? OfflineFixtures.areaBytes : sizer.bytes(for: boxKey), wKm: wKm, hKm: hKm, fits: fits, box: box) }
+                VStack { Spacer(); card(bytes: OfflineFixtures.on ? OfflineFixtures.bytes(widthKm: wKm, heightKm: hKm) : sizer.bytes(for: boxKey), wKm: wKm, hKm: hKm, fits: fits, box: box) }
                     .padding(.horizontal, 10).padding(.bottom, g.safeAreaInsets.bottom + 6)
             }
             .frame(width: full.width, height: full.height)
