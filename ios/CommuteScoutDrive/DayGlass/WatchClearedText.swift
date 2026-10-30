@@ -8,6 +8,11 @@ struct WatchClearedText: Equatable {
     var heading: String
     var detail: String
     var said: String
+    /// Under the title: where the event was (the push's body), or the
+    /// watch's name when the push had none.
+    var place: String?
+    /// In the struck-through card: the watch, when the place line is not it.
+    var from: String?
 
     static func make(_ ref: AlertRef, clearedAt: Date?, now: Date = Date()) -> WatchClearedText {
         let kind = DGKind(markerKind: ref.kind, title: ref.title)
@@ -22,7 +27,14 @@ struct WatchClearedText: Equatable {
             since: since,
             heading: "This \(noun) has cleared",
             detail: since + "." + lanes,
-            said: said ?? "What your alert said")
+            said: said ?? "What your alert said",
+            place: place(ref),
+            from: place(ref) == ref.watch ? nil : ref.watch.map { "From your \($0) watch" })
+    }
+
+    static func place(_ ref: AlertRef) -> String? {
+        let body = ref.body?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return body.isEmpty ? ref.watch : body
     }
 
     /// "Crash on US-101" to "crash on US-101", but "US-101 S" stays.
