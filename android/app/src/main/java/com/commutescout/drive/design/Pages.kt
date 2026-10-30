@@ -95,7 +95,7 @@ fun PageSheet(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
         modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).padding(top = 6.dp)
             .shadow(24.dp, shape, ambientColor = DG.ink.copy(alpha = .3f), spotColor = DG.ink.copy(alpha = .3f))
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(Color(0xF2F8FAFC), Color(0xF2F3F6FA))))
+            .background(Brush.verticalGradient(listOf(Color(0xFFF8FAFC), Color(0xFFF3F6FA))))
             .border(0.5.dp, DG.edge, shape)
             // Taps on the sheet's background never fall through to the map.
             .clickable(remember { MutableInteractionSource() }, null) {},
