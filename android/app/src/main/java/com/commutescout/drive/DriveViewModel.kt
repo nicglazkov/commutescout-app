@@ -294,6 +294,12 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     val hasPermission = _hasPermission.asStateFlow()
     val simulating = MutableStateFlow(false)
     /** The event sheet: a tapped marker, or the event a tapped alert names. */
+    /** A page asked for from outside the map, such as a summary push; the screen opens it once. */
+    private val _toolRequest = MutableStateFlow<Tool?>(null)
+    val toolRequest = _toolRequest.asStateFlow()
+    fun requestTool(tool: Tool) { _toolRequest.value = tool }
+    fun toolRequestHandled() { _toolRequest.value = null }
+
     private val _sheet = MutableStateFlow<EventSheet?>(null)
     val sheet = _sheet.asStateFlow()
     /** A spot the map should move to now (an alert, "Show on map"); the screen clears it. */

@@ -105,7 +105,9 @@ class MainActivity : ComponentActivity() {
     private fun openAlert(intent: Intent) {
         val extras = intent.extras ?: return
         val keys = listOf("url", "csUrl") + PushService.EVENT_KEYS
-        AlertTap.parse(keys.associateWith { extras.getString(it) })?.let { model.openAlert(it) }
+        val data = keys.associateWith { extras.getString(it) }
+        if (AlertTap.opensWatchAreas(data)) { model.requestTool(Tool.WATCHES); return }
+        AlertTap.parse(data)?.let { model.openAlert(it) }
     }
 
     override fun onStart() {
