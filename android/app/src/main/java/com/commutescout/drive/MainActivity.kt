@@ -55,6 +55,8 @@ class MainActivity : ComponentActivity() {
             if (intent?.getBooleanExtra("csResetPlaces", false) == true) Engine.places.removeAll()
             if (intent?.getBooleanExtra("csResetPrefs", false) == true) Engine.prefs.resetForTests()
             if (intent?.getBooleanExtra("csSimulate", false) == true) model.simulating.value = true
+            if (intent?.getBooleanExtra("csWelcome", false) == true) Engine.prefs.welcomeDone = false
+            intent?.getStringExtra("csSettings")?.let { DebugLaunch.settings = it }
             if (intent?.getBooleanExtra("csAutoDrive", false) == true) AutoDrive.run(model)
             // Day Glass+ scenes for screenshots: "csForceAlert" = a kind
             // (crash, closure, hazard, police, jam, chain, fire, ice, sign,

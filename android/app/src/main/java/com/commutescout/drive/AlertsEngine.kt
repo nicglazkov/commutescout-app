@@ -430,10 +430,10 @@ class AlertsEngine(context: Context, prefs: Prefs) {
             val gap = item.alongMeters - along
             if (item.id !in announced && gap <= rule.firstMeters && gap > -100) {
                 announced.add(item.id)
-                if (rule.speak && !muted) say(item.marker, gap)
+                if (rule.speak && !muted) say(item.marker, gap) else if (rule.chime && !muted) chime()
             } else if (item.id in announced && item.id !in repeated && rule.repeatMeters > 0 && gap <= rule.repeatMeters && gap > -100) {
                 repeated.add(item.id)
-                if (rule.speak && !muted) say(item.marker, gap)
+                if (rule.speak && !muted) say(item.marker, gap) else if (rule.chime && !muted) chime()
             }
         }
     }
@@ -441,6 +441,10 @@ class AlertsEngine(context: Context, prefs: Prefs) {
     // Identical text is not repeated within 90 s: several markers can share
     // one label (the same ramp closure recorded per lane).
     private val spokenAt = HashMap<String, Long>()
+
+    /** A short tone for an alert that is not spoken (Sound, or a plugin alert). */
+    private val tones by lazy { runCatching { android.media.ToneGenerator(AudioManager.STREAM_MUSIC, 70) }.getOrNull() }
+    fun chime() { runCatching { tones?.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 180) } }
 
     fun say(marker: RoadMarker, gap: Double = 0.0) {
         if (!speaker.ready.value) return

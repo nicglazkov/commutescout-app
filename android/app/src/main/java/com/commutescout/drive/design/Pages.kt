@@ -110,13 +110,14 @@ fun PageSheet(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
  * page a large title with a close button on the right.
  */
 @Composable
-fun PageNav(title: String, onBack: (() -> Unit)? = null, onClose: (() -> Unit)? = null, home: Boolean = false, modifier: Modifier = Modifier) {
+fun PageNav(title: String, onBack: (() -> Unit)? = null, onClose: (() -> Unit)? = null, home: Boolean = false, modifier: Modifier = Modifier,
+            backTag: String = "page-back", closeTag: String = "page-close") {
     Row(modifier.fillMaxWidth().height(62.dp).padding(top = 14.dp, bottom = 4.dp, start = if (home) 22.dp else 8.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        if (onBack != null) NavDisc("backA", "Back", onBack, Modifier.tag("page-back"))
+        if (onBack != null) NavDisc("backA", "Back", onBack, Modifier.tag(backTag))
         Text(title, Modifier.weight(1f).padding(start = if (home) 0.dp else 4.dp), style = if (home) PageType.homeTitle else PageType.navTitle,
             color = DG.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (onClose != null) NavDisc("close", "Close", onClose, Modifier.tag("page-close"))
+        if (onClose != null) NavDisc("close", "Close", onClose, Modifier.tag(closeTag))
         else if (onBack != null) Spacer(Modifier.width(52.dp))
     }
 }
