@@ -206,7 +206,13 @@ data class RoadMarker(
     val ttl_s: Double? = null,          // a plugin alert's lifetime; a day or more is fixed in place
     val source_url: String? = null,
     val trust: String? = null,
+    // How the lanes sit at the event, when the server knows: read loosely
+    // so a malformed layout drops only the drawing, never the marker.
+    val lane_layout: JsonElement? = null,
 ) {
+    /** The lane layout at the event, or null to draw the kind without lanes. */
+    val laneLayout: LaneLayout? get() = LaneLayout.from(lane_layout)
+
     val key: String get() = "$kind:${id ?: "%.4f,%.4f".format(lat, lon)}"
 
     /** Fires too small or too contained to announce on a drive. */

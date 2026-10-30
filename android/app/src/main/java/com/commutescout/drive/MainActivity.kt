@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
             // screen; the app steps aside and the trip keeps going.
             val state by model.state.collectAsStateWithLifecycle()
             BackHandler(enabled = state is DriveState.Navigating) { moveTaskToBack(true) }
-            MaterialTheme(colorScheme = scheme) {
+            com.commutescout.drive.design.DayGlassTheme(scheme) {
                 Surface { DriveScreen(model) }
             }
         }
@@ -56,6 +56,20 @@ class MainActivity : ComponentActivity() {
             if (intent?.getBooleanExtra("csResetPrefs", false) == true) Engine.prefs.resetForTests()
             if (intent?.getBooleanExtra("csSimulate", false) == true) model.simulating.value = true
             if (intent?.getBooleanExtra("csAutoDrive", false) == true) AutoDrive.run(model)
+            // Day Glass+ scenes for screenshots: "csForceAlert" = a kind
+            // (crash, closure, hazard, police, jam, chain, fire, ice, sign,
+            // camera, toll) put on the route ahead once a trip runs;
+            // csClearing clears it again before it is reached; cs3D starts
+            // in 3D; csSeeMore opens the alert; csGallery = catalog or
+            // system draws every alert or every app message.
+            if (intent?.getBooleanExtra("cs3D", false) == true) Engine.prefs.is3D = true
+            if (intent?.getBooleanExtra("csSeeMore", false) == true) model.wantedOpen = true
+            val clearing = intent?.getBooleanExtra("csClearing", false) == true
+            if (clearing) DebugScenes.clearedHoldMs = 30_000L
+            (intent?.getStringExtra("csForceAlert") ?: if (clearing) "crash" else null)?.let { k ->
+                DebugScenes.forceAhead(k, clearAfterMs = if (clearing) 7000L else null)
+            }
+            intent?.getStringExtra("csGallery")?.let { model.wantedGallery = it }
             // "csView" = "lat,lon,zoom" puts the camera somewhere, for screenshots.
             intent?.getStringExtra("csView")?.split(",")?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 3 }?.let { model.wantedView = it }
             // "csTour" zooms and pans through a set of views, for a recording.

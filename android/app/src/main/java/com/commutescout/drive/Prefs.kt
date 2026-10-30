@@ -75,7 +75,7 @@ class Prefs(context: Context) {
     /** Back to defaults, for UI tests that must start the same way every run. */
     fun resetForTests() {
         p.edit().clear().apply()
-        theme = Theme.SYSTEM; mapStyle = MapStyle.AUTO; is3D = true; traffic = false; hiddenKinds = offByDefault; sourceFilter = SourceFilter.ALL
+        theme = Theme.SYSTEM; mapStyle = MapStyle.AUTO; is3D = false; traffic = false; hiddenKinds = offByDefault; sourceFilter = SourceFilter.ALL
         spokenAlerts = true; alertAheadMeters = 1500.0; showSpeedLimit = true; keepAwake = true
         avoidTolls = false; avoidHighways = false; avoidFerries = false; stripAheadMeters = 16093.0
         advancedAlerts = false; alertRulesRaw = ""; useMiles = true
@@ -85,7 +85,7 @@ class Prefs(context: Context) {
     // A name dropped in an update must not be a crash loop at launch.
     var theme by state(runCatching { Theme.valueOf(p.getString("theme", "SYSTEM")!!) }.getOrDefault(Theme.SYSTEM)) { p.edit().putString("theme", it.name).apply() }
     var mapStyle by state(runCatching { MapStyle.valueOf(p.getString("mapstyle", "AUTO")!!) }.getOrDefault(MapStyle.AUTO)) { p.edit().putString("mapstyle", it.name).apply() }
-    var is3D by state(p.getBoolean("3d", true)) { p.edit().putBoolean("3d", it).apply() }
+    var is3D by state(p.getBoolean("3d", false)) { p.edit().putBoolean("3d", it).apply() }
     var traffic by state(p.getBoolean("traffic", false)) { p.edit().putBoolean("traffic", it).apply() }
     /** Save the map along a route when a trip starts, on Wi-Fi. */
     var mapAutoSave by state(p.getBoolean("map.autosave", true)) { p.edit().putBoolean("map.autosave", it).apply() }

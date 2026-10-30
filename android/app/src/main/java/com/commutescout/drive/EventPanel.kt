@@ -55,6 +55,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.border
+import com.commutescout.drive.design.AlertLook
+import com.commutescout.drive.design.BtnStyle
+import com.commutescout.drive.design.DG
+import com.commutescout.drive.design.DGButton
+import com.commutescout.drive.design.DGIcon
+import com.commutescout.drive.design.DGType
+import com.commutescout.drive.design.Disc
+import com.commutescout.drive.design.GlassRound
+import com.commutescout.drive.design.Looks
+import com.commutescout.drive.design.glass
+import com.commutescout.drive.design.tint
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -116,12 +128,10 @@ fun EventPanel(sheet: EventSheet, here: LatLon?, model: DriveViewModel) {
     val dragState = rememberDraggableState { delta -> scope.launch { drag.snapTo((drag.value + delta).coerceIn(-200f, 400f)) } }
     val dragging = Modifier.draggable(dragState, Orientation.Vertical, onDragStopped = { settle(it) })
 
-    Surface(
+    Box(
         Modifier.fillMaxWidth().graphicsLayer { translationY = drag.value.coerceAtLeast(0f) }
+            .glass(RoundedCornerShape(topStart = DG.rSheet, topEnd = DG.rSheet), elevation = 26.dp, strong = true)
             .testTag("marker-card"),
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 12.dp, tonalElevation = 2.dp,
     ) {
         // Never taller than its content, never taller than its height
         // allows: the scrolling part takes what the grabber and the
@@ -132,7 +142,7 @@ fun EventPanel(sheet: EventSheet, here: LatLon?, model: DriveViewModel) {
             // The grabber: tap to switch heights, drag to resize or close.
             Box(Modifier.fillMaxWidth().height(22.dp).then(dragging).clickable { expanded = !expanded }
                 .semantics { contentDescription = if (expanded) "Show less" else "Show more" }, contentAlignment = Alignment.Center) {
-                Box(Modifier.size(width = 36.dp, height = 5.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)))
+                Box(Modifier.size(width = 40.dp, height = 5.dp).clip(CircleShape).background(DG.ink.copy(alpha = 0.16f)))
             }
             Column(
                 Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())
@@ -140,7 +150,8 @@ fun EventPanel(sheet: EventSheet, here: LatLon?, model: DriveViewModel) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Header(card?.chip ?: EventCard.chipFor(sheet.alert?.kind), accent,
-                    card?.age ?: sheet.alert?.sentAt?.let { EventText.agoMs(it * 1000, now) }, dragging) { model.clearMarker() }
+                    card?.age ?: sheet.alert?.sentAt?.let { EventText.agoMs(it * 1000, now) }, dragging,
+                    look = marker?.let { Looks.of(it) } ?: Looks.ofKind(sheet.alert?.kind ?: "")) { model.clearMarker() }
                 sheet.status?.let { StatusBanner(it, sheet.alert, marker?.kind, now) { model.retryStatus() } }
                 if (marker != null && card != null) {
                     MarkerBody(marker, card, here, model, expanded) { expanded = true }
@@ -149,8 +160,14 @@ fun EventPanel(sheet: EventSheet, here: LatLon?, model: DriveViewModel) {
             // Outside the scrolling part, so a collapsed panel always says
             // there is more and how to get it.
             if (!expanded && marker != null) {
-                TextButton({ expanded = true }, Modifier.padding(horizontal = 4.dp).testTag("more-details")) {
-                    Text(if ((card?.dispatchCount ?: 0) > 0) "More details and the dispatch log" else "More details")
+                Row(Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp).fillMaxWidth().height(48.dp).clip(RoundedCornerShape(24.dp))
+                    .background(Color.White.copy(alpha = 0.7f)).border(0.5.dp, DG.hair, RoundedCornerShape(24.dp))
+                    .clickable { expanded = true }.testTag("more-details"),
+                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    Text(if ((card?.dispatchCount ?: 0) > 0) "More details and the dispatch log" else "More details",
+                        style = DGType.row.copy(fontWeight = FontWeight.SemiBold), color = DG.low)
+                    Spacer(Modifier.width(6.dp))
+                    DGIcon("chevron", DG.low, 16.dp)
                 }
             }
             Actions(sheet, model)
@@ -160,22 +177,23 @@ fun EventPanel(sheet: EventSheet, here: LatLon?, model: DriveViewModel) {
 
 /** The kind chip, the age, and close. */
 @Composable
-private fun Header(chip: String, accent: Color, age: String?, dragging: Modifier, onClose: () -> Unit) {
+private fun Header(chip: String, accent: Color, age: String?, dragging: Modifier, look: AlertLook, onClose: () -> Unit) {
     Row(Modifier.fillMaxWidth().then(dragging), verticalAlignment = Alignment.CenterVertically) {
-        Row(Modifier.clip(RoundedCornerShape(10.dp)).background(accent.copy(alpha = 0.12f)).padding(horizontal = 8.dp, vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(accent))
-            Spacer(Modifier.width(6.dp))
-            Text(chip, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        Spacer(Modifier.weight(1f))
+        // A community report keeps its plugin colour; official kinds take the design's tone.
+        if (look.community) Box(Modifier.size(DG.disc).clip(CircleShape).background(accent), contentAlignment = Alignment.Center) {
+            DGIcon(look.icon, Color.White, 22.dp)
+        } else Disc(look.icon, look.tone, DG.disc)
+        Spacer(Modifier.width(12.dp))
+        Text(chip, style = DGType.label, color = if (look.community) accent else look.tone.ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f))
         age?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(8.dp))
+            Text(it, style = DGType.small, color = DG.sub)
             Spacer(Modifier.width(8.dp))
         }
-        Box(Modifier.size(30.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant).clickable(onClick = onClose)
+        Box(Modifier.size(36.dp).clip(CircleShape).background(DG.ink.copy(alpha = 0.06f)).clickable(onClick = onClose)
             .testTag("marker-close").semantics { contentDescription = "Close" }, contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.Close, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            DGIcon("close", DG.sub, 18.dp)
         }
     }
 }
@@ -193,14 +211,15 @@ private fun StatusBanner(status: EventStatus, alert: AlertTap?, kind: String?, n
         EventState.GONE -> gray to Icons.Default.HighlightOff
         EventState.UNKNOWN -> Color(0xFFB26A00) to Icons.Default.WifiOff
     }
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = 0.12f)).padding(12.dp)
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(tint.copy(alpha = 0.10f))
+        .border(0.5.dp, tint.copy(alpha = 0.28f), RoundedCornerShape(18.dp)).padding(14.dp)
         .testTag("event-status"), verticalAlignment = Alignment.Top) {
         if (icon == null) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = tint)
         else Icon(icon, null, Modifier.size(20.dp), tint = tint)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(text.headline, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-            text.detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Text(text.headline, style = DGType.row.copy(fontWeight = FontWeight.Bold), color = if (status.state == EventState.LOADING) DG.ink else tint)
+            text.detail?.let { Text(it, style = DGType.small, color = DG.sub) }
             if (text.retry) TextButton(onRetry, Modifier.testTag("event-retry")) { Text("Try again") }
         }
     }
@@ -237,8 +256,8 @@ private fun YourAlert(alert: AlertTap, now: Long, expanded: Boolean) {
 @Composable
 private fun MarkerBody(marker: RoadMarker, card: EventCard, here: LatLon?, model: DriveViewModel, expanded: Boolean, onExpand: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(card.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        card.subtitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+        Text(card.title, style = DGType.sheetTitle, color = DG.ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        card.subtitle?.let { Text(it, style = DGType.body, color = DG.sub, maxLines = 2, overflow = TextOverflow.Ellipsis) }
     }
     card.warning?.let { Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFFD32F2F)) }
     // A picture or a board is what a camera or a sign is: it shows at
@@ -248,7 +267,7 @@ private fun MarkerBody(marker: RoadMarker, card: EventCard, here: LatLon?, model
         "sign" -> if (marker.signLines.isEmpty()) Gloss("This sign is blank right now.") else SignBoard(marker)
     }
     if (expanded) {
-        card.body.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        card.body.forEach { Text(it, style = DGType.lede, color = DG.ink) }
         card.gloss?.let { Gloss(it) }
     }
     val facts = if (expanded) card.facts else card.facts.take(3)
@@ -270,19 +289,25 @@ private fun MarkerBody(marker: RoadMarker, card: EventCard, here: LatLon?, model
 
 @Composable
 private fun Gloss(text: String) {
-    Text(text, style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(DG.low.tint(.08f))
+        .border(0.5.dp, DG.low.copy(alpha = 0.22f), RoundedCornerShape(18.dp)).padding(14.dp).testTag("plain-words"),
+        verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text("In plain words", style = DGType.label, color = DG.low)
+        Text(text, style = DGType.body, color = DG.ink.copy(alpha = 0.8f))
+    }
 }
 
 /** The facts as a grouped list: label on the left, value on the right. */
 @Composable
 private fun Facts(facts: List<Pair<String, String>>) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.72f))
+        .border(0.5.dp, DG.hair, RoundedCornerShape(18.dp))) {
         facts.forEachIndexed { i, (label, value) ->
-            if (i > 0) HorizontalDivider(Modifier.padding(start = 12.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
-                Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (i > 0) HorizontalDivider(thickness = 0.5.dp, color = DG.hair)
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.Top) {
+                Text(label, style = DGType.body, color = DG.sub)
                 Spacer(Modifier.width(12.dp))
-                Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                Text(value, Modifier.weight(1f), style = DGType.body.copy(fontWeight = FontWeight.SemiBold), color = DG.ink,
                     textAlign = androidx.compose.ui.text.style.TextAlign.End)
             }
         }
@@ -394,16 +419,13 @@ private fun Actions(sheet: EventSheet, model: DriveViewModel) {
         if (marker != null) {
             if (marker.kind == "plugin") marker.id?.let { ConfirmRow(it, model) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button({ model.show(Place(name = marker.displayTitle, lat = marker.lat, lon = marker.lon, kind = PlaceKind.recent)) },
-                    Modifier.weight(1f).testTag("navigate-here")) {
-                    Icon(Icons.Default.Navigation, null); Spacer(Modifier.width(6.dp)); Text("Navigate here")
-                }
-                OutlinedButton({ share(context, marker.webUrl) }) { Icon(Icons.Default.Share, "Share") }
+                DGButton("Navigate here", { model.show(Place(name = marker.displayTitle, lat = marker.lat, lon = marker.lon, kind = PlaceKind.recent)) },
+                    Modifier.weight(1f).testTag("navigate-here"), style = BtnStyle.PRIMARY, icon = "nav")
+                GlassRound("share", "Share", { share(context, marker.webUrl) }, size = DG.btnH)
             }
         } else sheet.alert?.let { alert ->
-            Button({ model.focusOn(alert.lat, alert.lon) }, Modifier.fillMaxWidth().testTag("show-on-map")) {
-                Icon(Icons.Default.Map, null); Spacer(Modifier.width(6.dp)); Text("Show on map")
-            }
+            DGButton("Show on map", { model.focusOn(alert.lat, alert.lon) }, Modifier.fillMaxWidth().testTag("show-on-map"),
+                style = BtnStyle.PRIMARY, icon = "locate")
             sheet.status?.nearby?.let { other ->
                 OutlinedButton({ model.showMarker(other); model.focusOn(other.lat, other.lon) }, Modifier.fillMaxWidth().testTag("show-nearby")) {
                     Text("Another ${EventKinds.noun(other.kind)} is reported here")

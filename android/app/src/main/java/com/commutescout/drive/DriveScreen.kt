@@ -118,6 +118,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stadiamaps.ferrostar.composeui.config.NavigationViewComponentBuilder
 import com.stadiamaps.ferrostar.composeui.config.VisualNavigationViewConfig
 import com.stadiamaps.ferrostar.composeui.config.withCustomOverlayView
+import com.stadiamaps.ferrostar.composeui.config.withInstructionsView
+import com.stadiamaps.ferrostar.composeui.config.withProgressView
+import com.stadiamaps.ferrostar.composeui.config.withRoadNameView
 import com.stadiamaps.ferrostar.composeui.runtime.KeepScreenOnDisposableEffect
 import com.stadiamaps.ferrostar.composeui.views.components.speedlimit.SignageStyle
 import com.stadiamaps.ferrostar.maplibreui.NavigationMapClickResult
@@ -170,7 +173,33 @@ import org.maplibre.spatialk.geojson.Point
 import org.maplibre.spatialk.geojson.Polygon
 import org.maplibre.spatialk.geojson.Position
 import uniffi.ferrostar.Route
+import com.commutescout.drive.design.AlertTuck
+import com.commutescout.drive.design.AlertWords
+import com.commutescout.drive.design.DG
+import com.commutescout.drive.design.DGIcon
+import com.commutescout.drive.design.DGType
+import com.commutescout.drive.design.GhostRound
+import com.commutescout.drive.design.GlassRound
+import com.commutescout.drive.design.ModeToggle
+import com.commutescout.drive.design.Note
+import com.commutescout.drive.design.ReportButton
+import com.commutescout.drive.design.SpeedDisc
+import com.commutescout.drive.design.Tone
+import com.commutescout.drive.design.glass
+import com.commutescout.drive.design.tint
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.unit.LayoutDirection
+import kotlin.math.roundToInt
 import kotlin.math.abs
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.math.max
 
 @OptIn(kotlinx.coroutines.FlowPreview::class)
@@ -276,6 +305,53 @@ fun DriveScreen(model: DriveViewModel) {
     val along by model.alerts.hereAlong.collectAsStateWithLifecycle()
     val dismissed by model.alerts.dismissed.collectAsStateWithLifecycle()
     val bannerItem = ahead.firstOrNull { it.id !in dismissed && it.alongMeters - along <= prefs.stripAheadMeters }
+    // An event ahead that cleared before the driver got there (trips only).
+    val cleared by model.alerts.cleared.collectAsStateWithLifecycle()
+    // The alert opened out ("see more"), hoisted: the camera makes room for it.
+    var alertOpen by remember { mutableStateOf(false) }
+    val tripDone = uiState.tripState is uniffi.ferrostar.TripState.Complete
+    // A community report just passed: ask whether it is still there.
+    var confirmAsk by remember { mutableStateOf<Upcoming?>(null) }
+    var prevItem by remember { mutableStateOf<Upcoming?>(null) }
+    LaunchedEffect(bannerItem?.id) {
+        val p = prevItem
+        if (p != null && p.id != bannerItem?.id && p.id !in dismissed && model.canConfirm(p.marker) && along >= p.alongMeters - 80) confirmAsk = p
+        prevItem = bannerItem
+    }
+    LaunchedEffect(confirmAsk) { if (confirmAsk != null) { delay(15_000); confirmAsk = null } }
+    // A fix older than this while on a trip: the signal is gone.
+    val fixAge by produceState(0L, isNavigating) {
+        while (isNavigating) {
+            value = runCatching { java.time.Duration.between(model.navigationUiState.value.location!!.timestamp, java.time.Instant.now()).seconds }.getOrDefault(0L)
+            delay(2000)
+        }
+        value = 0L
+    }
+    val limitNow = model.limitKmh(uiState)
+    val speedNow = (if (Units.useMiles) speedMps * 2.236936 else speedMps * 3.6).roundToInt()
+    val limitShown = limitNow?.let { (if (Units.useMiles) it / 1.609344 else it).roundToInt() }
+    val navNote: SysNote? = when {
+        tripDone -> SysNote("arrive", "arrive", Tone.GOOD, "You have arrived", (state as? DriveState.Navigating)?.place?.name,
+            action = "Done", onAction = { model.stopNavigation() }, inline = true)
+        offlineNotice != null -> SysNote("offline", "offline", Tone.CLEAR, offlineNotice.first, offlineNotice.second)
+        online && uiState.isCalculatingNewRoute == true -> SysNote("reroute", "reroute", Tone.LOW, "Rerouting", "Finding a new route from here.")
+        fixAge > 12 -> SysNote("gps", "gps", Tone.CLEAR, "GPS signal lost", "Following the route from your last position")
+        limitShown != null && speedMps > 0 && speedNow > limitShown + 5 -> SysNote("speeding", "speed", Tone.HIGH, "Over the limit", "$speedNow in a $limitShown")
+        confirmAsk != null -> confirmAsk!!.let { c ->
+            SysNote("confirm", "confirm", Tone.MID, "Is the ${AlertWords.of(c.marker, null, 0.0).title.removeSuffix(" ahead").removeSuffix(" reported").lowercase()} still there?",
+                "Reported ${reportedOf(c.marker) ?: "earlier"}, just behind you",
+                action = "Still there", onAction = { model.vote(c.marker, "up"); model.alerts.dismiss(c.id); confirmAsk = null },
+                secondary = "Gone", onSecondary = { model.vote(c.marker, "gone"); model.alerts.dismiss(c.id); confirmAsk = null })
+        }
+        else -> null
+    }
+    LaunchedEffect(bannerItem?.id) {
+        if (model.wantedOpen && bannerItem != null && isNavigating) { delay(1500); alertOpen = true; model.wantedOpen = false }
+    }
+    // Room the camera leaves above the puck for the tucked alert; none in 3D.
+    val room by animateDpAsState(
+        if (isNavigating && !prefs.is3D && (bannerItem != null || cleared != null)) (if (alertOpen) 104.dp else 84.dp) else 0.dp,
+        tween(900, easing = DG.easeOut), label = "room")
     LaunchedEffect(driving) {
         if (state is DriveState.Browsing && mapState.isTrackingUser) {
             mapState.cameraMode = if (driving) NavigationCameraMode.FOLLOW_USER_WITH_BEARING else NavigationCameraMode.FOLLOW_USER
@@ -314,9 +390,15 @@ fun DriveScreen(model: DriveViewModel) {
         model.focusDone(f)
     }
     // 2D or 3D, applied to whatever the camera is doing now.
-    LaunchedEffect(prefs.is3D) {
+    // A trip's start re-frames the camera, so it is applied again then;
+    // the pitch eases over about a second, as in the design.
+    LaunchedEffect(prefs.is3D, isNavigating) {
+        if (isNavigating) delay(1200)
+        val want = if (prefs.is3D) 45.0 else 0.0
         val p = mapState.cameraState.position
-        mapState.cameraState.position = p.copy(tilt = if (prefs.is3D) 45.0 else 0.0)
+        if (abs(p.tilt - want) > 0.5) runCatching {
+            mapState.cameraState.animateTo(p.copy(tilt = want), duration = 1100.milliseconds)
+        }.onFailure { mapState.cameraState.position = mapState.cameraState.position.copy(tilt = want) }
     }
     var chosenRoute by remember { mutableStateOf<Route?>(null) }
     var bearing by remember { mutableStateOf(0.0) }
@@ -350,15 +432,27 @@ fun DriveScreen(model: DriveViewModel) {
             modifier = Modifier.fillMaxSize(),
             baseStyle = remember(prefs.mapStyle, model.isDark, usingLocal, mapManifest) { BaseStyle.Json(model.styleJson) },
             navigationMapState = mapState,
-            navigationCameraOptions = navigationCameraOptions().copy(browsingZoom = 14.0, navigationTilt = if (prefs.is3D) 45.0 else 0.0),
+            navigationCameraOptions = navigationCameraOptions().let { base ->
+                val p = base.navigationPadding
+                base.copy(browsingZoom = 14.0, navigationTilt = if (prefs.is3D) 45.0 else 0.0,
+                    navigationPadding = PaddingValues(start = p.calculateLeftPadding(LayoutDirection.Ltr), end = p.calculateRightPadding(LayoutDirection.Ltr),
+                        top = p.calculateTopPadding() + room, bottom = p.calculateBottomPadding()))
+            },
             viewModel = model,
-            config = VisualNavigationViewConfig.Default(),
-            views = NavigationViewComponentBuilder.Default().withCustomOverlayView { modifier ->
+            // The trip chrome is the app's own (NavChrome): Ferrostar's
+            // buttons, instruction card and trip bar are turned off.
+            config = VisualNavigationViewConfig(showMute = false, showZoom = false, showRecenter = false),
+            views = NavigationViewComponentBuilder.Default()
+                .withInstructionsView { _, _ -> }
+                .withProgressView { _, _, _ -> }
+                .withRoadNameView { _, _, _ -> }
+                .withCustomOverlayView { modifier ->
                 if (!uiState.isNavigating()) {
-                    BrowsingOverlay(modifier, model, offlineNotice, onSettings = { showSettings = true }, onLayers = { showTools = true },
+                    BrowsingOverlay(modifier, model, offlineNotice, onSettings = { showSettings = true },
+                        note = if (tripDone) navNote else null,
                         banner = bannerItem?.let { next -> {
-                            AlertBanner(next, along, ahead.size - 1, canConfirm = model.canConfirm(next.marker),
-                                onVote = { v -> model.vote(next.marker, v) }, onDismiss = { model.alerts.dismiss(next.id) }) { model.alerts.say(next.marker) }
+                            AlertTuck(AlertWords.of(next.marker, next.alongMeters - along, speedMps), next.marker, false,
+                                onOpen = { model.alerts.say(next.marker); model.showMarker(next.marker) }, onDismiss = { model.alerts.dismiss(next.id) })
                         } })
                 }
             },
@@ -383,23 +477,8 @@ fun DriveScreen(model: DriveViewModel) {
             bannerItem?.let { AlertRing(it, along) }
         }
 
-        // On a trip the alert ahead sits bottom-left above the speedometer,
-        // clear of the instruction card and Ferrostar's side buttons; while
-        // browsing it is under the search row in the overlay. The offline
-        // or rerouting notice goes on top of the stack.
-        if (isNavigating) {
-            val rerouting = online && uiState.isCalculatingNewRoute == true
-            val notice = offlineNotice ?: if (rerouting) "Rerouting" to "Finding a new route from here." else null
-            Column(Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = 12.dp, end = 76.dp, bottom = 124.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.Start) {
-                notice?.let { (title, detail) -> OfflineBanner(title, detail, if (offlineNotice != null) Icons.Default.WifiOff else Icons.Default.Sync) }
-                bannerItem?.let { next ->
-                    AlertBanner(next, along, ahead.size - 1, canConfirm = model.canConfirm(next.marker),
-                        onVote = { v -> model.vote(next.marker, v) }, onDismiss = { model.alerts.dismiss(next.id) }) { model.alerts.say(next.marker) }
-                }
-                if (prefs.showSpeedLimit) Speedometer(speedMps, model.limitKmh(uiState))
-            }
-        }
+        if (isNavigating) NavChrome(model, uiState, mapState, bannerItem, cleared, along, speedMps, navNote, prefs.is3D, alertOpen,
+            onOpen = { alertOpen = it }, onReport = { model.reportLatLon?.let { reportAt = it } })
 
         // An expanded event sheet reaches past the middle of the screen,
         // where the side buttons would land on the search row: they step
@@ -415,37 +494,29 @@ fun DriveScreen(model: DriveViewModel) {
         val tallCard = !isNavigating && room < (if (abs(bearing) > 1.0) 168.dp else 116.dp)
         // Map controls: 2D/3D, compass when turned, my location. While
         // navigating Ferrostar draws its own zoom and recenter buttons.
-        if (!tallCard) Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = 12.dp,
-            bottom = if (isNavigating) 118.dp else aboveCard), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (!isNavigating && abs(bearing) > 1.0) {
-                RoundIcon(Icons.Default.Navigation, "Face north", tint = Color(0xFFD32F2F), rotate = -bearing.toFloat(), tag = "compass") {
-                    scope.launch { mapState.cameraState.animateTo(mapState.cameraState.position.copy(bearing = 0.0)) }
-                }
+        if (!tallCard && !isNavigating) Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = DG.gutter, bottom = aboveCard),
+            verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            if (abs(bearing) > 1.0) {
+                GlassRound("nav", "Face north", { scope.launch { mapState.cameraState.animateTo(mapState.cameraState.position.copy(bearing = 0.0)) } },
+                    Modifier.rotate(-bearing.toFloat()).testTag("compass"), tint = DG.high)
             }
-            // Browsing has 3D under the menu button; on a trip the top
-            // belongs to the instruction card.
-            if (isNavigating) RoundText(if (prefs.is3D) "2D" else "3D", tag = "perspective") { model.toggle3D() }
-            if (!isNavigating) RoundIcon(Icons.Default.MyLocation, "My location", tag = "locate") { mapState.recenter(isNavigating = false) }
-            // Report, like Waze: one tap from anywhere, big enough to hit
-            // at a glance from the wheel.
-            Column(Modifier.shadow(6.dp, CircleShape).background(Color(0xFFF57C00), CircleShape).size(64.dp)
-                .clickable { model.reportLatLon?.let { reportAt = it } }.testTag("report"),
-                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Icon(Icons.Default.Campaign, "Report", tint = Color.White, modifier = Modifier.size(28.dp))
-                Text("Report", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, lineHeight = 12.sp)
-            }
+            ModeToggle(prefs.is3D, { model.toggle3D() }, Modifier.testTag("perspective"))
+            GlassRound("layers", "Map layers and tools", { showTools = true }, Modifier.testTag("tools"))
+            GlassRound("locate", "My location", { mapState.recenter(isNavigating = false) }, Modifier.testTag("locate"))
+            // Report, like Waze: one tap from anywhere.
+            ReportButton({ model.reportLatLon?.let { reportAt = it } }, Modifier.testTag("report"))
         }
-        // The speedometer while browsing, left of the side buttons; on a
-        // trip it is in the stack above.
-        if (prefs.showSpeedLimit && speedMps >= 0 && !isNavigating && !tallCard) {
-            Box(Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = 12.dp, bottom = aboveCard)) {
-                Speedometer(speedMps, model.limitKmh(uiState))
+        // The speed disc while browsing, left of the side buttons; on a
+        // trip NavChrome draws it.
+        if (prefs.showSpeedLimit && speedMps >= 0 && !isNavigating && !tallCard && driving) {
+            Box(Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = DG.gutter, bottom = aboveCard)) {
+                SpeedDisc(speedMps, model.limitKmh(uiState))
             }
         }
         toastText?.let {
-            Box(Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 70.dp)) {
-                Text(it, Modifier.background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.bodyMedium)
+            Box(Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = if (isNavigating) 180.dp else 72.dp, start = 24.dp, end = 24.dp)) {
+                Text(it, Modifier.glass(RoundedCornerShape(22.dp), elevation = 12.dp).padding(horizontal = 16.dp, vertical = 11.dp).testTag("toast"),
+                    style = DGType.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = DG.ink)
             }
         }
 
@@ -456,6 +527,7 @@ fun DriveScreen(model: DriveViewModel) {
                 EventPanel(sheet!!, here, model)
             } else when (val s = state) {
                 is DriveState.Browsing -> resumable?.let { ResumeCard(it, model) }
+                    ?: if (!searchFocused.value && !showSettings && !showTools && reportAt == null) PlacesTray(model, here) else Unit
                 is DriveState.Found -> PlaceCard(s.place, here, model)
                 is DriveState.Routing -> Card(Modifier.padding(12.dp).fillMaxWidth().safeDrawingPadding()) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -470,6 +542,11 @@ fun DriveScreen(model: DriveViewModel) {
         }
     }
 
+    if (BuildConfig.DEBUG) when (model.wantedGallery) {
+        "catalog" -> DebugScenes.Catalog()
+        "system" -> DebugScenes.System()
+        else -> {}
+    }
     if (showSettings) SettingsSheet(model) { showSettings = false; model.applyPrefs() }
     if (showLayers) LayersSheet(model) { showLayers = false }
     if (showTools) ToolsSheet(onPick = { showTools = false; if (it == Tool.LAYERS) showLayers = true else tool = it }) { showTools = false }
@@ -685,29 +762,57 @@ private fun RouteLine(route: Route) {
         cap = const(LineCap.Round), join = const(LineJoin.Round))
 }
 
-/** Search, settings and layers, floating over the map while browsing. */
+/** The search capsule and whatever the app has to say, floating over the map while browsing. */
 @Composable
 private fun BrowsingOverlay(modifier: Modifier, model: DriveViewModel, offline: Pair<String, String>?,
-                            onSettings: () -> Unit, onLayers: () -> Unit, banner: (@Composable () -> Unit)? = null) {
-    Column(modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.Top) {
-            Box(Modifier.weight(1f)) { SearchBar(model) }
-            Spacer(Modifier.width(8.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                RoundIcon(Icons.Default.Settings, "Settings", tag = "settings", onClick = onSettings)
-                RoundIcon(Icons.Default.Menu, "Tools", tag = "tools", onClick = onLayers)
-                RoundText(if (model.prefs.is3D) "2D" else "3D", tag = "perspective") { model.toggle3D() }
+                            onSettings: () -> Unit, note: SysNote? = null, banner: (@Composable () -> Unit)? = null) {
+    Column(modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = DG.gutter, vertical = 6.dp)) {
+        SearchBar(model, onSettings)
+        // The app's own messages sit under the capsule, one at a time.
+        val n = note ?: offline?.let { (title, detail) -> SysNote("offline", "offline", Tone.CLEAR, title, detail) }
+        AnimatedVisibility(n != null, enter = slideInVertically(DG.slide()) { -it / 2 } + fadeIn(), exit = fadeOut()) {
+            val last = remember { mutableStateOf(n) }
+            if (n != null) last.value = n
+            last.value?.let { s ->
+                Note(s.icon, s.tone, s.title, s.body, Modifier.padding(top = 10.dp).fillMaxWidth()
+                    .then(if (s.id == "offline") Modifier.testTag("offline-banner") else Modifier),
+                    s.action, s.onAction, s.secondary, s.onSecondary, s.inline, tag = "note-${s.id}")
             }
         }
-        offline?.let { (title, detail) ->
-            Spacer(Modifier.height(8.dp))
-            OfflineBanner(title, detail, Icons.Default.WifiOff)
-        }
-        // The alert ahead while driving with no trip, under whatever is
-        // above it rather than at a guessed offset.
+        // The alert ahead while driving with no trip, under the capsule.
         banner?.let {
-            Spacer(Modifier.height(8.dp))
-            Box(Modifier.fillMaxWidth().padding(end = 56.dp)) { it() }
+            Spacer(Modifier.height(10.dp))
+            Box(Modifier.fillMaxWidth().padding(end = 64.dp)) { it() }
+        }
+    }
+}
+
+/** The search field has focus: its quick picks list the places, so the tray steps aside. */
+private val searchFocused = mutableStateOf(false)
+
+/** Home, Work and the last place, one tap from the map: the browse tray. */
+@Composable
+private fun PlacesTray(model: DriveViewModel, here: LatLon?) {
+    val places by model.places.places.collectAsStateWithLifecycle()
+    val rows = buildList {
+        model.places.home?.let { add(Triple("home", "Home", it)) }
+        model.places.work?.let { add(Triple("work", "Work", it)) }
+        (model.places.saved.take(1) + model.places.recents.take(1)).forEach { add(Triple(if (it.kind == PlaceKind.saved) "nav" else "recent", it.shortName, it)) }
+    }.distinctBy { it.third.lat to it.third.lon }.take(3)
+    if (places.isEmpty() || rows.isEmpty()) return
+    Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 6.dp).fillMaxWidth().safeDrawingPadding()
+        .glass(RoundedCornerShape(30.dp), elevation = 22.dp, strong = true).padding(6.dp).testTag("places-tray")) {
+        rows.forEachIndexed { i, (icon, name, p) ->
+            if (i > 0) Box(Modifier.padding(horizontal = 14.dp).fillMaxWidth().height(0.5.dp).background(DG.hair))
+            Row(Modifier.fillMaxWidth().height(58.dp).clip(RoundedCornerShape(24.dp)).clickable { model.show(Place(name = p.name, lat = p.lat, lon = p.lon, kind = p.kind)) }
+                .padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(40.dp).clip(CircleShape).background(DG.low.tint(.12f)), contentAlignment = Alignment.Center) { DGIcon(icon, DG.low, 20.dp) }
+                Spacer(Modifier.width(14.dp))
+                Text(name, style = DGType.title.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = DG.ink,
+                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val sub = if (icon == "recent") "Recent" else here?.let { Units.distance(AlertsEngine.meters(it, LatLon(p.lat, p.lon))) }
+                sub?.let { Text(it, style = DGType.body, color = DG.sub) }
+            }
         }
     }
 }
@@ -772,7 +877,7 @@ private fun RoundText(text: String, tag: String, onClick: () -> Unit) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SearchBar(model: DriveViewModel) {
+private fun SearchBar(model: DriveViewModel, onSettings: () -> Unit) {
     var text by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Suggestion>>(emptyList()) }
     var focused by remember { mutableStateOf(false) }
@@ -830,25 +935,31 @@ private fun SearchBar(model: DriveViewModel) {
     }
 
     Column {
-        TextField(
-            value = text, onValueChange = { text = it; schedule(it) },
-            modifier = Modifier.fillMaxWidth().shadow(4.dp, RoundedCornerShape(12.dp)).onFocusChanged { focused = it.isFocused }.testTag("search"),
-            placeholder = { Text("Search a place or address", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            leadingIcon = { Icon(Icons.Default.Search, null) },
-            trailingIcon = {
-                if (searching) CircularProgressIndicator(Modifier.size(18.dp))
-                else if (text.isNotEmpty()) IconButton({ text = ""; results = emptyList() }) { Icon(Icons.Default.Close, "Clear") }
-            },
-            singleLine = true, shape = RoundedCornerShape(12.dp),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { scope.launch { submit() } }),
-            colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
-        )
+        Row(Modifier.fillMaxWidth().height(54.dp).glass(RoundedCornerShape(28.dp), elevation = 18.dp, strong = true).padding(start = 18.dp, end = 7.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            DGIcon("search", DG.ink, 22.dp)
+            Spacer(Modifier.width(12.dp))
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                if (text.isEmpty()) Text("Where to?", style = DGType.search, color = DG.sub, maxLines = 1)
+                BasicTextField(
+                    value = text, onValueChange = { text = it; schedule(it) },
+                    modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused; searchFocused.value = it.isFocused }.testTag("search"),
+                    textStyle = DGType.search.copy(color = DG.ink), singleLine = true, cursorBrush = SolidColor(DG.low),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { scope.launch { submit() } }),
+                )
+            }
+            when {
+                searching -> CircularProgressIndicator(Modifier.padding(horizontal = 8.dp).size(18.dp), color = DG.low, strokeWidth = 2.dp)
+                text.isNotEmpty() -> GhostRound("close", "Clear", { text = ""; results = emptyList() }, size = 40.dp)
+                else -> GhostRound("gear", "Settings", onSettings, Modifier.testTag("settings"), size = 40.dp, tint = DG.ink)
+            }
+        }
         if (focused && text.isEmpty()) {
             // Quick picks in the order the web map uses: Home, Work, up to 5
             // favorites, then the last 10 destinations. Any of them can be removed.
-            Card(Modifier.padding(top = 6.dp).fillMaxWidth()) {
-                Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+            Box(Modifier.padding(top = 8.dp).fillMaxWidth().glass(RoundedCornerShape(26.dp), elevation = 18.dp, strong = true)) {
+                Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
                     model.places.home?.let { p -> RowItem(Icons.Default.Home, "Home", p.shortName, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
                     model.places.work?.let { p -> RowItem(Icons.Default.Work, "Work", p.shortName, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
                     model.places.saved.take(5).forEach { p -> RowItem(Icons.Default.Star, p.shortName, p.name, onRemove = { model.places.remove(p) }) { pick(p.name, p.lat, p.lon) } }
@@ -858,8 +969,8 @@ private fun SearchBar(model: DriveViewModel) {
                 }
             }
         } else if (focused && text.isNotEmpty()) {
-            Card(Modifier.padding(top = 6.dp).fillMaxWidth()) {
-                Column {
+            Box(Modifier.padding(top = 8.dp).fillMaxWidth().glass(RoundedCornerShape(26.dp), elevation = 18.dp, strong = true)) {
+                Column(Modifier.padding(vertical = 6.dp)) {
                     local.forEach { p ->
                         val icon = when (p.kind) { PlaceKind.home -> Icons.Default.Home; PlaceKind.work -> Icons.Default.Work; PlaceKind.saved -> Icons.Default.Star; else -> Icons.Default.History }
                         RowItem(icon, if (p.kind == PlaceKind.home) "Home" else if (p.kind == PlaceKind.work) "Work" else p.shortName, p.name) { pick(p.name, p.lat, p.lon) }
@@ -875,12 +986,14 @@ private fun SearchBar(model: DriveViewModel) {
 
 @Composable
 private fun RowItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, sub: String, onRemove: (() -> Unit)? = null, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
-            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (sub != title) Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(36.dp).clip(CircleShape).background(DG.low.tint(.12f)), contentAlignment = Alignment.Center) {
+            Icon(icon, null, Modifier.size(19.dp), tint = DG.low)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+            Text(title, style = DGType.row, color = DG.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (sub != title) Text(sub, style = DGType.small, color = DG.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (onRemove != null) IconButton(onRemove, Modifier.size(36.dp).testTag("remove-place")) {
             Icon(Icons.Default.Close, "Remove $title", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)

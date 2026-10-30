@@ -50,6 +50,45 @@ class AlertsEngine(context: Context, prefs: Prefs) {
     fun dismiss(id: String) { _dismissed.value = _dismissed.value + id }
     private val _hereAlong = MutableStateFlow(0.0)
     val hereAlong = _hereAlong.asStateFlow()
+    /**
+     * An event on the route ahead that the server dropped before the
+     * driver reached it: the alert says it cleared. Passing an event
+     * never sets this; it is only ever about road still ahead.
+     */
+    private val _cleared = MutableStateFlow<Upcoming?>(null)
+    val cleared = _cleared.asStateFlow()
+    fun clearedSeen() { _cleared.value = null }
+
+    /** Debug builds: events put on the route by hand, kept through refreshes. */
+    private var forced: List<Upcoming> = emptyList()
+
+    /**
+     * Debug builds: puts the marker [make] builds [gap] metres ahead on
+     * the route, as a refresh would find it, for screenshots.
+     */
+    fun forceOnRoute(gap: Double, make: (LatLon) -> RoadMarker): Upcoming? {
+        if (route.size < 2 || cumulative.size != route.size) return null
+        val at = _hereAlong.value + gap
+        var i = cumulative.indexOfFirst { it >= at }.takeIf { it > 0 } ?: (route.size - 1)
+        val a = route[i - 1]; val b = route[i]
+        val seg = (cumulative[i] - cumulative[i - 1]).coerceAtLeast(1e-6)
+        val t = ((at - cumulative[i - 1]) / seg).coerceIn(0.0, 1.0)
+        val m = make(LatLon(a.lat + (b.lat - a.lat) * t, a.lon + (b.lon - a.lon) * t))
+        val up = Upcoming(m, min(at, cumulative.last()))
+        forced = forced + up
+        all = forced.sortedBy { it.alongMeters }
+        _ahead.value = all.filter { it.alongMeters > _hereAlong.value - 100 }
+        return up
+    }
+
+    /** Debug builds: the forced event [u] goes away before it is reached, as a clear would. */
+    fun forceClear(u: Upcoming) {
+        forced = forced - u
+        all = all - u
+        _ahead.value = _ahead.value - u
+        _cleared.value = u
+        Log.i(TAG, "debug: forced clear of ${u.id}")
+    }
     var spoken = true
     /** The driver's mute: no alert speaks on its own, whatever the per-kind
      *  rules say. A tap to repeat one still does. */
@@ -113,6 +152,21 @@ class AlertsEngine(context: Context, prefs: Prefs) {
     companion object {
         private const val TAG = "Alerts"
         const val REFRESH_MS = 60_000L
+
+        /** Kinds an agency clears; a camera or a sign going missing is a feed hiccup, not news. */
+        val CLEARABLE = setOf("incident", "lane_closure", "chain_control", "plugin")
+
+        /**
+         * Events that were on the route [minGap] to [maxGap] ahead of
+         * [along] in [old] and are missing from [new]: they cleared before
+         * the driver got there. Anything already passed, or about to be,
+         * says nothing.
+         */
+        fun clearedAhead(old: List<Upcoming>, new: List<Upcoming>, along: Double, minGap: Double = 150.0, maxGap: Double = 8047.0): List<Upcoming> {
+            if (old.isEmpty()) return emptyList()
+            val still = new.mapTo(HashSet()) { it.id }
+            return old.filter { it.marker.kind in CLEARABLE && it.id !in still && it.alongMeters - along in minGap..maxGap }
+        }
 
         fun cumulativeDistances(pts: List<LatLon>): DoubleArray {
             val out = DoubleArray(pts.size)
@@ -303,6 +357,8 @@ class AlertsEngine(context: Context, prefs: Prefs) {
         route = emptyList(); cumulative = DoubleArray(0); all = emptyList(); box = null
         freeDrive = false; around = emptyList(); aroundCenter = null
         _ahead.value = emptyList()
+        _cleared.value = null
+        forced = emptyList()
         _hereAlong.value = 0.0
     }
 
@@ -413,8 +469,9 @@ class AlertsEngine(context: Context, prefs: Prefs) {
     private suspend fun refresh() {
         val b = box ?: return
         var asOf = System.currentTimeMillis()
-        val markers = runCatching { LiveData.markers(b[0], b[1], b[2], b[3]) }
-            .onFailure { Log.w(TAG, "alerts fetch failed: $it") }.getOrNull() ?: run {
+        val fetched = runCatching { LiveData.markers(b[0], b[1], b[2], b[3]) }
+            .onFailure { Log.w(TAG, "alerts fetch failed: $it") }.getOrNull()
+        val markers = fetched ?: run {
                 // No answer. A list fetched earlier on this trip covers the
                 // whole route, so it is kept, less whatever has gone stale
                 // for its kind since. With none, because the trip began
@@ -435,6 +492,7 @@ class AlertsEngine(context: Context, prefs: Prefs) {
                 ShelfLife.prune(saved.first, saved.second)
             }
         val pts = route; val cum = cumulative
+        val before = all
         all = withContext(Dispatchers.Default) {
             markers.mapNotNull { m ->
                 if (m.tooMinorToAnnounce) return@mapNotNull null
@@ -447,7 +505,16 @@ class AlertsEngine(context: Context, prefs: Prefs) {
                 Upcoming(m, hit.along)
             }.sortedBy { it.alongMeters }
         }
+        if (forced.isNotEmpty()) all = forced.sortedBy { it.alongMeters }
         allAsOf = asOf
+        // Only a real answer from the server can say an event is gone, and
+        // only on a trip: free drive has no route to be ahead on.
+        if (fetched != null && !freeDrive && route.isNotEmpty()) {
+            clearedAhead(before, all, _hereAlong.value).firstOrNull { wanted(it.marker) && it.id !in _dismissed.value }?.let {
+                Log.i(TAG, "cleared ahead: ${it.id}")
+                _cleared.value = it
+            }
+        }
         Log.i(TAG, "alerts: ${markers.size} markers in box, ${all.size} on the route")
     }
 
