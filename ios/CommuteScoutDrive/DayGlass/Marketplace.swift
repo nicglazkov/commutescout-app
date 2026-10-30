@@ -51,7 +51,7 @@ struct MarketPin: View {
 extension FlareSource {
     var marketMaker: String { Market.maker(name: name, trust: trust, tier: tier, attribution: attribution) }
     var marketPurpose: String { Market.purpose(summary: summary, kindsLabel: kindsLabel) }
-    var marketCoverage: String { coverage == nil ? (tier == "private" ? "Private" : "Coverage not stated") : coverageLabel }
+    @MainActor var marketCoverage: String { coverage == nil ? (tier == "private" ? "Private" : "Coverage not stated") : coverageLabel }
 }
 
 /// The add pill on a card: blue "Add", then green "Added" with a check
@@ -538,7 +538,7 @@ struct PluginDetailView: View {
             switch step {
             case .removed:
                 Button {} label: { Label { Text("Removed") } icon: { DGMoreIcon(name: "check", size: 19, stroke: 2.6) } }
-                    .buttonStyle(.dgDone).allowsHitTesting(false)
+                    .buttonStyle(.dgDone).disabled(true)
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
             case .confirm:
                 Button("Keep it") { withAnimation(DG.snap) { step = .idle } }

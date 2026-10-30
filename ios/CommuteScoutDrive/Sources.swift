@@ -47,12 +47,20 @@ struct FlareSource: Codable, Identifiable, Hashable {
     }
 
     /// Where the plugin says it covers, in words.
-    var coverageLabel: String {
+    @MainActor var coverageLabel: String {
         guard let b = coverage, b.count == 4 else { return "Coverage not stated" }
         let h = b[2] - b[0], w = b[3] - b[1]
         if h >= 20, w >= 50 { return "Nationwide" }
-        if b[0] >= 32, b[2] <= 36, b[1] >= -121, b[3] <= -114 { return "Southern California" }
-        if b[0] >= 32, b[2] <= 42.5, b[1] >= -125, b[3] <= -114 { return "California" }
+        // The states the box takes in, whichever they are.
+        let states = MapFiles.shared.manifest?.states ?? []
+        let names = StateBounds.within(b).map { code in states.first { $0.code == code }?.name ?? code }
+        switch names.count {
+        case 0: break
+        case 1: return names[0]
+        case 2: return "\(names[0]) and \(names[1])"
+        case 3: return "\(names[0]), \(names[1]) and \(names[2])"
+        default: return "\(names[0]), \(names[1]) and \(names.count - 2) more states"
+        }
         return "\(Int(h.rounded()))\u{00B0} by \(Int(w.rounded()))\u{00B0} area"
     }
 

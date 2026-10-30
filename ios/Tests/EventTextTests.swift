@@ -101,7 +101,21 @@ final class EventTextTests: XCTestCase {
         let m = marker(#"{"kind":"lane_closure","lat":37.4,"lon":-122.1,"cls":"lane","until":1793199600}"#)
         let s = EventContent.make(m, now: now, viewerZone: la).schedule!
         XCTAssertTrue(s.head.hasPrefix("Was scheduled to end today at 8:00 AM"))
-        XCTAssertEqual(s.tail, "That was about 2 hours ago. Caltrans has not reported it clear. Assume the restriction is still there.")
+        XCTAssertEqual(s.tail, "That was about 2 hours ago. The state transportation agency has not reported it clear. Assume the restriction is still there.")
+    }
+
+    func testNoSourceNamesNoOneState() {
+        let closure = marker(#"{"kind":"lane_closure","lat":37.4,"lon":-122.1,"cls":"full-roadway"}"#)
+        let open = EventContent.make(closure, now: now, viewerZone: la)
+        XCTAssertEqual(open.schedule?.tail.hasPrefix("The road stays closed until the state transportation agency reports it open."), true)
+        var words = open.foot
+        for raw in [#"{"kind":"camera","lat":37.4,"lon":-122.1}"#, #"{"kind":"sign","lat":37.4,"lon":-122.1}"#, #"{"kind":"rwis","lat":37.4,"lon":-122.1}"#] {
+            words += EventContent.make(marker(raw), now: now, viewerZone: la).foot
+        }
+        for line in words {
+            XCTAssertFalse(line.contains("Caltrans"), line)
+            XCTAssertTrue(line.contains("state transportation agency"), line)
+        }
     }
 
     func testIncidentCopy() {
