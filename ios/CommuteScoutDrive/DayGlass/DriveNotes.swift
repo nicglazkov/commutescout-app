@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The app's own message on a trip, in the capsule under the maneuver
-/// card: arrival, no connection, rerouting, a lost signal, speeding, or
-/// a question about a report just passed. It takes the place of the
+/// card: arrival, no connection, rerouting, a lost signal, speeding, a
+/// question about a report just passed, or a watch alert tapped during
+/// the trip. It takes the place of the
 /// tucked alert's slot only while no alert shows, so the two never
 /// overlap. "-csForceNote <id>" shows one, for screenshots and tests.
 struct DriveNoteSlot: View {
@@ -54,6 +55,7 @@ struct DriveNoteSlot: View {
             i.confirmKind = DGKind(marker: c.marker)
             i.confirmAgo = c.marker.reported.flatMap { EventContent.ago($0, now: now) }.map { "Reported \($0), just behind you" }
         }
+        i.watch = model.parkedAlertNote(now: now)
         return SystemNotes.pick(i)
     }
 
@@ -65,6 +67,7 @@ struct DriveNoteSlot: View {
             model.confirmAsk = nil
             model.alerts.dismiss(c.id)
             Task { await model.vote(c.marker, a == .primary ? "up" : "gone") }
+        case .watch: model.showParkedAlert()
         default: break
         }
     }

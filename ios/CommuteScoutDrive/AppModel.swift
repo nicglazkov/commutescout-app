@@ -149,6 +149,8 @@ final class AppModel: ObservableObject {
     @Published var selectedVanished = false
     /// An alert tapped during a trip, opened when the trip ends.
     private var parkedAlert: AlertRef?
+    /// When the parked alert was tapped: its note shows for a while.
+    private var parkedAt: Date?
     @Published var heading: CLLocationDirection = 0
     var viewCenter: CLLocationCoordinate2D?      // what the map shows, from the hook
     var viewZoom: Double = 14
@@ -559,7 +561,7 @@ final class AppModel: ObservableObject {
         // for the trip to end.
         if state.isNavigating {
             parkedAlert = ref
-            toast = "Watch alert saved. It opens when this trip ends."
+            parkedAt = Date()
             return
         }
         preview = nil
@@ -571,6 +573,20 @@ final class AppModel: ObservableObject {
         selectedMarker = ref.isCleared ? nil : ref.localMatch(in: allMarkers)
         alertFocus = AlertFocus(ref: ref, status: ref.isCleared ? .cleared(at: ref.sentAt) : .loading)
         Task { await checkAlert(ref) }
+    }
+
+    /// The note for a watch alert tapped on this trip, for half a minute.
+    func parkedAlertNote(now: Date) -> SystemNote? {
+        guard let parkedAlert, let parkedAt, now.timeIntervalSince(parkedAt) < 30 else { return nil }
+        return SystemNotes.watch(parkedAlert, now: now)
+    }
+
+    /// Shows the parked alert's place. Ferrostar's recenter button goes
+    /// back to the trip, and the alert still opens when the trip ends.
+    func showParkedAlert() {
+        guard let parkedAlert else { return }
+        parkedAt = nil
+        focusEvent(parkedAlert.coordinate)
     }
 
     /// Put an event in the upper part of the map, above the event panel

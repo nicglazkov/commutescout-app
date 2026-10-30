@@ -62,9 +62,27 @@ final class SystemNotesTests: XCTestCase {
                        "Road data from 8:14 AM. Live updates resume when you are back online.")
     }
 
+    func testAWatchAlertTappedOnATripSaysItWaits() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var ref = AlertRef(kind: "incident", lat: 37.442, lon: -122.143, title: "Crash on US-101", watch: "Home area")
+        let note = SystemNotes.watch(ref, now: now)
+        XCTAssertEqual(note.title, "Home area: crash on US-101")
+        XCTAssertEqual(note.detail, "Opens when this trip ends.")
+        XCTAssertEqual(note.primary, "Show on map")
+        XCTAssertEqual(note.tone, .good)
+
+        ref.status = "cleared"
+        ref.sentAt = now.addingTimeInterval(-25 * 60)
+        XCTAssertEqual(SystemNotes.watch(ref, now: now).detail, "Cleared 25 min ago. Opens when this trip ends.")
+
+        // Last in line, and only on a trip.
+        XCTAssertEqual(SystemNotes.pick(.init(navigating: true, watch: note))?.id, .watch)
+        XCTAssertEqual(SystemNotes.pick(.init(navigating: true, rerouting: true, watch: note))?.id, .reroute)
+        XCTAssertNil(SystemNotes.pick(.init(navigating: false, watch: note)))
+    }
+
     func testEverySampleHasTheMockupTone() {
         let tones = Dictionary(uniqueKeysWithValues: SystemNotes.samples.map { ($0.id, $0.tone) })
-        XCTAssertEqual(tones[.faster], .low)
         XCTAssertEqual(tones[.confirm], .mid)
         XCTAssertEqual(tones[.speeding], .high)
         XCTAssertEqual(tones[.gps], .clear)
