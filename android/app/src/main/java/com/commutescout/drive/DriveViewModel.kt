@@ -860,7 +860,8 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
             } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Throwable) { Log.i("DriveViewModel", "preview: $e"); null }
             _preview.value = Preview(place.lat, place.lon, found?.takeIf { it.isNotEmpty() }, System.currentTimeMillis())
             if (found.isNullOrEmpty()) return@launch
-            _onTheWay.value = found.map { wayOf(it, heldMarkers()) }
+            // Nationwide this is tens of thousands of markers: not on the main thread.
+            _onTheWay.value = withContext(Dispatchers.Default) { found.map { wayOf(it, heldMarkers()) } }
             // The markers held are the map's view; the route's own box can
             // reach past it. A box wider than a long day's drive keeps the view's.
             val r = found.first()
@@ -869,7 +870,9 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
                 val more = try {
                     LiveData.markers(r.bbox.sw.lat - .01, r.bbox.sw.lng - .01, r.bbox.ne.lat + .01, r.bbox.ne.lng + .01)
                 } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Throwable) { null }
-                if (more != null && previewFor(place) != null) _onTheWay.value = found.map { wayOf(it, more + heldMarkers()) }
+                if (more != null && previewFor(place) != null) {
+                    _onTheWay.value = withContext(Dispatchers.Default) { found.map { wayOf(it, more + heldMarkers()) } }
+                }
             }
         }
     }

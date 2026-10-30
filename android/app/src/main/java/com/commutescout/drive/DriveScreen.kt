@@ -221,8 +221,17 @@ fun DriveScreen(model: DriveViewModel) {
     val hiddenSources by model.sources.hidden.collectAsStateWithLifecycle()
     val ownIds by model.sources.ownSessionIds.collectAsStateWithLifecycle()
     val pluginsOff by model.sources.hidden.collectAsStateWithLifecycle()
-    val allMarkers = (siteMarkers.filter { m -> ownIds.none { m.id?.startsWith("$it:") == true } } + directMarkers)
-        .filter { (it.source ?: "") !in hiddenSources }
+    // Remembered, not worked out on every pass: this screen recomposes with
+    // each fix, and there are tens of thousands of markers nationwide. Doing
+    // it each time kept the main thread busy for the whole of a drive.
+    val allMarkers = remember(siteMarkers, directMarkers, ownIds, hiddenSources) {
+        (siteMarkers.filter { m -> ownIds.none { m.id?.startsWith("$it:") == true } } + directMarkers)
+            .filter { (it.source ?: "") !in hiddenSources }
+    }
+    val mapMarkers = remember(allMarkers, prefs.hiddenKinds, prefs.sourceFilter, pluginsOff) {
+        allMarkers.filter { prefs.isShown(it.kind) && !it.blankSign &&
+            (it.kind != "plugin" || PluginStyle.sourceId(it) !in pluginsOff) }
+    }
     // Saved across a recreate (a font-size change, a theme switch at dusk): an open sheet stays open.
     var tool by rememberSaveable { mutableStateOf<Tool?>(null) }
     val toolRequest by model.toolRequest.collectAsStateWithLifecycle()
@@ -476,8 +485,7 @@ fun DriveScreen(model: DriveViewModel) {
             ),
         ) {
             if (prefs.traffic) TrafficLayer()
-            MarkerLayers(allMarkers.filter { prefs.isShown(it.kind) && !it.blankSign &&
-                (it.kind != "plugin" || PluginStyle.sourceId(it) !in pluginsOff) }) { key -> model.showMarker(key) }
+            MarkerLayers(mapMarkers) { key -> model.showMarker(key) }
             (state as? DriveState.Found)?.let { PinLayer(it.place) }
             if (state is DriveState.Choosing) chosenRoute?.let { RouteLine(it) }
             // Moving with no trip: the dot becomes the same arrow a trip shows.
@@ -631,14 +639,17 @@ private fun MarkerLayers(markers: List<RoadMarker>, onTap: (String) -> Unit) {
         if (kind == "plugin") continue
         // A camera with live video wears a red ring, so the map says
         // which cameras can be watched and which are stills.
-        val ofKind = when (kind) {
-            "camera" -> markers.filter { it.kind == "camera" && it.stream.isNullOrBlank() }
-            "camera_live" -> markers.filter { it.kind == "camera" && !it.stream.isNullOrBlank() }
-            else -> markers.filter { it.kind == kind }
+        val features = remember(markers) {
+            val ofKind = when (kind) {
+                "camera" -> markers.filter { it.kind == "camera" && it.stream.isNullOrBlank() }
+                "camera_live" -> markers.filter { it.kind == "camera" && !it.stream.isNullOrBlank() }
+                else -> markers.filter { it.kind == kind }
+            }
+            FeatureCollection(ofKind.map { m ->
+                Feature(geometry = Point(Position(m.lon, m.lat)), properties = buildJsonObject { put("key", JsonPrimitive(m.key)) })
+            })
         }
-        val source = rememberGeoJsonSource(GeoJsonData.Features(FeatureCollection(ofKind.map { m ->
-            Feature(geometry = Point(Position(m.lon, m.lat)), properties = buildJsonObject { put("key", JsonPrimitive(m.key)) })
-        })))
+        val source = rememberGeoJsonSource(GeoJsonData.Features(features))
         CircleLayer(
             id = "cs-m-$kind", source = source, color = const(MarkerIcons.color(if (kind == "camera_live") "camera" else kind)), radius = dotRadius,
             strokeColor = const(if (kind == "camera_live") Color(0xFFD32F2F) else Color.White), strokeWidth = dotStroke,
@@ -648,15 +659,18 @@ private fun MarkerLayers(markers: List<RoadMarker>, onTap: (String) -> Unit) {
     // A plugin alert is a badge, not a dot: the picture is what it is,
     // the color is which plugin (PluginStyle). One layer per badge on
     // screen, above the official dots.
-    val badges = markers.filter { it.kind == "plugin" }.groupBy { PluginStyle.key(it) }
+    val badges = remember(markers) { markers.filter { it.kind == "plugin" }.groupBy { PluginStyle.key(it) } }
     for ((badge, ofBadge) in badges.entries.sortedBy { it.key }) {
         key(badge) {
             val first = ofBadge.first()
             val glyph = rememberVectorPainter(PluginStyle.icon(PluginStyle.category(first.flare_kind)))
             val painter = remember(badge) { BadgePainter(PluginStyle.color(PluginStyle.sourceId(first)), glyph) }
-            val source = rememberGeoJsonSource(GeoJsonData.Features(FeatureCollection(ofBadge.map { m ->
-                Feature(geometry = Point(Position(m.lon, m.lat)), properties = buildJsonObject { put("key", JsonPrimitive(m.key)) })
-            })))
+            val features = remember(ofBadge) {
+                FeatureCollection(ofBadge.map { m ->
+                    Feature(geometry = Point(Position(m.lon, m.lat)), properties = buildJsonObject { put("key", JsonPrimitive(m.key)) })
+                })
+            }
+            val source = rememberGeoJsonSource(GeoJsonData.Features(features))
             SymbolLayer(
                 id = "cs-m-plugin-$badge", source = source,
                 iconImage = image(painter, DpSize(28.dp, 28.dp)), iconSize = badgeScale,
