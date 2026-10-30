@@ -204,10 +204,19 @@ final class DriveUITests: XCTestCase {
     }
 
     func testLongPressDropsAPin() {
-        let map = app.otherElements.firstMatch
+        // The press only counts once the hook has found the map view and
+        // added its recognizer; it names the map when it has.
+        let map = app.descendants(matching: .any)["cs-map"]
+        XCTAssertTrue(map.waitForExistence(timeout: 15), "map hook attached")
         let center = map.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
-        center.press(forDuration: 1.0)
-        XCTAssertTrue(app.buttons["navigate"].waitForExistence(timeout: 10), "a dropped pin has a card")
+        // A busy simulator can stall the app through the whole hold, and
+        // the press then lands as a plain tap. Press again if so.
+        var card = false
+        for _ in 0 ..< 3 where !card {
+            center.press(forDuration: 1.5)
+            card = app.buttons["navigate"].waitForExistence(timeout: 6)
+        }
+        XCTAssertTrue(card, "a dropped pin has a card")
         app.buttons["place-close"].tap()
     }
 

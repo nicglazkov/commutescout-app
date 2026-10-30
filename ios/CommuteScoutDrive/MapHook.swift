@@ -35,6 +35,7 @@ struct MapHook: UIViewRepresentable {
         c.trafficTiles = trafficTiles
         c.applyTraffic()
         c.overlay.apply(scene)
+        if c.mapView == nil { uiView.findMap(tries: 0) }
     }
 
     final class HookView: UIView {
@@ -45,12 +46,18 @@ struct MapHook: UIViewRepresentable {
             DispatchQueue.main.async { [weak self] in self?.findMap() }
         }
 
-        private func findMap() {
+        /// The navigation view can make its map a moment after this view
+        /// joins the window. Until the map is found there is no long
+        /// press and no tap, so look again for a few seconds.
+        func findMap(tries: Int = 50) {
+            guard window != nil, coordinator?.mapView == nil else { return }
             var v: UIView? = self
             while let s = v?.superview {
                 if let mv = Self.find(in: s) { coordinator?.attach(mv); return }
                 v = s
             }
+            guard tries > 0 else { NSLog("CS hook found no map view"); return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.findMap(tries: tries - 1) }
         }
 
         private static func find(in view: UIView) -> MLNMapView? {
@@ -86,11 +93,16 @@ struct MapHook: UIViewRepresentable {
             for g in mv.gestureRecognizers ?? [] {
                 if let t = g as? UITapGestureRecognizer, t.numberOfTapsRequired == 2 { tap.require(toFail: t) }
             }
-            mv.addGestureRecognizer(tap)
             let press = UILongPressGestureRecognizer(target: self, action: #selector(pressed(_:)))
             press.minimumPressDuration = 0.6
             press.delegate = self
+            // Lifting the finger after a long press must not also count as
+            // a tap: on a marker, the tap would swap the pin for the marker.
+            tap.require(toFail: press)
+            mv.addGestureRecognizer(tap)
             mv.addGestureRecognizer(press)
+            // UI tests wait on this: from here on a press drops a pin.
+            mv.accessibilityIdentifier = "cs-map"
             timer?.invalidate()
             timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in self?.poll(); self?.restore() }
             applyTraffic()

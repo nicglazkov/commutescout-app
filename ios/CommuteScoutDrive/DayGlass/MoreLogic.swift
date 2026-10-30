@@ -148,8 +148,6 @@ enum AreaMath {
     static let bufferM = 6000.0
     /// And refuses paths longer than this (MAX_ROUTE_M), with some room.
     static let maxPathKm = 780.0
-    /// Without a state to learn from: a suburban square kilometer of full detail.
-    static let fallbackBytesPerSqKm = 250_000.0
 
     static func widthKm(south: Double, west: Double, north: Double, east: Double) -> Double {
         let mid = (south + north) / 2
@@ -192,18 +190,11 @@ enum AreaMath {
         return path.count > 1 && WatchMath.lengthKm(path) <= maxPathKm
     }
 
-    /// Bytes per square km, learned from a whole state's file and its box.
-    static func density(stateBytes: Int64?, south: Double, west: Double, north: Double, east: Double) -> Double? {
-        guard let b = stateBytes, b > 0 else { return nil }
-        let km2 = widthKm(south: south, west: west, north: north, east: east) * heightKm(south: south, north: north)
-        return km2 > 0 ? Double(b) / km2 : nil
-    }
-
-    static func estimateBytes(widthKm: Double, heightKm: Double, bytesPerSqKm: Double?) -> Int64 {
-        let v = widthKm * heightKm * (bytesPerSqKm ?? fallbackBytesPerSqKm)
-        // A frame not laid out yet has no size; never trap on it.
-        guard v.isFinite, v > 0 else { return 0 }
-        return Int64(min(v, 9e15))
+    /// What the server cuts for a box: the folding path's squares reach a
+    /// buffer past its west and east edges; its rows stay inside north and south.
+    static func extractBox(south: Double, west: Double, north: Double, east: Double) -> (south: Double, west: Double, north: Double, east: Double) {
+        let dLon = bufferM / (111_320 * max(0.1, cos((south + north) / 2 * .pi / 180)))
+        return (south, west - dLon, north, east + dLon)
     }
 
     /// "About 310 MB", rounded so it never claims more precision than it has.
@@ -254,5 +245,141 @@ enum SavedText {
         if bytes >= 1_000_000_000 { return String(format: "%.1f GB", Double(bytes) / 1e9) }
         if bytes >= 1_000_000 { return "\(Int((Double(bytes) / 1e6).rounded())) MB" }
         return "\(max(1, Int((Double(bytes) / 1e3).rounded()))) KB"
+    }
+}
+
+/// Reads a PMTiles v3 file's directories, so the app can add up what a
+/// box of the map really weighs. Sizes swing a hundredfold between a
+/// city and open desert, so no average per square mile can stand in.
+enum PMTilesMath {
+    struct Header: Equatable {
+        let rootOffset: UInt64, rootLength: UInt64
+        let leafOffset: UInt64
+        let gzipped: Bool
+        let maxZoom: Int
+    }
+
+    /// One directory entry: a run of tiles, or (run length 0) a leaf directory.
+    struct Entry: Equatable {
+        let tileId: UInt64
+        let runLength: UInt32
+        let length: UInt32
+        let offset: UInt64
+    }
+
+    static func header(_ d: Data) -> Header? {
+        let b = [UInt8](d)
+        guard b.count >= 127, String(bytes: b[0 ..< 7], encoding: .ascii) == "PMTiles", b[7] == 3 else { return nil }
+        func u64(_ at: Int) -> UInt64 { (0 ..< 8).reduce(UInt64(0)) { $0 | UInt64(b[at + $1]) << (8 * UInt64($1)) } }
+        return Header(rootOffset: u64(8), rootLength: u64(16), leafOffset: u64(40), gzipped: b[97] == 2, maxZoom: Int(b[101]))
+    }
+
+    /// The Hilbert tile id of z/x/y, as the PMTiles spec numbers tiles.
+    static func tileId(z: Int, x: Int, y: Int) -> UInt64 {
+        var acc: UInt64 = ((UInt64(1) << UInt64(2 * z)) - 1) / 3
+        let n = 1 << z
+        var x = x, y = y, s = n / 2
+        while s > 0 {
+            let rx = x & s > 0 ? 1 : 0, ry = y & s > 0 ? 1 : 0
+            acc += UInt64(s) * UInt64(s) * UInt64((3 * rx) ^ ry)
+            if ry == 0 {
+                if rx == 1 { x = n - 1 - x; y = n - 1 - y }
+                swap(&x, &y)
+            }
+            s /= 2
+        }
+        return acc
+    }
+
+    static func tile(lat: Double, lon: Double, z: Int) -> (x: Int, y: Int) {
+        let n = Double(1 << z)
+        let la = min(85.05, max(-85.05, lat)) * .pi / 180
+        let x = Int((lon + 180) / 360 * n), y = Int((1 - asinh(tan(la)) / .pi) / 2 * n)
+        return (min(Int(n) - 1, max(0, x)), min(Int(n) - 1, max(0, y)))
+    }
+
+    /// Every tile id in the box from zoom 0 up, sorted; nil past `limit`.
+    static func tileIds(south: Double, west: Double, north: Double, east: Double, maxZoom: Int, limit: Int = 80_000) -> [UInt64]? {
+        var out: [UInt64] = []
+        for z in 0 ... maxZoom {
+            let a = tile(lat: north, lon: west, z: z), b = tile(lat: south, lon: east, z: z)
+            guard out.count + (b.x - a.x + 1) * (b.y - a.y + 1) <= limit else { return nil }
+            for x in a.x ... b.x { for y in a.y ... b.y { out.append(tileId(z: z, x: x, y: y)) } }
+        }
+        return out.sorted()
+    }
+
+    /// A directory, already unzipped.
+    static func directory(_ d: Data) -> [Entry]? {
+        let b = [UInt8](d)
+        var i = 0
+        func next() -> UInt64? {
+            var v: UInt64 = 0, shift: UInt64 = 0
+            while i < b.count {
+                let c = b[i]; i += 1
+                v |= UInt64(c & 0x7F) << shift
+                if c < 0x80 { return v }
+                shift += 7
+                if shift > 63 { return nil }
+            }
+            return nil
+        }
+        guard let n64 = next(), n64 < 10_000_000 else { return nil }
+        let n = Int(n64)
+        var ids = [UInt64](), runs = [UInt64](), lens = [UInt64](), offs = [UInt64]()
+        var t: UInt64 = 0
+        for _ in 0 ..< n { guard let v = next() else { return nil }; t += v; ids.append(t) }
+        for _ in 0 ..< n { guard let v = next() else { return nil }; runs.append(v) }
+        for _ in 0 ..< n { guard let v = next() else { return nil }; lens.append(v) }
+        for k in 0 ..< n {
+            guard let v = next() else { return nil }
+            offs.append(v == 0 && k > 0 ? offs[k - 1] + lens[k - 1] : v &- 1)
+        }
+        return (0 ..< n).map { Entry(tileId: ids[$0], runLength: UInt32(truncatingIfNeeded: runs[$0]),
+                                     length: UInt32(truncatingIfNeeded: lens[$0]), offset: offs[$0]) }
+    }
+
+    /// The entry holding `id`: its tile run, or the leaf to look in next.
+    static func find(_ id: UInt64, in entries: [Entry]) -> Entry? {
+        var lo = 0, hi = entries.count - 1, best = -1
+        while lo <= hi {
+            let mid = (lo + hi) / 2
+            if entries[mid].tileId <= id { best = mid; lo = mid + 1 } else { hi = mid - 1 }
+        }
+        guard best >= 0 else { return nil }
+        let e = entries[best]
+        if e.runLength == 0 { return e }
+        return id < e.tileId + UInt64(e.runLength) ? e : nil
+    }
+
+    /// Adds up the tiles' lengths. Ids that land in a leaf not given yet
+    /// come back as `missing`; fetch those leaves and ask again.
+    static func sum(ids: [UInt64], root: [Entry], leaves: [UInt64: [Entry]]) -> (bytes: Int64, missing: [Entry]) {
+        var bytes: Int64 = 0
+        var missing: [UInt64: Entry] = [:]
+        for id in ids {
+            var entries = root
+            for _ in 0 ..< 4 {
+                guard let e = find(id, in: entries) else { break }
+                if e.runLength > 0 { bytes += Int64(e.length); break }
+                guard let leaf = leaves[e.offset] else { missing[e.offset] = e; break }
+                entries = leaf
+            }
+        }
+        return (bytes, missing.values.sorted { $0.offset < $1.offset })
+    }
+
+    /// Gzip without its wrapper, inflated by the system's raw deflate.
+    static func gunzip(_ d: Data) -> Data? {
+        let b = [UInt8](d)
+        guard b.count > 18, b[0] == 0x1F, b[1] == 0x8B, b[2] == 8 else { return nil }
+        let flags = b[3]
+        var i = 10
+        if flags & 4 != 0 { guard i + 2 <= b.count else { return nil }; i += 2 + Int(b[i]) + Int(b[i + 1]) << 8 }
+        if flags & 8 != 0 { while i < b.count, b[i] != 0 { i += 1 }; i += 1 }
+        if flags & 16 != 0 { while i < b.count, b[i] != 0 { i += 1 }; i += 1 }
+        if flags & 2 != 0 { i += 2 }
+        guard i < b.count - 8 else { return nil }
+        return try? (Data(b[i ..< b.count - 8]) as NSData).decompressed(using: .zlib) as Data
     }
 }

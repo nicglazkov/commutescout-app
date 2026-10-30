@@ -56,6 +56,15 @@ extension MapFiles.LocalFile {
 
 /// Saved maps shown in screenshots and tests, never on a real phone.
 enum OfflineFixtures {
+    /// Bytes per square km of the Bay Area box measured from the real index
+    /// (48.1 MB for 40 by 48 km), so fixture sizes still follow the frame.
+    static let bytesPerSqKm = 25_000.0
+
+    static func bytes(widthKm: Double, heightKm: Double) -> Int64 {
+        let v = widthKm * heightKm * bytesPerSqKm
+        // A frame not laid out yet has no size; never trap on it.
+        return v.isFinite && v > 0 ? Int64(min(v, 9e15)) : 0
+    }
     static var on: Bool {
         #if DEBUG
         return ProcessInfo.processInfo.arguments.contains("-csMoreFixtures")
@@ -509,6 +518,7 @@ struct AreaPickerView: View {
     @State private var zoomStart: Double?
     @State private var sizeStart: CGSize?
     @State private var grabbed = false
+    @StateObject private var sizer = MapSizer()
 
     private var start: CLLocationCoordinate2D {
         if OfflineFixtures.on { return CLLocationCoordinate2D(latitude: 37.442, longitude: -122.143) }
@@ -534,7 +544,8 @@ struct AreaPickerView: View {
             let box = (s: se.latitude, w: nw.longitude, n: nw.latitude, e: se.longitude)
             let wKm = AreaMath.widthKm(south: box.s, west: box.w, north: box.n, east: box.e)
             let hKm = AreaMath.heightKm(south: box.s, north: box.n)
-            let bytes = AreaMath.estimateBytes(widthKm: wKm, heightKm: hKm, bytesPerSqKm: density(at: c))
+            let cut = AreaMath.extractBox(south: box.s, west: box.w, north: box.n, east: box.e)
+            let boxKey = String(format: "%.3f,%.3f,%.3f,%.3f", cut.south, cut.west, cut.north, cut.east)
             let fits = AreaMath.fits(south: box.s, west: box.w, north: box.n, east: box.e)
             ZStack(alignment: .topLeading) {
                 StillMap(center: mapCenter, zoom: z)
@@ -545,26 +556,23 @@ struct AreaPickerView: View {
                 dim(frame: frame, size: full).allowsHitTesting(false)
                 handle(frame: frame, maxW: maxW, maxH: maxH, fs: fs)
                 topBar.padding(.horizontal, 14).padding(.top, g.safeAreaInsets.top + 6)
-                VStack { Spacer(); card(bytes: bytes, wKm: wKm, hKm: hKm, fits: fits, box: box) }
+                VStack { Spacer(); card(bytes: OfflineFixtures.on ? OfflineFixtures.bytes(widthKm: wKm, heightKm: hKm) : sizer.bytes(for: boxKey), wKm: wKm, hKm: hKm, fits: fits, box: box) }
                     .padding(.horizontal, 10).padding(.bottom, g.safeAreaInsets.bottom + 6)
             }
             .frame(width: full.width, height: full.height)
             .ignoresSafeArea()
+            .task(id: boxKey) {
+                guard !OfflineFixtures.on, fits else { return }
+                // Wait for the drag to settle before reading the map's index.
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                guard !Task.isCancelled else { return }
+                await sizer.measure(key: boxKey, south: cut.south, west: cut.west, north: cut.north, east: cut.east,
+                                    url: files.manifest?.us.url ?? MapFiles.defaultUS)
+            }
         }
         .background(DG.background.ignoresSafeArea())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("area-picker")
-    }
-
-    /// Bytes per square km from the state the area is in, when its file size is known.
-    private func density(at c: CLLocationCoordinate2D) -> Double? {
-        guard !OfflineFixtures.on, let states = files.manifest?.states else { return nil }
-        for s in states {
-            let b = StateBounds.of(s.code)
-            guard c.latitude >= b.south, c.latitude <= b.north, c.longitude >= b.west, c.longitude <= b.east else { continue }
-            if let d = AreaMath.density(stateBytes: s.bytes, south: b.south, west: b.west, north: b.north, east: b.east) { return d }
-        }
-        return nil
     }
 
     private func pan(_ m: Mercator) -> some Gesture {
@@ -647,11 +655,11 @@ struct AreaPickerView: View {
         .dgGlass(radius: 27)
     }
 
-    private func card(bytes: Int64, wKm: Double, hKm: Double, fits: Bool,
+    private func card(bytes: Int64?, wKm: Double, hKm: Double, fits: Bool,
                       box: (s: Double, w: Double, n: Double, e: Double)) -> some View {
         let span = AreaMath.spanText(widthKm: wKm, heightKm: hKm, miles: Units.useMiles)
         return VStack(alignment: .leading, spacing: 0) {
-            Text(fits ? AreaMath.aboutText(bytes) : "Too big to save at once")
+            Text(!fits ? "Too big to save at once" : bytes.map(AreaMath.aboutText) ?? "Adding up the size")
                 .font(DG.font(19, .bold)).foregroundStyle(fits ? DG.ink : DGTone.high.ink)
                 .accessibilityIdentifier("picker-size")
             Text(span + (fits ? ". Drag the corner to change it." : ". Drag the corner in, or zoom in."))
@@ -967,5 +975,62 @@ private struct UpdateButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(DG.snap, value: configuration.isPressed)
             .animation(DG.springSoft, value: done)
+    }
+}
+
+/// What a box of the map weighs: the same tiles the server copies out of
+/// the US file (every zoom, up to its most detailed), added up from the
+/// file's own index with a few small range reads. Leaves stay cached.
+@MainActor
+final class MapSizer: ObservableObject {
+    @Published private var known: [String: Int64] = [:]
+    private var url: String?
+    private var header: PMTilesMath.Header?
+    private var root: [PMTilesMath.Entry] = []
+    private var leaves: [UInt64: [PMTilesMath.Entry]] = [:]
+
+    func bytes(for key: String) -> Int64? { known[key] }
+
+    func measure(key: String, south: Double, west: Double, north: Double, east: Double, url: String) async {
+        guard known[key] == nil else { return }
+        do {
+            if self.url != url || header == nil {
+                guard let h = PMTilesMath.header(try await read(url, 0, 127)) else { return }
+                let raw = try await read(url, h.rootOffset, h.rootLength)
+                guard let r = PMTilesMath.directory(h.gzipped ? (PMTilesMath.gunzip(raw) ?? Data()) : raw) else { return }
+                (self.url, header, root, leaves) = (url, h, r, [:])
+            }
+            guard let h = header,
+                  let ids = PMTilesMath.tileIds(south: south, west: west, north: north, east: east, maxZoom: h.maxZoom) else { return }
+            for _ in 0 ..< 4 {
+                let (bytes, missing) = PMTilesMath.sum(ids: ids, root: root, leaves: leaves)
+                if missing.isEmpty { known[key] = bytes; return }
+                try await withThrowingTaskGroup(of: (UInt64, [PMTilesMath.Entry]?).self) { group in
+                    for e in missing.prefix(40) {
+                        group.addTask {
+                            let raw = try await Self.fetch(url, h.leafOffset + e.offset, UInt64(e.length))
+                            return (e.offset, PMTilesMath.directory(h.gzipped ? (PMTilesMath.gunzip(raw) ?? Data()) : raw))
+                        }
+                    }
+                    for try await (off, dir) in group { leaves[off] = dir ?? [] }
+                }
+                if Task.isCancelled { return }
+            }
+        } catch {
+            DriveLog.note("map: size unavailable: \(error)")
+        }
+    }
+
+    private func read(_ url: String, _ offset: UInt64, _ length: UInt64) async throws -> Data {
+        try await Self.fetch(url, offset, length)
+    }
+
+    nonisolated private static func fetch(_ url: String, _ offset: UInt64, _ length: UInt64) async throws -> Data {
+        guard let u = URL(string: url), length > 0 else { throw URLError(.badURL) }
+        var req = URLRequest(url: u, timeoutInterval: 20)
+        req.setValue("bytes=\(offset)-\(offset + length - 1)", forHTTPHeaderField: "Range")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        guard (resp as? HTTPURLResponse)?.statusCode == 206, data.count == Int(length) else { throw URLError(.badServerResponse) }
+        return data
     }
 }
