@@ -148,6 +148,7 @@ targets:
       - path: CommuteScoutDrive/DayGlass/LaneLayout.swift
       - path: CommuteScoutDrive/DayGlass/DGKind.swift
       - path: CommuteScoutDrive/DayGlass/SystemNotes.swift
+      - path: CommuteScoutDrive/DayGlass/CameraRoom.swift
       - path: ../shared/voices.json
         buildPhase: resources
     settings:

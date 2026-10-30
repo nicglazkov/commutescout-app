@@ -416,6 +416,43 @@ enum MarkerIcons {
         "toll": "TOLL PRICE",
     ]
 
+    /// A kind's pin as the mockups draw it: the tone's disc, lighter at
+    /// the top, in a white ring, with the icon stroked in white.
+    static func dgPin(_ k: DGKind) -> UIImage {
+        let size = CGSize(width: 30, height: 30)
+        return UIGraphicsImageRenderer(size: size).image { ctx in
+            let cg = ctx.cgContext
+            let full = CGRect(origin: .zero, size: size)
+            UIColor.white.setFill()
+            cg.fillEllipse(in: full)
+            let disc = full.insetBy(dx: 2.5, dy: 2.5)
+            let tone = UIColor(k.tone.color)
+            let top = UIColor(k.tone.color.mix(.white, 0.15))
+            cg.saveGState()
+            cg.addEllipse(in: disc); cg.clip()
+            if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [top.cgColor, tone.cgColor] as CFArray, locations: [0, 1]) {
+                cg.drawLinearGradient(g, start: CGPoint(x: 0, y: disc.minY), end: CGPoint(x: 0, y: disc.maxY), options: [])
+            }
+            cg.restoreGState()
+            let side: CGFloat = 15
+            let icon = DGIcons.path(DGIcon.name(k), in: CGRect(x: (size.width - side) / 2, y: (size.height - side) / 2, width: side, height: side))
+            cg.addPath(icon.cgPath)
+            cg.setStrokeColor(UIColor.white.cgColor)
+            cg.setLineWidth(2.3 * side / 24)
+            cg.setLineCap(.round); cg.setLineJoin(.round)
+            cg.strokePath()
+        }
+    }
+
+    private static func liveRing(_ base: UIImage) -> UIImage {
+        UIGraphicsImageRenderer(size: base.size).image { ctx in
+            base.draw(in: CGRect(origin: .zero, size: base.size))
+            ctx.cgContext.setStrokeColor(UIColor(red: 0.86, green: 0.15, blue: 0.15, alpha: 1).cgColor)
+            ctx.cgContext.setLineWidth(3)
+            ctx.cgContext.strokeEllipse(in: CGRect(origin: .zero, size: base.size).insetBy(dx: 1.5, dy: 1.5))
+        }
+    }
+
     static func tint(_ kind: String) -> Color { Color(color[kind] ?? .gray) }
     static func name(_ kind: String) -> String { symbol[kind] ?? "mappin.circle.fill" }
 
@@ -438,6 +475,9 @@ enum MarkerIcons {
             }
             out[k] = img
         }
+        // Day Glass+ pins: each kind's tone, a white ring, the design's icon.
+        for k in DGKind.allCases { out["dg:" + k.rawValue] = dgPin(k) }
+        if let cam = out["dg:camera"] { out["dg:camera_live"] = liveRing(cam) }
         // A live camera: the camera disc with a red ring, the map's sign
         // that the picture moves.
         if let cam = out["camera"] {

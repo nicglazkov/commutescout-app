@@ -44,10 +44,17 @@ final class SystemNotesTests: XCTestCase {
     }
 
     func testConfirmAsksWithTwoButtons() {
-        let n = SystemNotes.pick(input { $0.confirmKind = "object"; $0.confirmAgo = "Reported 4 min ago, 0.1 mi behind you" })
+        let n = SystemNotes.pick(input { $0.confirmKind = .hazard; $0.confirmAgo = "Reported 4 min ago, 0.1 mi behind you" })
         XCTAssertEqual(n?.title, "Is the object still there?")
         XCTAssertEqual(n?.secondary, "Gone")
         XCTAssertFalse(n?.inline ?? true)
+    }
+
+    func testOfflineUsesTheAppsOwnWordsWhenGiven() {
+        let n = SystemNotes.pick(input { $0.online = false; $0.offlineWords = ("No signal to reroute", "Head back to the route.") })
+        XCTAssertEqual(n?.title, "No signal to reroute")
+        XCTAssertEqual(n?.tone, .clear)
+        XCTAssertEqual(SystemNotes.confirmTitle(.police), "Are the police still there?")
     }
 
     func testOfflineSaysHowOldTheDataIs() {
@@ -64,5 +71,28 @@ final class SystemNotesTests: XCTestCase {
         XCTAssertEqual(tones[.offline], .clear)
         XCTAssertEqual(tones[.watch], .good)
         XCTAssertEqual(tones[.arrive], .good)
+    }
+}
+
+/// The room the map makes for a tucked alert.
+final class CameraRoomTests: XCTestCase {
+    func testRoomOnlyOnATripWithAnAlert() {
+        XCTAssertEqual(CameraRoom.target(navigating: false, alertShown: true, opened: false), 0)
+        XCTAssertEqual(CameraRoom.target(navigating: true, alertShown: false, opened: true), 0)
+        XCTAssertEqual(CameraRoom.target(navigating: true, alertShown: true, opened: false), 84)
+        XCTAssertEqual(CameraRoom.target(navigating: true, alertShown: true, opened: true), 104)
+    }
+
+    func testRoomLowersThePuckByAsMuch() {
+        // The puck is in the middle of the bottom minHeight points.
+        let lower = (CameraRoom.minHeight(room: 0) - CameraRoom.minHeight(room: 84)) / 2
+        XCTAssertEqual(lower, 84)
+    }
+
+    func testEaseOutStartsFastAndEnds() {
+        XCTAssertEqual(CameraRoom.ease(0), 0, accuracy: 0.001)
+        XCTAssertEqual(CameraRoom.ease(1), 1, accuracy: 0.001)
+        XCTAssertGreaterThan(CameraRoom.ease(0.2), 0.6)
+        XCTAssertLessThan(CameraRoom.ease(0.5), 1)
     }
 }

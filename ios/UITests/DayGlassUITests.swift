@@ -52,4 +52,37 @@ final class DayGlassUITests: XCTestCase {
         XCTAssertTrue(app.buttons["note-confirm-secondary"].exists)
         attach(app, "app-messages")
     }
+
+    /// On a trip: the alert tucked under the card, then swiped away; the
+    /// app's message takes the slot under the card once no alert shows.
+    func testMessageTakesTheSlotOnceTheAlertLeaves() {
+        let app = launch(["-csSimulate", "-csAutoDrive", "-csForceAlert", "crash", "-csForceNote", "gps"])
+        let alert = app.descendants(matching: .any)["alert-banner"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 60), "an alert under the card")
+        XCTAssertFalse(app.descendants(matching: .any)["note-gps"].exists, "no message while an alert is tucked")
+        attach(app, "drive-room")
+        // Live data may bring more alerts after the forced one: swipe each away.
+        for _ in 0 ..< 20 where alert.exists {
+            alert.swipeUp()
+            sleep(1)
+        }
+        XCTAssertTrue(app.descendants(matching: .any)["note-gps"].waitForExistence(timeout: 5))
+        sleep(2)
+        attach(app, "drive-no-room")
+    }
+
+    /// Browsing: Home, Work and the recent place in the tray, each opening the place.
+    func testPlacesTrayShowsHomeWorkAndRecent() {
+        let app = launch(["-csSamplePlaces", "-csSimulate"])
+        let notNow = app.buttons["dismiss-trip"]
+        if notNow.waitForExistence(timeout: 3) { notNow.tap() }
+        for id in ["home", "work", "recent"] {
+            XCTAssertTrue(app.buttons["places-tray-" + id].waitForExistence(timeout: 10), "tray row \(id)")
+        }
+        XCTAssertTrue(app.buttons["places-tray-recent"].label.contains("Recent"))
+        attach(app, "browse-tray")
+        app.buttons["places-tray-work"].tap()
+        XCTAssertFalse(app.buttons["places-tray-work"].waitForExistence(timeout: 2) && app.buttons["places-tray-work"].isHittable,
+                       "the place card replaces the tray")
+    }
 }

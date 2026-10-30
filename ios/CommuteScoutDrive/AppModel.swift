@@ -144,6 +144,11 @@ final class AppModel: ObservableObject {
     let mapFiles = MapFiles.shared
     var origin: Place?                      // a chosen start instead of the driver
     @Published var toast: String?
+    /// The trip's alert opened out ("see more"); the map makes more room.
+    @Published var alertMore = ProcessInfo.processInfo.arguments.contains("-csSeeMore")
+    /// A report just passed that takes votes: the capsule asks whether
+    /// it is still there, for a few seconds.
+    @Published var confirmAsk: AlertsEngine.Upcoming?
     /// A trip that was running when the app last closed, offered back.
     @Published var resumable: SavedTrip?
     private var flushing = false
@@ -222,6 +227,12 @@ final class AppModel: ObservableObject {
         guard let dev = coreState?.currentDeviation else { return false }
         if case .noDeviation = dev { return false }
         return true
+    }
+
+    /// Ferrostar finished the trip: the driver is at the destination.
+    var arrived: Bool {
+        if case .complete = coreState?.tripState { return state.isNavigating }
+        return false
     }
 
     /// What the offline banner says, or nil while online.
@@ -595,7 +606,7 @@ final class AppModel: ObservableObject {
 
     // Drive log: a fix every few seconds is normal; a gap says the phone
     // lost GPS or the app was paused. A summary line every minute.
-    private var lastFixAt: Date?
+    private(set) var lastFixAt: Date?
     private var staleSpeedTimer: Timer?
     private var fixes = 0
     private var lastSummary = Date()
@@ -830,6 +841,8 @@ final class AppModel: ObservableObject {
 
     func stop() {
         DriveLog.note("route stop")
+        confirmAsk = nil
+        alertMore = false
         NeuralVoices.shared.clearQueue()
         SavedTrip.clear()
         core.stopNavigation()
