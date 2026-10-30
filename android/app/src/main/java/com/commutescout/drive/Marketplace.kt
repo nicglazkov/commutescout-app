@@ -138,7 +138,7 @@ fun MarketplaceSheet(model: DriveViewModel, onClose: () -> Unit) {
         val stuck by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 60 } }
         val d = LocalDensity.current
         Box(Modifier.fillMaxSize().alpha(shown.value.coerceIn(0f, 1f) * away).tag("marketplace-sheet")) {
-            Box(Modifier.fillMaxSize().background(Color(0xFFECF1F6).copy(alpha = .9f)).clickable(remember { MutableInteractionSource() }, null) {})
+            Box(Modifier.fillMaxSize().background(Color(0xFFECF1F6)).clickable(remember { MutableInteractionSource() }, null) {})
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
             LazyColumn(Modifier.fillMaxSize().graphicsLayer { translationY = (1f - shown.value) * with(d) { 24.dp.toPx() } }, listState,
@@ -262,7 +262,7 @@ fun PluginStatusSheet(model: DriveViewModel, sourceId: String, onClose: () -> Un
     SheetLayer(onClose, snaps = listOf(.70f, .91f), modifier = Modifier.tag("plugin-status"),
         above = {
             // The map chrome steps back behind a soft wash, as in the design.
-            Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xF5F0F4F8), Color(0xD1F0F4F8), Color(0x00F0F4F8)))).padding(bottom = 18.dp)) {
+            Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(0f to Color(0xF5F0F4F8), .72f to Color(0xF5F0F4F8), 1f to Color(0x00F0F4F8))).padding(bottom = 76.dp)) {
                 TopBar({ close(null) })
             }
         }) { sheet ->

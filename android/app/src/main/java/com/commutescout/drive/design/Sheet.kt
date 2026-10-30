@@ -86,7 +86,7 @@ fun rememberSheetState(snaps: List<Dp>, start: Int = 0, onSnap: (Int) -> Unit = 
  * pull moves the sheet and then the page, as on iOS.
  */
 @Composable
-fun DGSheet(state: SheetState, modifier: Modifier = Modifier, fill: Color? = null, content: @Composable ColumnScope.() -> Unit) {
+fun DGSheet(state: SheetState, modifier: Modifier = Modifier, fill: Color? = Color.White, content: @Composable ColumnScope.() -> Unit) {
     val d = LocalDensity.current
     val nested = remember(state) {
         object : NestedScrollConnection {
