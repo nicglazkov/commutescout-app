@@ -10,6 +10,8 @@ import SwiftUI
 /// newer one lands, and out-of-order replies are dropped.
 struct SearchBar: View {
     @EnvironmentObject var model: AppModel
+    /// True while typing: the map's own buttons step aside for the results.
+    @Binding var active: Bool
     @State private var text = ""
     @State private var results: [Suggestion] = []
     @State private var searching = false
@@ -20,7 +22,17 @@ struct SearchBar: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").font(.system(size: 18, weight: .semibold)).foregroundStyle(DG.sub)
+                if focused {
+                    Button { text = ""; results = []; focused = false } label: {
+                        Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold)).foregroundStyle(DG.ink)
+                            .frame(width: 26, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Back")
+                    .accessibilityIdentifier("search-back")
+                } else {
+                    Image(systemName: "magnifyingglass").font(.system(size: 18, weight: .semibold)).foregroundStyle(DG.sub)
+                }
                 TextField("Where to?", text: $text)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -56,6 +68,7 @@ struct SearchBar: View {
         }
         .animation(DG.springSoft, value: focused)
         .animation(DG.springSoft, value: text.isEmpty)
+        .onChange(of: focused) { new in withAnimation(DG.springSoft) { active = new } }
     }
 
     /// Saved and recent places whose name starts with what was typed.

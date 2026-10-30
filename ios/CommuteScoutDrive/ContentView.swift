@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var showLayers = false
     @State private var showReport = false
     @State private var showTools = false
+    @State private var searchActive = false
     /// The event panel's height as laid out, so the map buttons sit above it.
     @State private var panelHeight: CGFloat = 0
     @State private var browseAlertMore = false
@@ -94,15 +95,18 @@ struct ContentView: View {
             } else if !isNavigating && !showWelcome {
                 VStack(spacing: 0) {
                     HStack(alignment: .top, spacing: 8) {
-                        SearchBar()
-                        VStack(spacing: 10) {
-                            DGRoundButton(size: 52) { showSettings = true } label: { Image(systemName: "gearshape.fill") }
-                                .accessibilityLabel("Settings")
-                                .accessibilityIdentifier("settings")
-                            DGRoundButton(size: 52) { showTools = true } label: { Image(systemName: "square.grid.2x2.fill") }
-                                .accessibilityLabel("Tools")
-                                .accessibilityIdentifier("tools")
-                            DGModesPill(is3D: model.prefs.is3D) { withAnimation(DG.tilt) { model.toggle3D() } }
+                        SearchBar(active: $searchActive)
+                        if !searchActive {
+                            VStack(spacing: 10) {
+                                DGRoundButton(size: 52) { showSettings = true } label: { Image(systemName: "gearshape.fill") }
+                                    .accessibilityLabel("Settings")
+                                    .accessibilityIdentifier("settings")
+                                DGRoundButton(size: 52) { showTools = true } label: { Image(systemName: "square.grid.2x2.fill") }
+                                    .accessibilityLabel("Tools")
+                                    .accessibilityIdentifier("tools")
+                                DGModesPill(is3D: model.prefs.is3D) { withAnimation(DG.tilt) { model.toggle3D() } }
+                            }
+                            .transition(.opacity)
                         }
                     }
                     .padding(.horizontal, 12)
@@ -142,6 +146,8 @@ struct ContentView: View {
                     }
                     .padding(.trailing, 12)
                     .padding(.bottom, bottomCardHeight + 12)
+                    .opacity(searchActive ? 0 : 1)
+                    .allowsHitTesting(!searchActive)
                 }
             } }
 
@@ -306,7 +312,9 @@ struct ContentView: View {
         } else {
             switch model.state {
             case .browsing:
-                if let trip = model.resumable { ResumeCard(trip: trip) } else {
+                if let trip = model.resumable {
+                    if !searchActive { ResumeCard(trip: trip) }
+                } else {
                     // The keyboard covers the tray rather than lifting it.
                     PlacesTray().ignoresSafeArea(.keyboard)
                 }
