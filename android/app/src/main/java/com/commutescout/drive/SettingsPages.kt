@@ -434,7 +434,12 @@ fun AccountPage(model: DriveViewModel) {
     val context = LocalContext.current
     val open = openUrl()
     var usage by remember { mutableStateOf<ApiUsage?>(null) }
-    LaunchedEffect(user) { usage = if (user != null) model.account.apiUsage() else null }
+    var usageAsked by remember { mutableStateOf(false) }
+    LaunchedEffect(user) {
+        usageAsked = false
+        usage = if (user != null) model.account.apiUsage() else null
+        usageAsked = true
+    }
     val signedIn = user != null
 
     Group(Modifier.padding(top = 4.dp)) {
@@ -480,8 +485,8 @@ fun AccountPage(model: DriveViewModel) {
             Column(Modifier.padding(16.dp).tag("api-meter")) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text("Requests", Modifier.weight(1f), style = PageType.rowLabel, color = DG.ink)
-                    Text(u?.usedText ?: "–", style = PageType.rowLabel.copy(fontWeight = FontWeight.Bold), color = if (u?.full == true) DG.highInk else DG.ink)
-                    Text(" " + (u?.limitText ?: ""), style = PageType.rowSub, color = DG.sub)
+                    Text(u?.usedText ?: if (usageAsked) ApiUsage.UNAVAILABLE else "–", style = PageType.rowLabel.copy(fontWeight = FontWeight.Bold), color = if (u?.full == true) DG.highInk else DG.ink)
+                    Text(u?.limitText?.takeIf { it.isNotEmpty() }?.let { " $it" } ?: "", style = PageType.rowSub, color = DG.sub)
                 }
                 Spacer(Modifier.height(10.dp))
                 Box(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(DG.ink.copy(alpha = .07f))) {
