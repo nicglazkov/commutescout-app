@@ -151,6 +151,59 @@ final class PagesUITests: XCTestCase {
         shot("trip2", 1)
     }
 
+    func testTripPages() {
+        app.terminate()
+        app.launchArguments = ["-csSimulate", "-csResetPlaces", "-csReportPreview"]
+        app.launch()
+        let search = app.textFields["search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 15))
+        sleep(4)
+        search.tap()
+        shot("trip-search-empty", 1)
+        search.typeText("Palo Alto")
+        sleep(4)
+        shot("trip-search", 0)
+        let pick = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Palo Alto'")).firstMatch
+        if pick.waitForExistence(timeout: 15) {
+            pick.tap()
+            sleep(6)
+            shot("trip-place", 0)
+            if app.buttons["place-watch"].exists {
+                app.buttons["place-watch"].tap()
+                sleep(4)
+                shot("watch-editor", 0)
+                app.buttons["page-close"].firstMatch.tap()
+                sleep(1)
+            }
+            if app.buttons["navigate"].waitForExistence(timeout: 10) {
+                app.buttons["navigate"].tap()
+                if app.buttons["start"].waitForExistence(timeout: 60) {
+                    sleep(3)
+                    shot("trip-routes", 0)
+                    if app.buttons["leave-later"].exists { app.buttons["leave-later"].tap(); sleep(2); shot("trip-leave-later", 0) }
+                    app.buttons["routes-close"].tap()
+                }
+            }
+        }
+        if app.buttons["place-close"].exists { app.buttons["place-close"].tap() }
+        if app.buttons["report"].waitForExistence(timeout: 10) {
+            app.buttons["report"].tap()
+            sleep(2)
+            shot("trip-report", 0)
+            app.buttons["report-CRASH_MAJOR"].tap()
+            sleep(2)
+            shot("trip-report-confirm", 0)
+            app.buttons["report-undo"].tap()
+            app.buttons["report-close"].tap()
+        }
+        app.buttons["tools"].firstMatch.tap()
+        if app.buttons["tool-watches"].waitForExistence(timeout: 3) {
+            app.buttons["tool-watches"].tap()
+            sleep(3)
+            shot("watch-areas", 0)
+        }
+    }
+
     func testAlertsNearby() {
         app.terminate()
         app.launchArguments = ["-csSimulate"]

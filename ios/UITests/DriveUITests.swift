@@ -180,8 +180,8 @@ final class DriveUITests: XCTestCase {
         XCTAssertTrue(app.buttons["add-source"].waitForExistence(timeout: 5))
         app.buttons["Done"].firstMatch.tap()
         app.buttons["tool-watches"].tap()
-        XCTAssertTrue(app.navigationBars["Watch areas"].waitForExistence(timeout: 5))
-        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Watch areas"].firstMatch.waitForExistence(timeout: 5))
+        app.buttons["page-close"].firstMatch.tap()
         app.buttons["tool-directions"].tap()
         XCTAssertTrue(app.navigationBars["Directions"].waitForExistence(timeout: 5))
         app.buttons["Cancel"].firstMatch.tap()
@@ -193,10 +193,10 @@ final class DriveUITests: XCTestCase {
         app.buttons["report"].tap()
         XCTAssertTrue(app.buttons["report-POLICE_VISIBLE"].waitForExistence(timeout: 5))
         app.buttons["report-POLICE_VISIBLE"].tap()
-        // A chosen kind enables Send; signed out, Send leads to sign-in
-        // rather than a report. Never send here.
-        XCTAssertTrue(app.buttons["report-send"].isEnabled, "a kind is chosen: send enabled")
+        // Signed out, a kind leads to sign-in rather than a report.
+        XCTAssertTrue(app.buttons["Continue with Google"].waitForExistence(timeout: 5))
         app.buttons["Cancel"].firstMatch.tap()
+        app.buttons["report-close"].tap()
     }
 
     func testLongPressDropsAPin() {

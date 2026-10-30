@@ -93,7 +93,7 @@ final class CoverageUITests: XCTestCase {
         XCTAssertTrue(suggestion.waitForExistence(timeout: 8), "suggestions arrive before submit")
         app.buttons["search-clear"].tap()
         XCTAssertEqual(app.textFields["search"].value as? String ?? "", "Where to?", "field cleared")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Type a place'")).firstMatch.exists,
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Search a place'")).firstMatch.exists,
                       "empty-state hint under the field")
     }
 
@@ -370,18 +370,20 @@ final class CoverageUITests: XCTestCase {
     func testWatchAreasSignedOutOrList() {
         app.buttons["tools"].tap()
         app.buttons["tool-watches"].tap()
-        XCTAssertTrue(app.navigationBars["Watch areas"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Watch areas"].firstMatch.waitForExistence(timeout: 5))
         if app.buttons["Sign in"].exists {
             app.buttons["Sign in"].tap()
             XCTAssertTrue(app.buttons["Continue with Google"].waitForExistence(timeout: 5))
             app.buttons["Cancel"].firstMatch.tap()
         } else {
-            XCTAssertTrue(app.staticTexts["Your watch areas"].waitForExistence(timeout: 15))
-            XCTAssertTrue(reveal(app.buttons["Create watch"]), "new watch form")
+            XCTAssertTrue(app.buttons["watch-new"].waitForExistence(timeout: 15), "new watch area")
+            XCTAssertTrue(reveal(app.switches["watch-push"]), "how you hear about it")
         }
-        XCTAssertTrue(reveal(app.staticTexts["Manage on the website"]) || app.staticTexts["Manage on the website"].exists)
+        app.buttons["page-close"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["tool-watches"].waitForExistence(timeout: 5))
         app.buttons["Done"].firstMatch.tap()
     }
+
 
     func testAskAnswersAQuestion() {
         app.buttons["tools"].tap()
@@ -441,17 +443,34 @@ final class CoverageUITests: XCTestCase {
         XCTAssertTrue(app.buttons["report"].waitForExistence(timeout: 10))
         app.buttons["report"].tap()
         XCTAssertTrue(app.buttons["report-POLICE_VISIBLE"].waitForExistence(timeout: 5))
-        let kinds = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'report-' AND identifier != 'report-send'"))
-        XCTAssertGreaterThanOrEqual(kinds.count, 8, "report kinds on the grid: \(kinds.count)")
-        for i in 0 ..< min(kinds.count, 12) { kinds.element(boundBy: i).tap() }
-        let note = app.textFields["Add a note (optional)"].exists ? app.textFields["Add a note (optional)"] : app.textViews.firstMatch
-        if note.exists { note.tap(); note.typeText("test note") }
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Reported at'")).firstMatch.exists, "coordinates shown")
-        // Signed out, the sheet offers Sign in; signed in, a chosen kind
-        // enables Send. Either way a kind is chosen, so Send is enabled.
-        XCTAssertTrue(app.buttons["report-send"].isEnabled, "a kind is chosen: send enabled")
-        app.buttons["Cancel"].firstMatch.tap()   // never send a test report
+        let kinds = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'report-' AND identifier != 'report-close'"))
+        XCTAssertEqual(kinds.count, 12, "report kinds on the grid: \(kinds.count)")
+        XCTAssertTrue(app.staticTexts["Placed on the road where you are now. Shown to everyone under a pseudonym."].exists)
+        // Signed out, a kind asks for an account first.
+        app.buttons["report-POLICE_VISIBLE"].tap()
+        XCTAssertTrue(app.buttons["Continue with Google"].waitForExistence(timeout: 5), "reports need an account")
+        app.buttons["Cancel"].firstMatch.tap()
+        app.buttons["report-close"].tap()
         XCTAssertTrue(app.textFields["search"].waitForExistence(timeout: 5))
+    }
+
+    func testReportConfirmPicksALaneAndUndoes() {
+        app.terminate()
+        app.launchArguments = ["-csSimulate", "-csResetPlaces", "-csResetPrefs", "-csReportPreview"]
+        app.launch()
+        XCTAssertTrue(app.buttons["report"].waitForExistence(timeout: 10))
+        app.buttons["report"].tap()
+        XCTAssertTrue(app.buttons["report-CRASH_MAJOR"].waitForExistence(timeout: 5))
+        app.buttons["report-CRASH_MAJOR"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Report a crash here'")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Left lane"].exists && app.buttons["Shoulder"].exists, "lane picker")
+        app.buttons["Left lane"].tap()
+        let note = app.textFields["Add a note (optional)"]
+        XCTAssertTrue(note.exists)
+        XCTAssertTrue(app.buttons["report-send"].isEnabled)
+        app.buttons["report-undo"].tap()   // never send a test report
+        XCTAssertTrue(app.buttons["report-POLICE_VISIBLE"].waitForExistence(timeout: 5), "undo goes back to the grid")
+        app.buttons["report-close"].tap()
     }
 
     // MARK: map controls and navigation
