@@ -175,9 +175,12 @@ struct ContentView: View {
         .sheet(isPresented: $model.showWatches) { WatchesView() }
         .sheet(isPresented: $showLayers) { LayersSheet().presentationDetents([.medium, .large]) }
         .sheet(isPresented: $showTools) { ToolsSheet(showLayers: $showLayers).presentationDetents([.medium, .large]) }
-        .sheet(isPresented: $showReport) {
-            if let c = model.reportCoordinate { ReportSheet(coordinate: c).presentationDetents([.large]) }
+        .overlay {
+            if showReport, let c = model.reportCoordinate {
+                ReportFlow(coordinate: c, isPresented: $showReport).transition(.opacity)
+            }
         }
+        .animation(DG.springSoft, value: showReport)
         .overlay(alignment: .top) {
             if let t = model.toast {
                 Text(t).font(DG.font(15, .semibold)).foregroundStyle(DG.ink)
@@ -216,9 +219,9 @@ struct ContentView: View {
         if showsEvent { return min(panelHeight, 380) }
         switch model.state {
         case .browsing: return model.resumable == nil ? PlacesTray.height(rows: PlacesTray.rows(model.places).count) : 140
-        case .found: return 150
+        case .found: return max(panelHeight - 20, 200)
         case .routing: return 80
-        case .choosing: return 330
+        case .choosing: return max(panelHeight - 20, 240)
         case .navigating: return 0
         }
     }
@@ -293,19 +296,28 @@ struct ContentView: View {
                 }
             case let .found(place):
                 PlaceCard(place: place)
+                    .background(GeometryReader { g in Color.clear.preference(key: PanelHeight.self, value: g.size.height) })
+                    .onPreferenceChange(PanelHeight.self) { panelHeight = $0 }
+                    .transition(.move(edge: .bottom))
             case .routing:
                 HStack(spacing: 10) {
                     ProgressView(); Text("Finding routes")
                     Spacer()
                     Button("Cancel") { model.cancelRouting() }
                 }
-                    .padding(16).frame(maxWidth: .infinity)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .font(DG.font(16, .semibold)).foregroundStyle(DG.ink)
+                    .padding(.horizontal, 18).frame(height: 60).frame(maxWidth: .infinity)
+                    .dgGlass(radius: DG.R.card)
                     .padding(12)
             case let .choosing(routes, place):
                 RoutesCard(routes: routes, place: place)
-            case .navigating:
-                EmptyView()
+                    .background(GeometryReader { g in Color.clear.preference(key: PanelHeight.self, value: g.size.height) })
+                    .onPreferenceChange(PanelHeight.self) { panelHeight = $0 }
+                    .transition(.move(edge: .bottom))
+            case let .navigating(place):
+                if case .complete = model.coreState?.tripState {
+                    ArriveCard(place: place).transition(.move(edge: .bottom))
+                }
             }
         }
     }
@@ -348,122 +360,6 @@ struct ResumeCard: View {
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .padding(12)
-    }
-}
-
-/// The next road event on the route: what it is and how far ahead.
-/// Tap to hear it again.
-/// The pin's card: what it is, how far, Navigate, Save as Home, Work or a star.
-struct PlaceCard: View {
-    @EnvironmentObject var model: AppModel
-    let place: Place
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(place.shortName).font(.headline)
-                    Text(place.name).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    if let here = model.here {
-                        Text(Units.distance(AlertsEngine.meters(here, place.coordinate)) + " away")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                Button { model.clearFound() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                    .accessibilityIdentifier("place-close")
-            }
-            HStack(spacing: 8) {
-                Button { Task { await model.routes(to: place) } } label: {
-                    Label("Navigate", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
-                        .frame(maxWidth: .infinity).padding(.vertical, 10)
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("navigate")
-                Menu {
-                    Button("Save as Home") { model.places.set(.home, name: place.name, coordinate: place.coordinate) }
-                    Button("Save as Work") { model.places.set(.work, name: place.name, coordinate: place.coordinate) }
-                    Button("Save to favorites") { model.places.set(.saved, name: place.name, coordinate: place.coordinate) }
-                    ShareLink("Share", item: Backend.mapURL(lat: place.lat, lon: place.lon))
-                } label: {
-                    Image(systemName: "star").padding(.vertical, 10).padding(.horizontal, 14)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("save-menu")
-            }
-        }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .padding(12)
-    }
-}
-
-/// The alternatives, fastest first, one tap to go.
-struct RoutesCard: View {
-    @EnvironmentObject var model: AppModel
-    let routes: [Route]
-    let place: Place
-    @State private var chosen = 0
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("To \(place.shortName)").font(.headline)
-                Spacer()
-                Button { model.state = .found(place); model.preview = nil } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                }
-                .accessibilityIdentifier("routes-close")
-            }
-            ForEach(Array(routes.enumerated()), id: \.offset) { i, route in
-                let seconds = route.steps.reduce(0) { $0 + $1.duration }
-                Button { chosen = i; model.preview = route } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(i == 0 ? "Fastest" : "Alternate \(i)").font(.subheadline.weight(.semibold))
-                            Text("\(Units.duration(seconds)), \(Units.distance(route.distance))" +
-                                 (roadName(route).map { ", via \($0)" } ?? ""))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if i == chosen { Image(systemName: "checkmark.circle.fill").foregroundStyle(.tint) }
-                    }
-                    .padding(10)
-                    .background(i == chosen ? Color.accentColor.opacity(0.12) : Color.clear,
-                                in: RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("route-\(i)")
-            }
-            Button { model.start(routes[chosen], to: place) } label: {
-                Label("Start", systemImage: "location.north.line.fill")
-                    .frame(maxWidth: .infinity).padding(.vertical, 10)
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("start")
-            // The map along the route, for a drive through a dead zone.
-            // Saved on its own on Wi-Fi when the trip starts; this is the
-            // tap for mobile data, and it says so.
-            if model.online, !model.mapFiles.progress.isEmpty {
-                ProgressView(value: model.mapFiles.progress.values.first ?? 0) { Text("Saving the map for this trip").font(.caption) }
-            } else if model.online, !(Connectivity.shared.onWifi && model.prefs.mapAutoSave) {
-                Button { model.saveTripMap(routes[chosen], to: place, manual: true) } label: {
-                    Label(Connectivity.shared.onWifi ? "Save the map for this trip" : "Save the map for this trip (mobile data)",
-                          systemImage: "arrow.down.circle")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain).foregroundStyle(.tint)
-                .accessibilityIdentifier("save-trip-map")
-            }
-        }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .padding(12)
-    }
-
-    private func roadName(_ route: Route) -> String? {
-        route.steps.max { $0.distance < $1.distance }?.roadName?.trimmingCharacters(in: .whitespaces)
-            .split(separator: ";").first.map(String.init)
     }
 }
 
