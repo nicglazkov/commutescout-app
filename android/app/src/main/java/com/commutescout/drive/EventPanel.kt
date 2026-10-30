@@ -133,6 +133,16 @@ fun EventPanel(sheet: EventSheet, here: LatLon?, model: DriveViewModel) {
             .glass(RoundedCornerShape(topStart = DG.rSheet, topEnd = DG.rSheet), elevation = 26.dp, strong = true)
             .testTag("marker-card"),
     ) {
+        // A watch alert whose event is over has its own layout.
+        if (sheet.isClearedAlert()) {
+            Column(Modifier.navigationBarsPadding().testTag("event-sheet")) {
+                Box(Modifier.fillMaxWidth().height(22.dp).then(dragging), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(width = 40.dp, height = 5.dp).clip(CircleShape).background(DG.ink.copy(alpha = 0.16f)))
+                }
+                ClearedPanel(sheet, now, model)
+            }
+            return@Box
+        }
         // Never taller than its content, never taller than its height
         // allows: the scrolling part takes what the grabber and the
         // action row leave, measured rather than guessed.
