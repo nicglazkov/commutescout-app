@@ -137,7 +137,7 @@ class EventsTest {
         val m = parse("""{"kind":"lane_closure","lat":37.442,"lon":-122.143,"cls":"full-roadway","until":${epoch(29, 9, 20)}}""")
         val s = EventText.schedule(m, now, la)
         assertEquals("Was scheduled to end today at 9:20 AM PDT (your timezone)", s.head)
-        assertEquals("That was 40 minutes ago. Caltrans has not reported it open. Assume the road is still closed.", s.tail)
+        assertEquals("That was 40 minutes ago. The state transportation agency has not reported it open. Assume the road is still closed.", s.tail)
     }
 
     @Test fun scheduleWithNoEndAndAnotherViewerZone() {
@@ -212,7 +212,7 @@ class EventsTest {
         assertEquals("US-101, Test", c.title)
         assertEquals("All lanes closed", c.warning)
         assertEquals(listOf("Work" to "Paving", "Delay" to "~10 min expected", "Windows" to "2 more scheduled at this spot"), c.facts)
-        assertEquals(listOf("Source: Caltrans lane closure system"), c.footer)
+        assertEquals(listOf("Source: State transportation agency lane closures"), c.footer)
         assertEquals("Lanes closed", EventCard.closureChip("lane"))
         assertEquals("One-way traffic", EventCard.closureChip("one-way-traffic"))
     }
