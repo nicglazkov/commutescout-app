@@ -141,8 +141,16 @@ enum AutoDrive {
         if let i = args.firstIndex(of: "-csOpenCamera"), i + 1 < args.count {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             let wantVideo = args[i + 1] == "video"
-            if let all = try? await LiveData.markers(in: (33.9, -118.4, 34.2, -118.0), kinds: "camera"),
-               let m = all.first(where: { ($0.stream != nil) == wantVideo && $0.image != nil && ($0.stream ?? "").contains("CCTV-196") == wantVideo }) {
+            // The usual camera first, then any of the same kind, so a
+            // camera that is down for the day does not fail the run.
+            // A slow or failed fetch is asked again rather than leaving the map bare.
+            var all: [RoadMarker] = []
+            for attempt in 0 ..< 3 where all.isEmpty {
+                if attempt > 0 { try? await Task.sleep(nanoseconds: 2_000_000_000) }
+                all = (try? await LiveData.markers(in: (33.9, -118.4, 34.2, -118.0), kinds: "camera")) ?? []
+            }
+            let fit = all.filter { ($0.stream != nil) == wantVideo && $0.image != nil }
+            if let m = fit.first(where: { ($0.stream ?? "").contains("CCTV-196") == wantVideo }) ?? fit.first {
                 model.camera = .center(m.coordinate, zoom: 15, pitch: 0, direction: 0)
                 model.select(m)
             }

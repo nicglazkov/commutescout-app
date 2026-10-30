@@ -311,14 +311,14 @@ final class PagesUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["-csSimulate", "-csOpenCamera", "video"]
         app.launch()
-        XCTAssertTrue(app.descendants(matching: .any)["camera-image"].firstMatch.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.descendants(matching: .any)["camera-image"].firstMatch.waitForExistence(timeout: 45))
         shot("camera-video-still")
         app.descendants(matching: .any)["camera-image"].firstMatch.tap()
         shot("camera-video-playing", 6)
         app.terminate()
         app.launchArguments = ["-csSimulate", "-csOpenCamera", "still"]
         app.launch()
-        XCTAssertTrue(app.descendants(matching: .any)["camera-image"].firstMatch.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.descendants(matching: .any)["camera-image"].firstMatch.waitForExistence(timeout: 45))
         shot("camera-still", 3)
     }
 }

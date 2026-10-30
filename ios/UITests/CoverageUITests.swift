@@ -121,7 +121,8 @@ final class CoverageUITests: XCTestCase {
         app.buttons["place-close"].tap()
         openSettings()
         openPage("saved-places")
-        let work = app.staticTexts["Work"]
+        // In the list itself: the places tray under the sheet has a "Work" row too.
+        let work = app.cells.staticTexts["Work"].firstMatch
         XCTAssertTrue(reveal(work), "Work listed under Saved places")
         // Every place row swipes to Remove.
         app.cells.containing(.staticText, identifier: "Work").firstMatch.swipeLeft()
@@ -370,17 +371,22 @@ final class CoverageUITests: XCTestCase {
         app.buttons["tools"].tap()
         app.buttons["tool-directions"].tap()
         XCTAssertTrue(app.navigationBars["Directions"].waitForExistence(timeout: 5))
+        // Coordinates, not names: the planner reads them itself, so the
+        // test does not depend on what the live geocoder returns. Two
+        // distinct places, so a pick never matches the other field's row.
         let from = app.textFields["Or search a start"]
-        from.tap(); from.typeText("Palo Alto")
-        let fromPick = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Palo Alto'")).firstMatch
-        XCTAssertTrue(fromPick.waitForExistence(timeout: 15))
+        from.tap(); from.typeText("37.442, -122.143")
+        let fromPick = app.buttons["37.44200, -122.14300"]
+        XCTAssertTrue(fromPick.waitForExistence(timeout: 5))
         fromPick.tap()
         let to = app.textFields["Search a destination"]
         XCTAssertTrue(reveal(to))
-        to.tap(); to.typeText("Palo Alto")
-        let toPick = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Palo Alto'")).firstMatch
-        XCTAssertTrue(toPick.waitForExistence(timeout: 15))
+        to.tap(); to.typeText("37.3894, -122.0819")
+        let toPick = app.buttons["37.38940, -122.08190"]
+        XCTAssertTrue(toPick.waitForExistence(timeout: 5))
         toPick.tap()
+        // A picked place shows its short name: the part before the comma.
+        XCTAssertTrue(app.staticTexts["37.38940"].waitForExistence(timeout: 3), "the destination is set")
         let show = app.buttons["Show routes"]
         XCTAssertTrue(reveal(show))
         show.tap()
