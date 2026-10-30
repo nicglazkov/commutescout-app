@@ -77,6 +77,23 @@ enum SystemNotes {
         return nil
     }
 
+    /// The word for one event of a kind, in a sentence.
+    static func noun(_ k: DGKind) -> String {
+        switch k {
+        case .crash: return "crash"
+        case .closure: return "closure"
+        case .hazard: return "hazard"
+        case .police: return "police report"
+        case .jam: return "slowdown"
+        case .chain: return "chain control"
+        case .fire: return "fire"
+        case .ice: return "icy stretch"
+        case .sign: return "sign"
+        case .camera: return "camera"
+        case .toll: return "toll"
+        }
+    }
+
     /// "Is the crash still there?", in words that fit the kind.
     static func confirmTitle(_ k: DGKind) -> String {
         switch k {

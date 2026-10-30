@@ -96,7 +96,7 @@ object OfflineText {
     const val CAMERA = "No connection, so the picture cannot load."
 
     /** A short clock time, the way the phone shows it. */
-    fun time(ms: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(ms))
+    fun time(ms: Long): String = Units.clock(ms)
 }
 
 /**

@@ -188,3 +188,57 @@ object ArriveStats {
 /** Minutes, rounded, for a route's seconds. */
 fun routeMinutes(seconds: Double): Int = (seconds / 60).roundToInt()
 
+/** What a driver can report, as the design's grid shows it. [flare] is the Flare kind sent. */
+object ReportKinds {
+    data class Kind(
+        val id: String, val label: String, val icon: String, val tone: com.commutescout.drive.design.Tone, val flare: String,
+        /** It sits in a lane: the confirm step asks which. */
+        val lanes: Boolean = false,
+        /** It sits beside the road: the confirm step asks, shoulder first. */
+        val side: Boolean = false,
+    ) {
+        val asksWhere: Boolean get() = lanes || side
+    }
+
+    private val H = com.commutescout.drive.design.Tone.HIGH
+    private val M = com.commutescout.drive.design.Tone.MID
+    private val L = com.commutescout.drive.design.Tone.LOW
+    val all = listOf(
+        Kind("crash", "Crash", "crash", H, "CRASH_MAJOR", lanes = true),
+        Kind("jam", "Slowdown", "traffic", M, "JAM_HEAVY"),
+        Kind("police", "Police", "police", L, "POLICE_VISIBLE", side = true),
+        Kind("hazard", "Object on road", "hazard", M, "HAZARD_OBJECT", lanes = true),
+        Kind("shoulder", "Car on shoulder", "carside", M, "HAZARD_SHOULDER_CAR", side = true),
+        Kind("closure", "Road closed", "closure", H, "ROAD_CLOSED"),
+        Kind("lane", "Lane closed", "lane", H, "LANE_CLOSED", lanes = true),
+        Kind("ice", "Ice or snow", "ice", M, "WEATHER_ICE"),
+        Kind("fog", "Fog", "fog", M, "WEATHER_FOG"),
+        Kind("flood", "Flooding", "flood", H, "WEATHER_FLOOD"),
+        Kind("chain", "Chains required", "chain", H, "CHAINS_REQUIRED"),
+        Kind("map", "Map issue", "mapi", L, "MAP_ISSUE"),
+    )
+
+    fun byFlare(flare: String): Kind? = all.firstOrNull { it.flare == flare }
+
+    /** Where on the road: the confirm step's choices. */
+    val WHERE = listOf("Left lane", "Right lane", "Shoulder")
+
+    /** The choice a kind starts on: the shoulder for things beside the road, else the right lane. */
+    fun defaultWhere(k: Kind): Int = if (k.side) 2 else 1
+
+    /** The description sent: where on the road, then the driver's note. */
+    fun description(k: Kind, where: Int?, note: String): String {
+        val place = if (k.asksWhere && where != null) WHERE.getOrNull(where)?.let { "$it." } else null
+        return listOfNotNull(place, note.trim().ifEmpty { null }).joinToString(" ")
+    }
+
+    /** "Report a crash here, southbound". */
+    fun confirmTitle(k: Kind, bound: String?): String {
+        val noun = when (k.id) {
+            "crash" -> "a crash"; "jam" -> "a slowdown"; "police" -> "police"; "hazard" -> "an object on the road"
+            "shoulder" -> "a car on the shoulder"; "closure" -> "a road closure"; "lane" -> "a lane closure"
+            "ice" -> "ice or snow"; "fog" -> "fog"; "flood" -> "flooding"; "chain" -> "chains required"; else -> "a map issue"
+        }
+        return "Report $noun here" + (bound?.let { ", $it" } ?: "")
+    }
+}

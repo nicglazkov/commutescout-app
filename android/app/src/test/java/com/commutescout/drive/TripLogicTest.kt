@@ -105,6 +105,24 @@ class TripLogicTest {
         assertEquals(0, ReportSteps.secondsLeft(1f))
     }
 
+    @Test fun reportKindsMapToFlare() {
+        assertEquals(12, ReportKinds.all.size)
+        val accepted = setOf("POLICE_VISIBLE", "CRASH_MAJOR", "JAM_HEAVY", "HAZARD_OBJECT", "HAZARD_SHOULDER_CAR", "ROAD_CLOSED",
+            "LANE_CLOSED", "WEATHER_ICE", "WEATHER_FOG", "WEATHER_FLOOD", "CHAINS_REQUIRED", "MAP_ISSUE")
+        assertEquals(accepted, ReportKinds.all.map { it.flare }.toSet())
+        assertEquals("crash", ReportKinds.byFlare("CRASH_MAJOR")?.id)
+        val police = ReportKinds.byFlare("POLICE_VISIBLE")!!
+        val crash = ReportKinds.byFlare("CRASH_MAJOR")!!
+        val fog = ReportKinds.byFlare("WEATHER_FOG")!!
+        assertEquals(2, ReportKinds.defaultWhere(police))
+        assertEquals(1, ReportKinds.defaultWhere(crash))
+        assertEquals("Shoulder. Two cars", ReportKinds.description(police, 2, " Two cars "))
+        assertEquals("Left lane.", ReportKinds.description(crash, 0, ""))
+        assertEquals("Thick", ReportKinds.description(fog, 0, "Thick"))
+        assertEquals("Report a crash here, southbound", ReportKinds.confirmTitle(crash, "southbound"))
+        assertEquals("Report fog here", ReportKinds.confirmTitle(fog, null))
+    }
+
     @Test fun arriveStatsAndAvoided() {
         val place = Place(name = "Palo Alto, CA", lat = 37.442, lon = -122.143, kind = PlaceKind.recent)
         val crash = RoadMarker(kind = "incident", lat = 37.4, lon = -122.1, id = "a")

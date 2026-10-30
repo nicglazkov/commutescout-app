@@ -82,7 +82,12 @@ struct ContentView: View {
             .frame(width: 1, height: 1)
             .allowsHitTesting(false)
 
-            if !isNavigating {
+            if !isNavigating, let t = clearedWatch {
+                // A cleared watch alert says so where the search bar was.
+                WatchClearedCapsule(text: t.text)
+                    .padding(.horizontal, 12).padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            } else if !isNavigating {
                 VStack(spacing: 0) {
                     HStack(alignment: .top, spacing: 8) {
                         SearchBar()
@@ -167,6 +172,7 @@ struct ContentView: View {
         .onAppear { model.isDark = colorScheme == .dark }
         .onChange(of: colorScheme) { s in model.isDark = s == .dark }
         .sheet(isPresented: $showSettings) { SettingsSheet() }
+        .sheet(isPresented: $model.showWatches) { WatchesView() }
         .sheet(isPresented: $showLayers) { LayersSheet().presentationDetents([.medium, .large]) }
         .sheet(isPresented: $showTools) { ToolsSheet(showLayers: $showLayers).presentationDetents([.medium, .large]) }
         .overlay {
@@ -198,6 +204,14 @@ struct ContentView: View {
     }
 
     private var showsEvent: Bool { model.selectedMarker != nil || model.alertFocus != nil }
+
+    /// A watch alert whose event is over, with nothing else reported at
+    /// the spot: it gets the cleared view.
+    private var clearedWatch: (focus: AlertFocus, text: WatchClearedText)? {
+        guard let f = model.alertFocus, model.selectedMarker == nil, f.nearby == nil,
+              case let .cleared(at) = f.status else { return nil }
+        return (f, WatchClearedText.make(f.ref, clearedAt: at))
+    }
 
     /// How tall the bottom card is, so the map buttons sit above it. The
     /// event panel measures itself; pulled up past this it covers them.
@@ -263,7 +277,12 @@ struct ContentView: View {
     }
 
     @ViewBuilder private func bottomCard(available: CGFloat) -> some View {
-        if showsEvent, !isNavigating {
+        if let c = clearedWatch, !isNavigating {
+            WatchClearedPanel(focus: c.focus, text: c.text)
+                .background(GeometryReader { g in Color.clear.preference(key: PanelHeight.self, value: g.size.height) })
+                .onPreferenceChange(PanelHeight.self) { panelHeight = $0 }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if showsEvent, !isNavigating {
             EventPanel(available: available)
                 .background(GeometryReader { g in Color.clear.preference(key: PanelHeight.self, value: g.size.height) })
                 .onPreferenceChange(PanelHeight.self) { panelHeight = $0 }

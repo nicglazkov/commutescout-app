@@ -331,7 +331,7 @@ object EventText {
     /** A clock time, "9:41 AM", with the weekday when it is most of a day away. */
     fun clock(ms: Long, nowMs: Long, zone: ZoneId, locale: Locale = Locale.US): String {
         val t = Instant.ofEpochMilli(ms).atZone(zone)
-        val pattern = if (abs(ms - nowMs) > 20 * 3600 * 1000L) "EEE h:mm a" else "h:mm a"
+        val pattern = if (abs(ms - nowMs) > 20 * 3600 * 1000L) "EEE " + UnitStyle.clockPattern else UnitStyle.clockPattern
         return t.format(DateTimeFormatter.ofPattern(pattern, locale))
     }
 
@@ -454,7 +454,7 @@ object EventText {
     fun whenPhrase(epoch: Long, zone: ZoneId, zoneMode: Int, nowMs: Long, viewer: ZoneId): String {
         val t = Instant.ofEpochSecond(epoch)
         val local = t.atZone(zone)
-        val clock = local.format(DateTimeFormatter.ofPattern("h:mm a", Locale.US))
+        val clock = local.format(DateTimeFormatter.ofPattern(UnitStyle.clockPattern, Locale.US))
         val dayGap = ChronoUnit.DAYS.between(Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate(), local.toLocalDate())
         val day = when (dayGap) {
             0L -> if (local.hour >= 18) "tonight" else "today"
@@ -517,7 +517,7 @@ object EventText {
 
     private fun fullWhen(epoch: Long, zone: ZoneId): String {
         val t = Instant.ofEpochSecond(epoch)
-        return t.atZone(zone).format(DateTimeFormatter.ofPattern("EEEE, MMM d 'at' h:mm a", Locale.US)) + " " + zoneAbbr(t, zone)
+        return t.atZone(zone).format(DateTimeFormatter.ofPattern("EEEE, MMM d 'at' " + UnitStyle.clockPattern, Locale.US)) + " " + zoneAbbr(t, zone)
     }
 
     /**
@@ -720,7 +720,7 @@ data class EventCard(
 
         /** Station readings, in the driver's units: the station reports Celsius, mph and metres. */
         private fun weather(m: RoadMarker, miles: Boolean): EventCard {
-            fun temperature(c: Double) = if (miles) "${Math.round(c * 9 / 5 + 32)} F" else "${Math.round(c)} C"
+            fun temperature(c: Double) = if (UnitStyle.fahrenheit ?: miles) "${Math.round(c * 9 / 5 + 32)} F" else "${Math.round(c)} C"
             fun speed(mph: Double) = if (miles) "${Math.round(mph)} mph" else "${Math.round(mph * 1.609344)} km/h"
             // A direction on calm wind ("0 mph from the E") is noise.
             val from = m.windFrom?.takeIf { m.wind == null || Math.round(m.wind) >= 1 }?.let { " from the $it" } ?: ""
