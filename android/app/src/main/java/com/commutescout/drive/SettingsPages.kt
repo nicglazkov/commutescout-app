@@ -617,22 +617,15 @@ fun PluginsPage(model: DriveViewModel) {
 
 @Composable
 fun OfflinePage(model: DriveViewModel) {
-    val prefs = model.prefs
     val mapFiles by MapFiles.files.collectAsStateWithLifecycle()
     var showOfflineMaps by remember { mutableStateOf(false) }
     if (showOfflineMaps) OfflineMapsSheet(model) { showOfflineMaps = false }
     Group(Modifier.padding(top = 4.dp)) {
-        SwitchRow("Save the map for each trip on Wi-Fi", prefs.mapAutoSave, { prefs.mapAutoSave = it }, icon = "wifi", tileColor = DG.low,
-            tag = "switch-Save the map for each trip on Wi-Fi")
-    }
-    GroupFoot("When a trip starts on Wi-Fi, the map along the route is saved, so it draws with no signal.")
-    Spacer(Modifier.height(14.dp))
-    Group {
         SRow("Maps on this phone", Modifier.tag("offline-maps-open"), icon = "download", tileColor = Color(0xFF0F9F8F),
             value = if (mapFiles.isEmpty()) "None yet" else "${mapFiles.size}, ${Units.bytes(MapFiles.bytesOnDisk)}", chevron = true,
             onClick = { showOfflineMaps = true })
     }
-    GroupFoot("Trip maps the app saved, and whole states you choose to download.")
+    GroupFoot("Trip maps the app saved, and whole states you choose to download. Saving and updates are set there.")
 }
 
 // MARK: saved places
