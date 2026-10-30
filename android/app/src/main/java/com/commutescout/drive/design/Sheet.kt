@@ -1,6 +1,8 @@
 package com.commutescout.drive.design
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -84,7 +86,7 @@ fun rememberSheetState(snaps: List<Dp>, start: Int = 0, onSnap: (Int) -> Unit = 
  * pull moves the sheet and then the page, as on iOS.
  */
 @Composable
-fun DGSheet(state: SheetState, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+fun DGSheet(state: SheetState, modifier: Modifier = Modifier, fill: Color? = null, content: @Composable ColumnScope.() -> Unit) {
     val d = LocalDensity.current
     val nested = remember(state) {
         object : NestedScrollConnection {
@@ -112,6 +114,8 @@ fun DGSheet(state: SheetState, modifier: Modifier = Modifier, content: @Composab
     Column(
         modifier.fillMaxWidth().height(with(d) { state.height.value.toDp() })
             .glass(RoundedCornerShape(topStart = DG.rSheet, topEnd = DG.rSheet), elevation = 24.dp, strong = true)
+            // Over a busy map the emulated frost needs more white to keep text clean.
+            .then(if (fill != null) Modifier.background(fill) else Modifier)
             .nestedScroll(nested)
             .pointerInput(state) {
                 detectVerticalDragGestures(

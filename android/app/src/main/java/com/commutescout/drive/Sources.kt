@@ -73,7 +73,7 @@ data class FlareSource(
         val b = coverage ?: return "Coverage not stated"
         if (b.size != 4) return "Coverage not stated"
         val h = b[2] - b[0]; val w = b[3] - b[1]
-        if (h >= 20 && w >= 50) return "Whole country"
+        if (h >= 20 && w >= 50) return "Nationwide"
         // The states the box takes in, whichever they are.
         val states = StateBounds.within(b.toDoubleArray())
         if (states.isNotEmpty()) {
@@ -167,6 +167,10 @@ class SourcesStore(context: Context) {
     val mine = _mine.asStateFlow()
     private val _hidden = MutableStateFlow(p.getStringSet("hidden", emptySet())!!.toSet())
     val hidden = _hidden.asStateFlow()
+    // Added but switched off for now ("Show on my map" off): hidden from the
+    // map and not asked, yet still in the person's list. Kept on this phone.
+    private val _paused = MutableStateFlow(p.getStringSet("paused", emptySet())!!.toSet())
+    val paused = _paused.asStateFlow()
     private val _direct = MutableStateFlow<List<RoadMarker>>(emptyList())
     val directMarkers = _direct.asStateFlow()
     // Catalog plugins polled by this phone for the signed-in person's own
@@ -196,6 +200,23 @@ class SourcesStore(context: Context) {
         rebuild()
         pushToAccount()
     }
+
+    private fun setPaused(id: String, on: Boolean) {
+        _paused.value = if (on) _paused.value + id else _paused.value - id
+        p.edit().putStringSet("paused", _paused.value).apply()
+    }
+
+    /** In this person's list: shown, or switched off for now. */
+    fun isAdded(id: String) = Market.isAdded(id, _hidden.value, _paused.value)
+    /** Add from the marketplace: in the list and on the map. */
+    fun addPlugin(id: String) { setPaused(id, false); setOn(id, true) }
+    /** Remove: out of the list and off the map. A private plugin is forgotten. */
+    fun removePlugin(id: String) {
+        setPaused(id, false)
+        _mine.value.firstOrNull { it.id == id }?.let { remove(it) } ?: setOn(id, false)
+    }
+    /** "Show on my map": off keeps the plugin in the list but asks it nothing. */
+    fun setShown(id: String, on: Boolean) { setPaused(id, !on); setOn(id, on) }
 
     // Account sync: Install on one device follows the account.
     var tokenProvider: (suspend () -> String?)? = null
@@ -238,6 +259,8 @@ class SourcesStore(context: Context) {
         edit.apply()
         _mine.value = emptyList()
         _hidden.value = emptySet()
+        _paused.value = emptySet()
+        p.edit().putStringSet("paused", emptySet()).apply()
         save()
         p.edit().putStringSet("hidden", emptySet()).apply()
         rebuild()

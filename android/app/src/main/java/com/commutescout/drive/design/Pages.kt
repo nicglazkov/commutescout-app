@@ -42,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -242,7 +243,8 @@ fun DGSwitch(checked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier =
 
 /** Segmented control: a white knob that springs to the chosen option. */
 @Composable
-fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, icons: List<String>? = null, tagPrefix: String? = null) {
+fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, icons: List<String>? = null, tagPrefix: String? = null,
+              selectedColor: Color = DG.ink) {
     BoxWithConstraints(modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(22.dp)).background(DG.ink.copy(alpha = .055f)).padding(3.dp)) {
         val w = maxWidth / options.size.coerceAtLeast(1)
         val x by animateDpAsState(w * selected.coerceAtLeast(0), DG.snap(), label = "seg")
@@ -251,7 +253,7 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
             .clip(RoundedCornerShape(19.dp)).background(Color.White))
         Row(Modifier.fillMaxSize()) {
             options.forEachIndexed { i, o ->
-                val c by animateColorAsState(if (i == selected) DG.ink else DG.sub, tween(300), label = "segc")
+                val c by animateColorAsState(if (i == selected) selectedColor else DG.sub, tween(300), label = "segc")
                 Row(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(19.dp)).clickable(role = Role.Tab) { onSelect(i) }
                     .then(if (tagPrefix != null) Modifier.tag("$tagPrefix-$i") else Modifier),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
@@ -328,14 +330,14 @@ fun Facts(rows: List<Pair<String, String>>, modifier: Modifier = Modifier) {
 
 /** A tinted info box: an icon and a few lines ("Only you see this"). */
 @Composable
-fun InfoBox(text: String, modifier: Modifier = Modifier, icon: String = "lock", title: String? = null, color: Color = DG.low) {
+fun InfoBox(text: String, modifier: Modifier = Modifier, icon: String = "lock", title: String? = null, color: Color = DG.low, titleColor: Color = DG.ink) {
     val shape = RoundedCornerShape(18.dp)
     Row(modifier.padding(horizontal = 14.dp).fillMaxWidth().clip(shape).background(color.copy(alpha = .07f)).border(1.dp, color.copy(alpha = .14f), shape)
         .padding(horizontal = 14.dp, vertical = 12.dp)) {
         DGIcon(icon, if (color == DG.low) DG.lowInk else color, 20.dp)
         Spacer(Modifier.width(10.dp))
         Column {
-            if (title != null) Text(title, style = PageType.rowLabel.copy(fontWeight = FontWeight.SemiBold), color = DG.ink)
+            if (title != null) Text(title, style = PageType.rowLabel.copy(fontWeight = FontWeight.SemiBold), color = titleColor)
             Text(text, style = PageType.confirmBody, color = Color(0xFF23406F))
         }
     }
@@ -367,11 +369,11 @@ fun ConfirmCard(visible: Boolean, title: String, body: String?, onDismiss: () ->
 
 /** A round glass back button and an optional title, for full-screen pages over the map. */
 @Composable
-fun TopBar(onBack: () -> Unit, modifier: Modifier = Modifier, title: String? = null, trailing: (@Composable RowScope.() -> Unit)? = null) {
+fun TopBar(onBack: () -> Unit, modifier: Modifier = Modifier, title: String? = null, titleAlpha: Float = 1f, trailing: (@Composable RowScope.() -> Unit)? = null) {
     Row(modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(start = 14.dp, end = 14.dp, top = 6.dp).height(52.dp),
         verticalAlignment = Alignment.CenterVertically) {
         GlassRound("back", "Back", onBack, Modifier.tag("page-back"), size = 44.dp)
-        if (title != null) Text(title, Modifier.padding(start = 10.dp).weight(1f), style = PageType.navTitle.copy(fontSize = 17.sp), color = DG.ink, maxLines = 1)
+        if (title != null) Text(title, Modifier.padding(start = 10.dp).weight(1f).alpha(titleAlpha), style = PageType.navTitle.copy(fontSize = 17.sp), color = DG.ink, maxLines = 1)
         else Spacer(Modifier.weight(1f))
         trailing?.invoke(this)
     }

@@ -3,58 +3,43 @@ package com.commutescout.drive
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.QuestionAnswer
-import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.Button
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,13 +49,35 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.commutescout.drive.design.BtnStyle
+import com.commutescout.drive.design.DG
+import com.commutescout.drive.design.DGButton
+import com.commutescout.drive.design.DGField
+import com.commutescout.drive.design.DGIcon
+import com.commutescout.drive.design.DGSwitch
+import com.commutescout.drive.design.DGType
+import com.commutescout.drive.design.GhostRound
+import com.commutescout.drive.design.Group
+import com.commutescout.drive.design.GroupFoot
+import com.commutescout.drive.design.GroupHead
+import com.commutescout.drive.design.PageType
+import com.commutescout.drive.design.RowDivider
+import com.commutescout.drive.design.SRow
+import com.commutescout.drive.design.SheetLayer
+import com.commutescout.drive.design.SheetScope
+import com.commutescout.drive.design.tag
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -82,137 +89,71 @@ import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.maplibre.compose.camera.CameraPosition
-import org.maplibre.spatialk.geojson.Position
-import com.stadiamaps.ferrostar.maplibreui.runtime.NavigationCameraMode
 import com.stadiamaps.ferrostar.maplibreui.runtime.NavigationMapState
 
 enum class Tool { MARKETPLACE, LAYERS, ALERTS, DIRECTIONS, WATCHES, ASK, SOURCES }
 
-/** The plugin marketplace: one tile per listed plugin, nothing else. Install
- *  turns the plugin on for this phone (the same switch as the plugins sheet). */
-@OptIn(ExperimentalMaterial3Api::class)
+/** A tool sheet's head: its title on the left, a round close on the right. */
 @Composable
-fun MarketplaceSheet(model: DriveViewModel, onClose: () -> Unit) {
-    val catalog by model.sources.catalog.collectAsStateWithLifecycle()
-    val hidden by model.sources.hidden.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    var statusOf by remember { mutableStateOf<FlareSource?>(null) }
-    statusOf?.let { PluginStatusSheet(model, it.id) { statusOf = null } }
-    LaunchedEffect(Unit) { model.sources.loadCatalog() }
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("marketplace-sheet")) {
-        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 32.dp).fillMaxHeight(0.92f)) {
-            Text("Marketplace", style = MaterialTheme.typography.titleLarge)
-            Text("Plugins add alerts to the map. Every one here is free. Approved ones are reviewed by CommuteScout; the others are public but not reviewed, and say so.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
-            if (catalog.isEmpty()) Text("No plugin is listed yet.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 24.dp))
-            LazyVerticalGrid(columns = GridCells.Adaptive(320.dp), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
-                items(catalog, key = { it.id }) { s ->
-                    val installed = s.id !in hidden
-                    PluginListing(s, installed, onStatus = { statusOf = it }) { on -> model.sources.setOn(s.id, on); model.markers.refresh(true) }
-                }
-            }
-            LinkRow("Write a plugin") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://commutescout.com/plugins"))) }
+internal fun SheetHead(title: String, scope: SheetScope, sub: String? = null) {
+    Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 14.dp, top = 2.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = DGType.sheetTitle, color = DG.ink)
+            if (sub != null) Text(sub, style = PageType.intro, color = DG.sub, modifier = Modifier.padding(top = 3.dp))
         }
+        GhostRound("close", "Close", { scope.close(null) }, Modifier.tag("sheet-close"))
     }
 }
 
-/** What a plugin is mostly about, read from its kinds: it picks the icon
- *  and its color, the way a store listing has an app icon. */
-private fun pluginIcon(kinds: List<String>): Pair<ImageVector, List<Color>> = when {
-    kinds.isNotEmpty() && kinds.all { it.startsWith("CAMERA") } ->
-        Icons.Default.CameraAlt to listOf(Color(0xFFFBBF24), Color(0xFFEA580C))
-    kinds.any { it.startsWith("POLICE") || it.startsWith("CRASH") || it.startsWith("HAZARD") } ->
-        Icons.Default.Groups to listOf(Color(0xFF38BDF8), Color(0xFF1D4ED8))
-    else -> Icons.Default.Extension to listOf(Color(0xFF94A3B8), Color(0xFF334155))
-}
-
-/** One marketplace listing: icon, name, operator and the install button
- *  on one line, then what it does and a strip of figures. */
+/** A plain link row in a group: blue words and an out-arrow. */
 @Composable
-private fun PluginListing(s: FlareSource, installed: Boolean, onStatus: (FlareSource) -> Unit, onToggle: (Boolean) -> Unit) {
-    val (icon, colors) = pluginIcon(s.kinds)
-    // An operator named the same as its plugin says nothing twice.
-    val operator = s.attribution?.takeIf { it.isNotBlank() && it != s.name } ?: "Run by its community"
-    Card(Modifier.fillMaxWidth().testTag("plugin-card"), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(52.dp).background(Brush.linearGradient(colors), RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
-                    Icon(icon, null, tint = Color.White, modifier = Modifier.size(26.dp))
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(s.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(operator, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Spacer(Modifier.width(8.dp))
-                if (installed) FilledTonalButton({ onToggle(false) }, Modifier.testTag("install-${s.id}")) { Text("Uninstall") }
-                else Button({ onToggle(true) }, Modifier.testTag("install-${s.id}")) { Text("Install") }
-            }
-            Text(s.summary ?: if (s.kindsLabel.isEmpty()) "Community alerts for the map." else "Shows ${s.kindsLabel}.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4, overflow = TextOverflow.Ellipsis)
-            HorizontalDivider()
-            Row(Modifier.fillMaxWidth()) {
-                ListingStat("Alerts now", if (s.ok == false) "Offline" else "%,d".format(s.count), Modifier.weight(1f))
-                ListingStat("Coverage", s.coverageLabel, Modifier.weight(1.3f))
-                ListingStat("Reports", if (s.acceptsReports) "Accepted" else "Read only", Modifier.weight(1.1f))
-                ListingStat("Price", "Free", Modifier.weight(0.8f))
-            }
-            HorizontalDivider()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (s.trust == "official") "Official CommuteScout plugin" else if (s.tier == "approved") "Reviewed by CommuteScout"
-                     else "Public, not reviewed. Its alerts are spoken like any other; change that in Settings > Alerts.",
-                    Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
-                    color = if (s.tier == "approved") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
-                TextButton({ onStatus(s) }, Modifier.testTag("status-${s.id}")) { Text("Status") }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ListingStat(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier.padding(horizontal = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-        Text(value, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+internal fun LinkSRow(label: String, icon: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    SRow(label, modifier, icon = icon, tileColor = DG.faint, labelColor = DG.lowInk, onClick = onClick) {
+        DGIcon("next", DG.chev, 18.dp, stroke = 2.4f)
     }
 }
 
 /** The website's rail, on the phone: everything that is not the search bar or Settings. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ToolsSheet(onPick: (Tool) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("tools-sheet")) {
-        Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 32.dp)) {
-            Text("Tools", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(8.dp))
-            ToolRow(Icons.Default.Layers, "Layers and base map", "tool-layers") { onPick(Tool.LAYERS) }
-            ToolRow(Icons.Default.Warning, "Alerts nearby", "tool-alerts") { onPick(Tool.ALERTS) }
-            ToolRow(Icons.Default.SwapVert, "Directions from another place", "tool-directions") { onPick(Tool.DIRECTIONS) }
-            ToolRow(Icons.Default.Visibility, "Watch areas", "tool-watches") { onPick(Tool.WATCHES) }
-            ToolRow(Icons.Default.QuestionAnswer, "Ask about the roads", "tool-ask") { onPick(Tool.ASK) }
-            ToolRow(Icons.Default.GridView, "Plugin marketplace", "tool-marketplace") { onPick(Tool.MARKETPLACE) }
-            ToolRow(Icons.Default.Sensors, "My plugins and private sources", "tool-sources") { onPick(Tool.SOURCES) }
-            LinkRow("Open the full map on the web") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://commutescout.com/map"))) }
+    SheetLayer(onClose, snaps = listOf(.86f), maxHeight = 640.dp, modifier = Modifier.tag("tools-sheet")) { sheet ->
+        SheetHead("Tools", sheet)
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 16.dp)) {
+            fun pick(t: Tool) = sheet.close { onPick(t) }
+            Group {
+                SRow("Layers and base map", Modifier.tag("tool-layers"), icon = "layers", tileColor = DG.low, chevron = true, onClick = { pick(Tool.LAYERS) })
+                RowDivider()
+                SRow("Alerts nearby", Modifier.tag("tool-alerts"), icon = "bell", tileColor = DG.high, chevron = true, onClick = { pick(Tool.ALERTS) })
+                RowDivider()
+                SRow("Directions from another place", Modifier.tag("tool-directions"), icon = "route", tileColor = DG.low, chevron = true, onClick = { pick(Tool.DIRECTIONS) })
+            }
+            Spacer(Modifier.height(12.dp))
+            Group {
+                SRow("Watch areas", Modifier.tag("tool-watches"), icon = "eye", tileColor = DG.good, chevron = true, onClick = { pick(Tool.WATCHES) })
+                RowDivider()
+                SRow("Ask about the roads", Modifier.tag("tool-ask"), icon = "help", tileColor = DG.mid, chevron = true, onClick = { pick(Tool.ASK) })
+            }
+            GroupHead("Plugins")
+            Group {
+                SRow("Plugin marketplace", Modifier.tag("tool-marketplace"), icon = "store", tileColor = DG.plug, chevron = true, onClick = { pick(Tool.MARKETPLACE) })
+                RowDivider()
+                SRow("My plugins and private sources", Modifier.tag("tool-sources"), icon = "piece", tileColor = DG.plug, chevron = true, onClick = { pick(Tool.SOURCES) })
+            }
+            Spacer(Modifier.height(12.dp))
+            Group {
+                LinkSRow("Open the full map on the web", "globe", { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://commutescout.com/map"))) })
+            }
         }
     }
 }
 
-@Composable
-private fun ToolRow(icon: ImageVector, label: String, tag: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 12.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(14.dp)); Text(label)
-    }
-}
-
 /** The website's Alerts tool: what is on the map, closest first. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlertsListSheet(model: DriveViewModel, mapState: NavigationMapState, onClose: () -> Unit) {
     val markers by model.markers.markers.collectAsStateWithLifecycle()
     val direct by model.sources.directMarkers.collectAsStateWithLifecycle()
     val here by model.here.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
     // The nearest hundred events, ranked off the main thread: the whole
     // country's markers are held now, and sorting them all on every
     // redraw froze the sheet for a second. One row per thing.
@@ -224,7 +165,7 @@ fun AlertsListSheet(model: DriveViewModel, mapState: NavigationMapState, onClose
                 (it.kind != "plugin" || PluginStyle.sourceId(it) !in hidden)
         }
         val h = here
-        sorted = withContext(kotlinx.coroutines.Dispatchers.Default) {
+        sorted = withContext(Dispatchers.Default) {
             if (h == null) shown.take(100) else {
                 val seen = HashSet<String>()
                 shown.map { it to AlertsEngine.meters(h, LatLon(it.lat, it.lon)) }.filter { it.second <= 160_000 }
@@ -234,36 +175,41 @@ fun AlertsListSheet(model: DriveViewModel, mapState: NavigationMapState, onClose
             }
         }
     }
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("alerts-sheet")) {
-        Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 24.dp)) {
-            Text("Alerts nearby", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(8.dp))
-            val list = sorted
-            if (list == null) Text("Looking around you", Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            else if (list.isEmpty()) Text("Nothing reported within ${Units.distance(160_000.0)} of you.", Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LazyColumn(Modifier.height(420.dp)) {
-                items(list ?: emptyList(), key = { it.key }) { m ->
-                    Row(Modifier.fillMaxWidth().clickable {
-                        model.showMarker(m.key)
-                        // The same camera as a tapped alert: the event above the sheet.
-                        model.focusOn(m.lat, m.lon)
-                        onClose()
-                    }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        MarkerGlyph(m)
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(m.displayTitle, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            m.detailLines.firstOrNull()?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
-                        }
-                        here?.let { Text(Units.distance(AlertsEngine.meters(it, LatLon(m.lat, m.lon))), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    }
+    SheetLayer(onClose, snaps = listOf(.56f, .92f), modifier = Modifier.tag("alerts-sheet")) { sheet ->
+        val list = sorted
+        SheetHead("Alerts nearby", sheet, sub = when {
+            list == null -> "Looking around you"
+            list.isEmpty() -> "Nothing reported within ${Units.distance(160_000.0)} of you."
+            else -> "Closest first"
+        })
+        if (!list.isNullOrEmpty()) LazyColumn(Modifier.weight(1f).padding(bottom = 8.dp)) {
+            itemsIndexed(list, key = { _, m -> m.key }) { i, m ->
+                val plugin = m.kind == "plugin"
+                val shape = RoundedCornerShape(
+                    topStart = if (i == 0) 22.dp else 0.dp, topEnd = if (i == 0) 22.dp else 0.dp,
+                    bottomStart = if (i == list.lastIndex) 22.dp else 0.dp, bottomEnd = if (i == list.lastIndex) 22.dp else 0.dp)
+                Column(Modifier.padding(horizontal = 14.dp).fillMaxWidth().clip(shape)
+                    .background(if (plugin) DG.plug.copy(alpha = .06f) else Color(0xD6FFFFFF))) {
+                    if (i > 0) RowDivider(inset = 58.dp)
+                    SRow(m.displayTitle, sub = m.detailLines.firstOrNull(), labelColor = if (plugin) DG.plugInk else DG.ink,
+                        lead = { Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) { MarkerGlyph(m, 26.dp) } },
+                        value = here?.let { Units.distance(AlertsEngine.meters(it, LatLon(m.lat, m.lon))) },
+                        onClick = {
+                            sheet.close {
+                                model.showMarker(m.key)
+                                // The same camera as a tapped alert: the event above the sheet.
+                                model.focusOn(m.lat, m.lon)
+                                onClose()
+                            }
+                        })
                 }
             }
+            item { Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars).height(12.dp)) }
         }
     }
 }
 
 /** The website's From/To planner: pick a start other than where you are. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DirectionsSheet(model: DriveViewModel, onClose: () -> Unit) {
     var fromText by remember { mutableStateOf("") }
@@ -282,19 +228,37 @@ fun DirectionsSheet(model: DriveViewModel, onClose: () -> Unit) {
         scope.launch { delay(150); runCatching { Search.suggest(t, here?.let { it.lat to it.lon }) }.getOrNull()?.let(set) }
     }
 
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("directions-sheet")) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Directions", style = MaterialTheme.typography.titleLarge)
-            Heading("From")
-            TextButton({ from = null; fromText = "" }) { Text(from?.shortName ?: "My location") }
-            OutlinedTextField(fromText, { fromText = it; suggest(it) { r -> fromResults = r } }, Modifier.fillMaxWidth().testTag("from-field"), placeholder = { Text("Or search a start") }, singleLine = true)
-            fromResults.forEach { s -> TextButton({ from = Place(name = s.name, lat = s.lat, lon = s.lon, kind = PlaceKind.recent); fromText = s.name.substringBefore(","); fromResults = emptyList() }) { Text(s.name, maxLines = 1) } }
-            Heading("To")
-            to?.let { Text(it.shortName, color = MaterialTheme.colorScheme.primary) }
-            OutlinedTextField(toText, { toText = it; suggest(it) { r -> toResults = r } }, Modifier.fillMaxWidth().testTag("to-field"), placeholder = { Text("Search a destination") }, singleLine = true)
-            toResults.forEach { s -> TextButton({ to = Place(name = s.name, lat = s.lat, lon = s.lon, kind = PlaceKind.recent); toText = s.name.substringBefore(","); toResults = emptyList() }) { Text(s.name, maxLines = 1) } }
-            Button({ to?.let { model.origin = from; onClose(); model.routes(it) } }, Modifier.fillMaxWidth(), enabled = to != null) { Text("Show routes") }
-            Text("Route options (tolls, highways, ferries) are in Settings. Full closures are always avoided.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    @Composable
+    fun Suggestions(list: List<Suggestion>, onPick: (Suggestion) -> Unit) {
+        if (list.isEmpty()) return
+        Spacer(Modifier.height(8.dp))
+        Group {
+            list.forEachIndexed { i, s ->
+                if (i > 0) RowDivider(inset = 58.dp)
+                SRow(s.name.substringBefore(","), sub = s.name.substringAfter(", ", "").ifEmpty { null }, icon = "pinl", tileColor = DG.faint, onClick = { onPick(s) })
+            }
+        }
+    }
+
+    SheetLayer(onClose, snaps = listOf(.92f), modifier = Modifier.tag("directions-sheet")) { sheet ->
+        SheetHead("Directions", sheet)
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
+            GroupHead("From")
+            Group {
+                SRow(from?.shortName ?: "My location", icon = if (from == null) "locate" else "pinl", tileColor = DG.low,
+                    sub = if (from == null) "Where you are now" else "Tap to start from where you are",
+                    onClick = { from = null; fromText = ""; fromResults = emptyList() })
+            }
+            Spacer(Modifier.height(8.dp))
+            DGField("Or start somewhere else", fromText, { fromText = it; suggest(it) { r -> fromResults = r } }, placeholder = "Search a start", tag = "from-field")
+            Suggestions(fromResults) { s -> from = Place(name = s.name, lat = s.lat, lon = s.lon, kind = PlaceKind.recent); fromText = s.name.substringBefore(","); fromResults = emptyList() }
+            GroupHead("To")
+            DGField(to?.let { "Going to ${it.shortName}" } ?: "Destination", toText, { toText = it; suggest(it) { r -> toResults = r } }, placeholder = "Search a destination", tag = "to-field")
+            Suggestions(toResults) { s -> to = Place(name = s.name, lat = s.lat, lon = s.lon, kind = PlaceKind.recent); toText = s.name.substringBefore(","); toResults = emptyList() }
+            Spacer(Modifier.height(16.dp))
+            DGButton("Show routes", { to?.let { t -> sheet.close { model.origin = from; onClose(); model.routes(t) } } },
+                Modifier.padding(horizontal = 14.dp).fillMaxWidth(), style = BtnStyle.BLUE, icon = "route", enabled = to != null)
+            GroupFoot("Route options (tolls, highways, ferries) are in Settings. Full closures are always avoided.")
         }
     }
 }
@@ -393,7 +357,6 @@ fun WatchesSheet(model: DriveViewModel, onClose: () -> Unit) {
 }
 
 /** The website's Ask tool: a question about the roads, streamed as it is written. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AskSheet(model: DriveViewModel, onClose: () -> Unit) {
     var question by remember { mutableStateOf("") }
@@ -401,12 +364,13 @@ fun AskSheet(model: DriveViewModel, onClose: () -> Unit) {
     var status by remember { mutableStateOf("") }
     var running by remember { mutableStateOf(false) }
     var prior by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var asked by remember { mutableStateOf<String?>(null) }
     val here by model.here.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     fun ask() {
         val q = question.trim(); if (q.isEmpty()) return
-        running = true; answer = ""; status = ""
+        running = true; answer = ""; status = ""; asked = q
         scope.launch {
             try {
                 withContext(Dispatchers.IO) {
@@ -436,26 +400,37 @@ fun AskSheet(model: DriveViewModel, onClose: () -> Unit) {
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("ask-sheet")) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Ask", style = MaterialTheme.typography.titleLarge)
-            Column(Modifier.height(300.dp).verticalScroll(rememberScrollState())) {
-                if (answer.isEmpty() && !running) Text("Ask about closures, chain controls, fires or traffic anywhere in the country, for example \"Is I-70 open through the Eisenhower Tunnel?\", \"Any crashes on I-95 near Richmond?\" or \"Chains on US-2 over Stevens Pass?\"", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (answer.isNotEmpty()) Text(answer.replace("**", "").replace(Regex("(?m)^#+ "), ""))
-                if (running) CircularProgressIndicator(Modifier.padding(8.dp))
+    SheetLayer(onClose, snaps = listOf(.62f, .92f), modifier = Modifier.tag("ask-sheet")) { sheet ->
+        SheetHead("Ask", sheet)
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 22.dp)) {
+            if (answer.isEmpty() && !running) Text("Ask about closures, chain controls, fires or traffic anywhere in the country, for example \"Is I-70 open through the Eisenhower Tunnel?\", \"Any crashes on I-95 near Richmond?\" or \"Chains on US-2 over Stevens Pass?\"",
+                style = DGType.body, color = DG.sub)
+            asked?.let { Text(it, style = DGType.row, color = DG.ink, modifier = Modifier.padding(bottom = 8.dp)) }
+            if (status.isNotEmpty()) Text(status, style = DGType.small, color = DG.sub)
+            if (answer.isNotEmpty()) Text(answer.replace("**", "").replace(Regex("(?m)^#+ "), ""), style = DGType.body, color = DG.ink)
+            if (running) CircularProgressIndicator(Modifier.padding(8.dp).size(22.dp), color = DG.low, strokeWidth = 2.5.dp)
+            Spacer(Modifier.height(12.dp))
+        }
+        // The question box and its send button, above the keyboard.
+        val shape = RoundedCornerShape(26.dp)
+        Row(Modifier.windowInsetsPadding(WindowInsets.navigationBars).padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 10.dp).fillMaxWidth()
+            .heightIn(min = 52.dp).clip(shape).background(Color.White.copy(alpha = .85f)).border(1.dp, DG.hair, shape)
+            .padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) {
+                if (question.isEmpty()) Text("Ask about the roads", style = DGType.search, color = DG.faint)
+                BasicTextField(question, { question = it }, Modifier.fillMaxWidth().testTag("ask-field"), textStyle = DGType.search.copy(color = DG.ink),
+                    maxLines = 3, cursorBrush = SolidColor(DG.low))
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(question, { question = it }, Modifier.weight(1f).testTag("ask-field"), placeholder = { Text("Ask about the roads") }, maxLines = 3)
-                Spacer(Modifier.width(8.dp))
-                Button({ ask() }, Modifier.testTag("ask-send"), enabled = question.isNotBlank() && !running) { Icon(Icons.Default.Send, "Ask") }
-            }
+            Spacer(Modifier.width(8.dp))
+            val can = question.isNotBlank() && !running
+            Box(Modifier.size(40.dp).clip(CircleShape).background(if (can) Brush.verticalGradient(listOf(DG.lowTop, DG.low)) else SolidColor(DG.wash))
+                .clickable(enabled = can, role = Role.Button) { ask() }.semantics { contentDescription = "Ask" }.testTag("ask-send"),
+                contentAlignment = Alignment.Center) { DGIcon("up", if (can) Color.White else DG.faint, 20.dp, stroke = 2.4f) }
         }
     }
 }
 
-/** The Sources screen: what feeds the community layer, and the driver's own plugins. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** The driver's plugins: the listed ones with a switch each, and private ones added by URL. */
 @Composable
 fun SourcesSheet(model: DriveViewModel, onClose: () -> Unit) {
     val catalog by model.sources.catalog.collectAsStateWithLifecycle()
@@ -466,161 +441,63 @@ fun SourcesSheet(model: DriveViewModel, onClose: () -> Unit) {
     var base by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var details by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    details?.let { PluginStatusSheet(model, it) { details = null } }
 
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("sources-sheet")) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Plugins", style = MaterialTheme.typography.titleLarge)
-            Text("Community reports come from Flare plugins, in three tiers: approved by CommuteScout, public but not reviewed, and your own private ones read straight from your phone.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LinkRow("How to write a plugin") { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://commutescout.com/plugins"))) }
-            @Composable fun catalogRow(s: FlareSource) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(s.name)
-                        Text(listOfNotNull(s.attribution, "${s.count} alerts", if (s.ok == false) "not answering" else null).joinToString(" · "),
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(s.id !in hidden, { model.sources.setOn(s.id, it); model.markers.refresh(true) })
-                }
-            }
-            Heading("Approved plugins")
-            Text("Reviewed by CommuteScout. Drawn by default and may speak.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (catalog.none { it.tier == "approved" }) Text("No approved plugin is listed right now.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            catalog.filter { it.tier == "approved" }.forEach { catalogRow(it) }
-            Heading("Public plugins, not reviewed")
-            Text("Anyone who passes the conformance check can be listed. Drawn and labelled; voice only if you turn it on in Advanced alerts.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (catalog.none { it.tier != "approved" }) Text("None listed right now.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            catalog.filter { it.tier != "approved" }.forEach { catalogRow(it) }
-            Heading("My plugins")
-            mine.forEach { s ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(s.name)
-                        Text(listOfNotNull(s.base, if (s.canReport) "accepts reports" else null, "every ${s.refreshS} s").joinToString(" · "),
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-                    }
-                    Switch(s.id !in hidden, { model.sources.setOn(s.id, it) })
-                    IconButton({ model.sources.remove(s) }) { Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
-                }
-            }
-            if (!adding) TextButton({ adding = true }, Modifier.testTag("add-source")) { Text("Add a private or unlisted plugin") }
-            else {
-                OutlinedTextField(base, { base = it }, Modifier.fillMaxWidth().testTag("source-url"), placeholder = { Text("https://example.com") }, singleLine = true)
-                OutlinedTextField(token, { token = it }, Modifier.fillMaxWidth(), placeholder = { Text("Token (private plugins only)") }, singleLine = true)
-                Text("The app asks the plugin who it is (its handshake), then reads its alerts around where you are looking. Only you see them unless the plugin is public.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button({ scope.launch { busy = true; model.sources.clearError(); if (model.sources.add(base, token)) { adding = false; base = ""; token = "" }; busy = false } },
-                        enabled = base.isNotBlank() && !busy) { Text(if (busy) "Checking" else "Add") }
-                    TextButton({ adding = false; model.sources.clearError() }) { Text("Cancel") }
-                }
-            }
+    @Composable
+    fun PluginRow(s: FlareSource, mineToo: Boolean) {
+        val on = s.id !in hidden
+        SRow(s.name, Modifier.tag("source-${s.id}"), lead = { PluginTile(s, 32.dp) },
+            sub = listOfNotNull(if (mineToo) s.base?.removePrefix("https://") else Market.maker(s), if (s.ok == false) "not answering" else null).joinToString(" · "),
+            onClick = { details = s.id }) {
+            DGSwitch(on, { v -> model.sources.setShown(s.id, v); model.markers.refresh(true) })
         }
     }
-}
 
-
-/**
- * One plugin, checked: whether it is answering, how many alerts it
- * holds, when it last answered, what it says about itself, and a
- * button that asks again now. The page for "is this thing working".
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PluginStatusSheet(model: DriveViewModel, sourceId: String, onClose: () -> Unit) {
-    val catalog by model.sources.catalog.collectAsStateWithLifecycle()
-    val mine by model.sources.mine.collectAsStateWithLifecycle()
-    val hidden by model.sources.hidden.collectAsStateWithLifecycle()
-    val s = catalog.firstOrNull { it.id == sourceId } ?: mine.firstOrNull { it.id == sourceId }
-    var checking by remember { mutableStateOf(false) }
-    var checkedAt by remember { mutableStateOf<Long?>(null) }
-    var reach by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("plugin-status")) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (s == null) { Text("This plugin is no longer listed.", color = MaterialTheme.colorScheme.onSurfaceVariant); return@Column }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                PluginBadge(s.id, PluginStyle.oneCategory(s.kinds), 40.dp)
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(s.name, style = MaterialTheme.typography.titleLarge)
-                    Text(if (s.trust == "official") "Official CommuteScout plugin" else if (s.tier == "approved") "Reviewed by CommuteScout"
-                         else if (s.tier == "private") "Private, read from this phone only" else "Public, not reviewed",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (s.tier == "approved") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+    SheetLayer(onClose, snaps = listOf(.92f), modifier = Modifier.tag("sources-sheet")) { sheet ->
+        SheetHead("My plugins", sheet, sub = "What each plugin shows follows your account and no one else's.")
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 24.dp)) {
+            val approved = catalog.filter { it.tier == "approved" }
+            val public = catalog.filter { it.tier != "approved" }
+            GroupHead("Approved plugins")
+            Group {
+                if (approved.isEmpty()) SRow("No approved plugin is listed right now.", labelColor = DG.sub)
+                approved.forEachIndexed { i, s -> if (i > 0) RowDivider(); PluginRow(s, false) }
             }
-            val installed = s.id !in hidden
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (installed) "Installed" else "Not installed", Modifier.weight(1f))
-                Switch(installed, { on -> model.sources.setOn(s.id, on); model.markers.refresh(true) }, Modifier.testTag("plugin-installed"))
+            GroupFoot("Reviewed by CommuteScout. Drawn by default and may speak.")
+            GroupHead("Public plugins, not reviewed")
+            Group(plugin = true) {
+                if (public.isEmpty()) SRow("None listed right now.", labelColor = DG.sub)
+                public.forEachIndexed { i, s -> if (i > 0) RowDivider(plugin = true); PluginRow(s, false) }
             }
-            Text(if (installed) "Turn off to uninstall: its alerts leave the map at once and it is not asked again."
-                 else "Turn on to install: its alerts join the map within a minute.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-            Heading("Status")
-            StatusFact("Answering", if (s.ok == false) "No" else if (s.ok == true) "Yes" else "Not asked yet",
-                if (s.ok == false) MaterialTheme.colorScheme.error else if (s.ok == true) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant)
-            StatusFact("Alerts on the map now", "%,d".format(s.count))
-            s.lastOk?.let { StatusFact("Last good answer", agoText(it)) }
-            if (s.ok == false) s.lastError?.let { StatusFact("Last error", it, MaterialTheme.colorScheme.error) }
-            if (s.fails > 0) StatusFact("Failures in a row", "${s.fails}")
-            reach?.let { StatusFact("Reached from this phone", it) }
-            Button({
-                checking = true
-                scope.launch {
-                    model.sources.loadCatalog()
-                    s.base?.let { base ->
-                        val t0 = System.currentTimeMillis()
-                        reach = runCatching {
-                            Backend.http.newCall(okhttp3.Request.Builder().url("$base/flare/v1/handshake").build()).execute().use { r ->
-                                if (r.isSuccessful) "Yes, ${System.currentTimeMillis() - t0} ms" else "Answered ${r.code}"
-                            }
-                        }.getOrDefault("No")
+            GroupFoot("Anyone who passes the conformance check can be listed. Drawn and labeled; spoken only if you turn that on in Settings > Alerts.")
+            GroupHead("Private plugins")
+            Group(plugin = true) {
+                mine.forEachIndexed { i, s -> if (i > 0) RowDivider(plugin = true); PluginRow(s, true) }
+                if (mine.isNotEmpty()) RowDivider(inset = 0.dp, plugin = true)
+                if (!adding) SRow("Add a private or unlisted plugin", Modifier.tag("add-source"), icon = "plus", tileColor = DG.plug, labelColor = DG.plugInk,
+                    onClick = { adding = true })
+                else Column(Modifier.padding(vertical = 12.dp)) {
+                    DGField("Plugin address", base, { base = it }, placeholder = "https://example.com", tag = "source-url")
+                    Spacer(Modifier.height(8.dp))
+                    DGField("Token (private plugins only)", token, { token = it }, placeholder = "Optional", tag = "source-token")
+                    Text("The app asks the plugin who it is (its handshake), then reads its alerts around where you are looking. Only you see them.",
+                        Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp), style = PageType.note, color = DG.sub)
+                    error?.let { Text(it, Modifier.padding(start = 24.dp, end = 24.dp, top = 6.dp), style = PageType.note, color = DG.highInk) }
+                    Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DGButton("Cancel", { adding = false; model.sources.clearError() }, Modifier.weight(1f))
+                        DGButton(if (busy) "Checking" else "Add", {
+                            scope.launch { busy = true; model.sources.clearError(); if (model.sources.add(base, token)) { adding = false; base = ""; token = "" }; busy = false }
+                        }, Modifier.weight(1f), style = BtnStyle.BLUE, enabled = base.isNotBlank() && !busy)
                     }
-                    checkedAt = System.currentTimeMillis()
-                    checking = false
                 }
-            }, enabled = !checking, modifier = Modifier.testTag("plugin-check")) { Text(if (checking) "Checking" else "Check now") }
-            checkedAt?.let { Text("Checked " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(it)),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-
-            Heading("What it says about itself")
-            s.version?.let { StatusFact("Version", it) }
-            s.protocolName?.let { StatusFact("Protocol", it) }
-            StatusFact("Asks for new alerts every", Units.duration(s.refreshS.toDouble()))
-            StatusFact("Shows", s.kindsLabel.ifEmpty { "alerts" })
-            StatusFact("Coverage", s.coverageLabel)
-            StatusFact("Shared data", if (s.shared) "Yes: the same for everyone, at every zoom" else "No: served around you only")
-            StatusFact("Accepts reports", if (s.acceptsReports) "Yes" else "No")
-            s.attribution?.let { StatusFact("Data from", it) }
-            s.contact?.let { StatusFact("Contact", it) }
-            s.base?.let { StatusFact("Address", it) }
+            }
+            Spacer(Modifier.height(12.dp))
+            Group {
+                LinkSRow("How to write a plugin", "help", { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://commutescout.com/plugins"))) })
+            }
         }
-    }
-}
-
-/** "5 min ago" for an ISO timestamp from the server. */
-private fun agoText(iso: String): String {
-    val t = runCatching { java.time.Instant.parse(iso).toEpochMilli() }.getOrNull()
-        ?: runCatching { java.time.OffsetDateTime.parse(iso).toInstant().toEpochMilli() }.getOrNull() ?: return iso
-    val s = (System.currentTimeMillis() - t) / 1000
-    return when {
-        s < 60 -> "just now"
-        s < 3600 -> "${s / 60} min ago"
-        s < 86400 -> "${s / 3600} h ago"
-        else -> java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(t))
-    }
-}
-
-@Composable
-private fun StatusFact(label: String, value: String, color: Color = MaterialTheme.colorScheme.onSurface) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, Modifier.weight(1.4f), color = color, textAlign = androidx.compose.ui.text.style.TextAlign.End, style = MaterialTheme.typography.bodyMedium)
     }
 }
