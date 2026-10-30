@@ -590,6 +590,11 @@ struct CameraView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .contentShape(Rectangle())
                 .onTapGesture { if videoURL != nil { playing = true } }
+                // One element whatever the picture's state: a loaded image
+                // alone exposes nothing, so VoiceOver (and tests) lost it.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(videoURL != nil ? "Camera picture, play video" : "Camera picture")
+                .accessibilityAddTraits(videoURL != nil ? .isButton : .isImage)
                 .accessibilityIdentifier("camera-image")
             }
             if marker.stream == nil {
