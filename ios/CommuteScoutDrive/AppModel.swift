@@ -32,32 +32,57 @@ enum DriveState: Equatable {
 
 /// The location source: the phone, or a simulator that drives the
 /// chosen route (debug builds only, for testing without a car).
+///
+/// Ferrostar's provider asks for permission the moment it is made, so
+/// on a first run it is not made until the welcome's location step (or
+/// a route) asks for it: the system prompt comes from that button, not
+/// over welcome step 1.
 final class LocationSource: LocationProviding {
-    private let device = CoreLocationProvider(activityType: .automotiveNavigation,
-                                              allowBackgroundLocationUpdates: true)
+    private var made: CoreLocationProvider?
+    private let probe = CLLocationManager()   // reads the status; never asks
     private let simulated = SimulatedLocationProvider(location: CLLocation(latitude: 37.3382, longitude: -121.8863))
-    var simulate = false { didSet { swapDelegate() } }
+    private var listener: (any LocationManagingDelegate)?
+    /// Holds off asking while the first run is showing.
+    private(set) var held: Bool
+    var simulate = false
 
-    private var current: LocationProviding { simulate ? simulated : device }
+    init(held: Bool) {
+        self.held = held
+        simulated.warpFactor = 3
+    }
 
-    init() { simulated.warpFactor = 3 }
+    /// The phone's provider, made once asking is allowed or the answer
+    /// is already known.
+    private var device: CoreLocationProvider? {
+        if made == nil, !held || probe.authorizationStatus != .notDetermined {
+            let d = CoreLocationProvider(activityType: .automotiveNavigation, allowBackgroundLocationUpdates: true)
+            d.delegate = listener
+            made = d
+        }
+        return made
+    }
+
+    private var current: LocationProviding? { simulate ? simulated : device }
+
+    /// Stop holding: makes the provider (which asks, if never asked) and
+    /// starts updates.
+    func release() {
+        guard held else { return }
+        held = false
+        _ = device   // asks now, even while a simulated drive is the source
+        startUpdating()
+    }
 
     var delegate: (any LocationManagingDelegate)? {
-        get { current.delegate }
-        set { device.delegate = newValue; simulated.delegate = newValue }
+        get { listener }
+        set { listener = newValue; made?.delegate = newValue; simulated.delegate = newValue }
     }
 
-    private func swapDelegate() {
-        let d = device.delegate ?? simulated.delegate
-        device.delegate = d
-        simulated.delegate = d
-    }
-
-    var authorizationStatus: CLAuthorizationStatus { device.authorizationStatus }
-    var lastLocation: UserLocation? { current.lastLocation }
-    var lastHeading: Heading? { current.lastHeading }
-    func startUpdating() { current.startUpdating() }
-    func stopUpdating() { current.stopUpdating() }
+    var authorizationStatus: CLAuthorizationStatus { made?.authorizationStatus ?? probe.authorizationStatus }
+    var lastLocation: UserLocation? { current?.lastLocation }
+    var lastHeading: Heading? { current?.lastHeading }
+    func startUpdating() { current?.startUpdating() }
+    func stopUpdating() { current?.stopUpdating() }
 
     func simulate(route: Route) throws {
         simulated.lastLocation = UserLocation(clCoordinateLocation2D: route.geometry.first!.clLocationCoordinate2D)
@@ -65,12 +90,11 @@ final class LocationSource: LocationProviding {
     }
 
     var enabled: Bool {
-        simulate || device.authorizationStatus == .authorizedAlways
-            || device.authorizationStatus == .authorizedWhenInUse
+        simulate || authorizationStatus == .authorizedAlways || authorizationStatus == .authorizedWhenInUse
     }
 
     var denied: Bool {
-        !simulate && (device.authorizationStatus == .denied || device.authorizationStatus == .restricted)
+        !simulate && (authorizationStatus == .denied || authorizationStatus == .restricted)
     }
 }
 
@@ -132,7 +156,7 @@ final class AppModel: ObservableObject {
     @Published var simulating = false { didSet { location.simulate = simulating } }
     @Published private(set) var core: FerrostarCore
 
-    let location = LocationSource()
+    let location = LocationSource(held: Prefs.welcomeIsDue)
     let places = PlaceStore()
     let alerts = AlertsEngine()
     let markers = MarkerStore()
@@ -401,6 +425,14 @@ final class AppModel: ObservableObject {
             builtFor = prefs.routingKey
         }
         objectWillChange.send()
+    }
+
+    /// The first run's location step (or a route) lets the app ask for
+    /// location; then follow the driver once it is allowed.
+    func allowLocation() {
+        guard location.held else { return }
+        location.release()
+        Task { await followOnceAllowed() }
     }
 
     /// Follow the driver as soon as location is allowed (the first launch
@@ -757,6 +789,7 @@ final class AppModel: ObservableObject {
         routeGen += 1
         let gen = routeGen
         routingPlace = place
+        if origin == nil { allowLocation() }
         if origin == nil, let ts = location.lastLocation?.clLocation.timestamp, Date().timeIntervalSince(ts) > 20 {
             DriveLog.note("routes: last fix \(Int(Date().timeIntervalSince(ts))) s old, waiting for a fresh one")
             for _ in 0 ..< 6 {

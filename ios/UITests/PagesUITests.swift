@@ -181,6 +181,27 @@ final class PagesUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5))
     }
 
+    /// A fresh install: step 1 shows with no system prompt over it, and
+    /// the location prompt comes from the step's own button.
+    func testFirstRunAsksForLocationFromTheStep() {
+        app.terminate()
+        app.resetAuthorizationStatus(for: .location)
+        // No simulated drive: it counts as located, and the map's own
+        // puck would ask on its own.
+        app.launchArguments = ["-csWelcome"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Step 1 of 3"].waitForExistence(timeout: 10))
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        XCTAssertFalse(springboard.alerts.firstMatch.waitForExistence(timeout: 4), "no prompt before the step asks")
+        shot("welcome-fresh-1", 0)
+        app.buttons["welcome-primary"].tap()
+        let alert = springboard.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: 8), "the step's button asks for location")
+        shot("welcome-fresh-prompt", 0)
+        alert.buttons["Allow While Using App"].tap()
+        XCTAssertTrue(app.staticTexts["Step 2 of 3"].waitForExistence(timeout: 5))
+    }
+
     /// The Voice page in both themes, after picking a voice from the
     /// list and going back to Automatic.
     func testVoicePage() {
