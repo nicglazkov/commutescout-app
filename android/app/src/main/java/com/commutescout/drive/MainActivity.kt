@@ -70,6 +70,10 @@ class MainActivity : ComponentActivity() {
                 DebugScenes.forceAhead(k, clearAfterMs = if (clearing) 7000L else null)
             }
             intent?.getStringExtra("csGallery")?.let { model.wantedGallery = it }
+            // "csPage" = watches, watchedit, offline, picker or savedmap opens
+            // that page; csFixtures fills it with made-up data, signed out.
+            if (intent?.getBooleanExtra("csFixtures", false) == true) MorePages.fixtures = true
+            intent?.getStringExtra("csPage")?.let { MorePages.wanted = it }
             // "csView" = "lat,lon,zoom" puts the camera somewhere, for screenshots.
             intent?.getStringExtra("csView")?.split(",")?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 3 }?.let { model.wantedView = it }
             // "csTour" zooms and pans through a set of views, for a recording.
