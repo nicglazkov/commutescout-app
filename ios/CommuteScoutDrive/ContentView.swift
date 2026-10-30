@@ -13,6 +13,8 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     // "-csOpenSettings" opens Settings at launch, for screenshots and tests.
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-csOpenSettings")
+    /// The first run, once ("-csWelcome" shows it for screenshots).
+    @State private var showWelcome = Prefs.welcomeIsDue
     @State private var showLayers = false
     @State private var showReport = false
     @State private var showTools = false
@@ -87,7 +89,7 @@ struct ContentView: View {
                 WatchClearedCapsule(text: t.text)
                     .padding(.horizontal, 12).padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
-            } else if !isNavigating {
+            } else if !isNavigating && !showWelcome {
                 VStack(spacing: 0) {
                     HStack(alignment: .top, spacing: 8) {
                         SearchBar()
@@ -114,7 +116,7 @@ struct ContentView: View {
 
             // Map controls: 2D/3D, compass when turned, my location. While
             // navigating Ferrostar draws its own zoom and recenter buttons.
-            if !isNavigating { VStack {
+            if !isNavigating && !showWelcome { VStack {
                 Spacer()
                 HStack(alignment: .bottom) {
                     Spacer()
@@ -181,6 +183,12 @@ struct ContentView: View {
             }
         }
         .animation(DG.springSoft, value: showReport)
+        .overlay {
+            if showWelcome, !model.prefs.welcomeDone || ProcessInfo.processInfo.arguments.contains("-csWelcome") {
+                WelcomeOverlay { withAnimation(DG.springSoft) { showWelcome = false } }
+                    .transition(.opacity)
+            }
+        }
         .overlay(alignment: .top) {
             if let t = model.toast {
                 Text(t).font(DG.font(15, .semibold)).foregroundStyle(DG.ink)

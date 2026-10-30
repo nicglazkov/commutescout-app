@@ -8,6 +8,12 @@ struct DriveApp: App {
     @StateObject private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        // Read before anything else writes a setting: an install that
+        // already has settings is an update and skips the first run.
+        _ = Prefs.welcomeIsDue
+    }
+
     /// The app, or with "-csCatalog [system]" the catalog of every alert
     /// or every message, for comparing against the design.
     @ViewBuilder private var root: some View {

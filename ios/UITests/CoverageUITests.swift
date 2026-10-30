@@ -20,7 +20,9 @@ final class CoverageUITests: XCTestCase {
 
     @discardableResult
     private func reveal(_ element: XCUIElement, tries: Int = 16) -> Bool {
-        let form = app.collectionViews.firstMatch.exists ? app.collectionViews.firstMatch : app.tables.firstMatch
+        // A system form, or a Day Glass+ page (a plain scroll view): drag the screen itself.
+        let form: XCUIElement = app.collectionViews.firstMatch.exists ? app.collectionViews.firstMatch
+            : app.tables.firstMatch.exists ? app.tables.firstMatch : app
         for _ in 0 ..< tries {
             if element.exists && element.isHittable { return true }
             form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
@@ -46,7 +48,7 @@ final class CoverageUITests: XCTestCase {
 
     private func openSettings() {
         app.buttons["settings"].tap()
-        XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-map-style"].firstMatch.waitForExistence(timeout: 5))
     }
 
     /// Settings is a home page of categories: open one by its row.
@@ -56,15 +58,19 @@ final class CoverageUITests: XCTestCase {
         row.tap()
     }
 
+    /// A system form page has a navigation bar; a Day Glass+ page its own
+    /// round back button.
     private func back() {
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let bar = app.navigationBars.buttons.element(boundBy: 0)
+        if bar.exists && bar.isHittable { bar.tap() } else { app.buttons["page-back"].firstMatch.tap() }
         sleep(1)   // let the pop finish
     }
 
-    /// Done is on the home page only: step back to it, then close.
+    /// Close is on the home page only: step back to it, then close.
     private func closeSettings() {
-        for _ in 0 ..< 3 where !app.buttons["Done"].firstMatch.exists { back() }
-        app.buttons["Done"].firstMatch.tap()
+        let home = app.staticTexts["Map and display"]
+        for _ in 0 ..< 4 where !(home.exists && home.isHittable) { back() }
+        app.buttons["page-close"].firstMatch.tap()
     }
 
     private func search(_ text: String) {
@@ -153,8 +159,8 @@ final class CoverageUITests: XCTestCase {
     func testUnitsChangeThePlaceCard() {
         openSettings()
         openPage("units")
-        XCTAssertTrue(app.buttons["Kilometers"].waitForExistence(timeout: 5))
-        app.buttons["Kilometers"].tap()
+        XCTAssertTrue(app.buttons["units-km"].waitForExistence(timeout: 5))
+        app.buttons["units-km"].tap()
         closeSettings()
         search("Palo Alto")
         pickResult("Palo Alto")
@@ -163,63 +169,77 @@ final class CoverageUITests: XCTestCase {
         app.buttons["place-close"].tap()
         openSettings()
         openPage("units")
-        XCTAssertTrue(app.buttons["Miles"].waitForExistence(timeout: 5))
-        app.buttons["Miles"].tap()
+        XCTAssertTrue(app.buttons["units-phone"].waitForExistence(timeout: 5))
+        app.buttons["units-phone"].tap()
         closeSettings()
     }
 
     // MARK: settings
 
-    func testAppearancePickersAndPerspective() {
+    func testMapStylePickerAndTheme() {
         openSettings()
-        openPage("appearance")
-        // Theme and base map are segmented controls.
-        for label in ["Dark", "Light", "System"] {
+        openPage("map-style")
+        // Light and dark is a segmented control.
+        for label in ["Dark", "Light", "Match my phone"] {
             let seg = app.buttons[label].firstMatch
             XCTAssertTrue(reveal(seg), label)
             seg.tap()
             XCTAssertTrue(seg.isSelected, "\(label) selected")
         }
-        // Base maps are cards with a picture each; tapping applies at once.
-        for raw in ["outdoors", "auto"] {
-            let card = app.buttons["basemap-\(raw)"].firstMatch
+        // Styles are cards with a picture each; tapping applies at once.
+        for raw in ["outdoors", "positron"] {
+            let card = app.buttons["mapstyle-\(raw)"].firstMatch
             XCTAssertTrue(reveal(card), raw)
             card.tap()
+            XCTAssertTrue(card.isSelected, "\(raw) picked")
         }
-        XCTAssertTrue(app.otherElements["basemap-preview"].firstMatch.exists || app.images["basemap-preview"].firstMatch.exists
-                      || app.descendants(matching: .any)["basemap-preview"].firstMatch.exists, "live preview on the page")
-        let before = app.buttons["perspective"].label   // "2D" while 3D is on
-        flip("3D perspective")
         closeSettings()
-        XCTAssertNotEqual(app.buttons["perspective"].label, before, "map button reflects the settings toggle")
+        // 3D lives on the map's own button.
+        let before = app.buttons["perspective"].label
+        app.buttons["perspective"].tap()
+        XCTAssertNotEqual(app.buttons["perspective"].label, before)
         app.buttons["perspective"].tap()
         XCTAssertEqual(app.buttons["perspective"].label, before)
     }
 
     func testRouteOptionsAndDrivingToggles() {
         openSettings()
-        openPage("navigation")
-        for label in ["Avoid tolls", "Avoid highways", "Avoid ferries", "Voice guidance",
-                      "Show speed limit", "Keep the screen on"] {
+        openPage("route-options")
+        for label in ["Avoid tolls", "Avoid highways", "Avoid ferries", "Show speed limit", "Keep the screen on"] {
             flip(label); flip(label)
         }
+        back()
+        openPage("voice")
+        flip("voice-speak"); flip("voice-speak")
         back()
         openPage("map-layers")
         flip("Traffic"); flip("Traffic")
         back()
         openPage("alerts")
-        flip("Speak road alerts"); flip("Speak road alerts")
-        let warn = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Warn about alerts'")).firstMatch
-        XCTAssertTrue(reveal(warn))
-        warn.tap()
-        let choices = app.buttons.matching(NSPredicate(format: "label CONTAINS 'mi' OR label CONTAINS 'km'"))
-        XCTAssertGreaterThan(choices.count, 1, "distance choices")
-        choices.element(boundBy: 1).tap()
+        for label in ["Sound", "Silent", "Voice"] {
+            let seg = app.buttons[label].firstMatch
+            XCTAssertTrue(reveal(seg), label)
+            seg.tap()
+            XCTAssertTrue(seg.isSelected, "\(label) delivery")
+        }
+        let ahead = app.buttons.matching(NSPredicate(format: "label == '2 mi' OR label == '3 km'")).firstMatch
+        XCTAssertTrue(reveal(ahead), "warn-ahead choices")
+        ahead.tap()
+        XCTAssertTrue(ahead.isSelected)
+        let chip = app.buttons["chip-camera"].firstMatch
+        XCTAssertTrue(reveal(chip), "camera chip")
+        let was = chip.isSelected
+        chip.tap()
+        XCTAssertNotEqual(chip.isSelected, was, "chip toggles")
+        chip.tap()
+        let advanced = app.buttons["advanced-alerts"].firstMatch
+        XCTAssertTrue(reveal(advanced))
+        advanced.tap()
         let strip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Show the next alert within'")).firstMatch
         XCTAssertTrue(reveal(strip))
         strip.tap()
         app.buttons.matching(NSPredicate(format: "label CONTAINS 'mi' OR label CONTAINS 'km'")).element(boundBy: 0).tap()
-        back()
+        back(); back()
         openPage("testing")
         XCTAssertTrue(reveal(app.switches["Simulate driving the route"]), "testing toggle")
         closeSettings()
@@ -246,11 +266,15 @@ final class CoverageUITests: XCTestCase {
     func testHelpLinksAboutAndVersion() {
         openSettings()
         openPage("help")
-        for label in ["Live map on the web", "Data sources", "Developers and API", "About CommuteScout", "Contact", "Privacy"] {
+        for label in ["Live map on the web", "Data sources", "Developers and API", "Contact"] {
             XCTAssertTrue(reveal(app.staticTexts[label]), label)
         }
         back()
         openPage("about")
+        for label in ["About CommuteScout", "Privacy"] {
+            let row = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+            XCTAssertTrue(reveal(row), label)
+        }
         let version = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Version'")).firstMatch
         XCTAssertTrue(version.waitForExistence(timeout: 5), "a version row")
         let number = app.staticTexts.matching(NSPredicate(format: "label MATCHES '.*[0-9]+\\\\.[0-9]+.*'")).firstMatch
@@ -261,23 +285,23 @@ final class CoverageUITests: XCTestCase {
     func testAccountSectionSignInSheetOrSignedInRows() {
         openSettings()
         openPage("account")
-        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 5))
-        if app.buttons["Sign in"].exists {
-            app.buttons["Sign in"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["page-account"].firstMatch.waitForExistence(timeout: 5))
+        if app.buttons["account-sign-in"].exists {
+            app.buttons["account-sign-in"].tap()
             XCTAssertTrue(app.buttons["Continue with Apple"].waitForExistence(timeout: 5))
             XCTAssertTrue(app.buttons["Continue with Google"].exists)
             app.buttons["Cancel"].firstMatch.tap()
         } else {
-            XCTAssertTrue(app.buttons["Sign out"].exists, "signed in: Sign out offered")
-            XCTAssertTrue(app.buttons["Delete account"].exists)
-            XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Signed in as'")).firstMatch.exists)
-            app.buttons["Delete account"].firstMatch.tap()
+            XCTAssertTrue(app.buttons["account-sign-out"].exists, "signed in: Sign out offered")
+            XCTAssertTrue(reveal(app.descendants(matching: .any)["api-usage"].firstMatch), "API use today")
+            XCTAssertTrue(reveal(app.buttons["account-delete"]))
+            app.buttons["account-delete"].firstMatch.tap()
             let ask = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Delete your account?'")).firstMatch
             XCTAssertTrue(ask.waitForExistence(timeout: 5), "deletion asks first")
             // Dismiss without confirming: a tap outside the dialog.
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
             XCTAssertTrue(ask.waitForNonExistence(timeout: 5), "dialog dismissed")
-            XCTAssertTrue(app.buttons["Sign out"].waitForExistence(timeout: 5), "still signed in")
+            XCTAssertTrue(app.buttons["account-sign-out"].waitForExistence(timeout: 5), "still signed in")
         }
         closeSettings()
     }
