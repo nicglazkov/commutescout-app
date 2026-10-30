@@ -112,6 +112,9 @@ final class PagesUITests: XCTestCase {
         page("map-layers")
         shot("layers-everything")
         app.buttons["Plugins"].firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["settings-layers-plugins-link"].firstMatch.waitForExistence(timeout: 3),
+                      "Map layers links to Plugins instead of repeating each plugin's switch")
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'layer-plugin-'")).firstMatch.exists)
         shot("layers-plugins")
         app.buttons["Official"].firstMatch.tap()
         shot("layers-official")
@@ -128,12 +131,15 @@ final class PagesUITests: XCTestCase {
         back()
         page("saved-places")
         shot("places")
-        app.buttons["set-home"].firstMatch.tap()
-        sleep(1)
-        let field = app.textFields["place-search"].firstMatch
-        if field.waitForExistence(timeout: 4) { field.tap(); field.typeText("San Jose City Hall") }
-        shot("places-picker", 3)
-        app.buttons["Cancel"].firstMatch.tap()
+        // Home may already be set by an earlier test on this simulator.
+        if app.buttons["set-home"].firstMatch.waitForExistence(timeout: 3) {
+            app.buttons["set-home"].firstMatch.tap()
+            sleep(1)
+            let field = app.textFields["place-search"].firstMatch
+            if field.waitForExistence(timeout: 4) { field.tap(); field.typeText("San Jose City Hall") }
+            shot("places-picker", 3)
+            app.buttons["Cancel"].firstMatch.tap()
+        }
         back()
         page("plugins")
         shot("plugins", 3)

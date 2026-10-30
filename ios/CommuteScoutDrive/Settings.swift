@@ -303,16 +303,15 @@ private struct LayersContent: View {
                     DGSwitchRow(title: "Show plugin alerts", isOn: shown("plugin")) {
                         DGTile(symbol: "puzzlepiece.extension.fill", color: DG.hex(0x7c5cf0), size: 30)
                     }
-                    ForEach(sources.catalog) { p in
-                        DGDivider()
-                        DGSwitchRow(title: p.name, sub: p.kinds.isEmpty ? "Alerts" : "Loads " + p.kindsLabel,
-                                    isOn: Binding(get: { sources.isOn(p.id) }, set: { sources.setOn(p.id, $0); model.markers.refresh(force: true) }),
-                                    identifier: "layer-plugin-\(p.id)") {
-                            PluginBadge(sourceId: p.id, category: p.oneCategory, size: 30)
+                    DGDivider()
+                    // Each plugin's own switch is on its page, so it is not repeated here.
+                    SettingsLink(id: "layers-plugins-link") { MarketplaceView() } label: {
+                        DGRow(title: "Choose plugins", value: sources.catalog.isEmpty ? nil : "\(sources.catalog.filter { sources.isOn($0.id) }.count) on") {
+                            EmptyView()
                         }
                     }
                 }
-                DGFootnote("A plugin's alerts are badges in its own color, and this says what each one puts on the map.")
+                DGFootnote("Plugin alerts are badges in each plugin's own color. Turn a plugin on or off on its page in Plugins.")
             }
         }
         .task { await sources.loadCatalog() }
@@ -322,7 +321,7 @@ private struct LayersContent: View {
         switch prefs.sourceFilter {
         case .all: "Everything the map can show: agency data and the plugins you installed."
         case .official: "Agency data only: state DOT and 511 feeds, cameras, signs and weather stations."
-        case .plugins: "Plugin alerts only, with what each plugin loads."
+        case .plugins: "Plugin alerts only."
         }
     }
 }

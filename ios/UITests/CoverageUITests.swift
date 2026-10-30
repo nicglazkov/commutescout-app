@@ -64,7 +64,7 @@ final class CoverageUITests: XCTestCase {
         let bar = app.navigationBars.buttons.element(boundBy: 0)
         if bar.exists && bar.isHittable { bar.tap() } else {
             let round = app.buttons["page-back"].firstMatch
-            if !round.waitForExistence(timeout: 3) { print("CS-BACK-MISS", app.debugDescription) }
+            _ = round.waitForExistence(timeout: 3)
             round.tap()
         }
         sleep(1)   // let the pop finish
@@ -72,9 +72,17 @@ final class CoverageUITests: XCTestCase {
 
     /// Close is on the home page only: step back to it, then close.
     private func closeSettings() {
-        let home = app.staticTexts["Map and display"]
-        for _ in 0 ..< 4 where !(home.exists && home.isHittable) { back() }
-        app.buttons["page-close"].firstMatch.tap()
+        for _ in 0 ..< 4 {
+            let bar = app.navigationBars.buttons.element(boundBy: 0)
+            let round = app.buttons["page-back"].firstMatch
+            guard (bar.exists && bar.isHittable) || (round.exists && round.isHittable) else { break }
+            back()
+        }
+        // The home page may be scrolled down, its close button out of view.
+        let close = app.buttons["page-close"].firstMatch
+        for _ in 0 ..< 3 where close.exists && !close.isHittable { app.scrollViews["page-settings"].swipeDown() }
+        if close.exists && close.isHittable { close.tap() }
+        XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5), "settings closed")
     }
 
     private func search(_ text: String) {
