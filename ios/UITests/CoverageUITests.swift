@@ -115,7 +115,8 @@ final class CoverageUITests: XCTestCase {
         app.buttons["place-close"].tap()
         openSettings()
         openPage("saved-places")
-        let work = app.staticTexts["Work"]
+        // In the list itself: the places tray under the sheet has a "Work" row too.
+        let work = app.cells.staticTexts["Work"].firstMatch
         XCTAssertTrue(reveal(work), "Work listed under Saved places")
         // Every place row swipes to Remove.
         app.cells.containing(.staticText, identifier: "Work").firstMatch.swipeLeft()
