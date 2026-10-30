@@ -25,6 +25,23 @@ final class MorePagesUITests: XCTestCase {
         XCTAssertNotEqual(sw.value as? String, before, "\(id) flipped")
     }
 
+    func testAWatchAreaOpensInTheEditorWithAPauseInItsMenu() {
+        launch("watches")
+        XCTAssertTrue(any("watch-edit-a").waitForExistence(timeout: 10))
+        // The second fixture is paused, so its menu offers Resume.
+        XCTAssertTrue(app.staticTexts["Paused"].firstMatch.exists)
+        any("watch-menu-a").tap()
+        XCTAssertTrue(app.buttons["Pause"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Delete"].firstMatch.exists)
+        app.buttons["Edit"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Edit watch area"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textFields["watch-name"].value as? String, "Home area")
+        XCTAssertFalse(any("watch-shape").exists, "an area keeps its kind of shape")
+        app.buttons["page-close"].firstMatch.tap()
+        any("watch-menu-b").tap()
+        XCTAssertTrue(app.buttons["Resume"].firstMatch.waitForExistence(timeout: 5))
+    }
+
     func testMarketplaceFilterAndAdd() {
         launch("market")
         XCTAssertTrue(app.staticTexts["Marketplace"].firstMatch.waitForExistence(timeout: 10))

@@ -397,7 +397,7 @@ struct OfflineMapsView: View {
 }
 
 /// Which "more" screen a screenshot run wants open (debug launch
-/// argument "-csOpenMore market|plugin|offline|picker|savedmap").
+/// argument "-csOpenMore market|plugin|offline|picker|savedmap|watches").
 enum OfflineLaunch {
     static var wanted: String? = {
         #if DEBUG
@@ -418,6 +418,7 @@ struct MorePagesLauncher: View {
             switch screen {
             case "market": MarketplaceView()
             case "plugin": PluginDetailView(sourceId: model.sources.catalog.first?.id ?? "osm-cameras")
+            case "watches": WatchAreasView()
             default: OfflineMapsView()
             }
         }
