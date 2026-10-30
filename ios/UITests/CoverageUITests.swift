@@ -62,7 +62,11 @@ final class CoverageUITests: XCTestCase {
     /// round back button.
     private func back() {
         let bar = app.navigationBars.buttons.element(boundBy: 0)
-        if bar.exists && bar.isHittable { bar.tap() } else { app.buttons["page-back"].firstMatch.tap() }
+        if bar.exists && bar.isHittable { bar.tap() } else {
+            let round = app.buttons["page-back"].firstMatch
+            _ = round.waitForExistence(timeout: 3)
+            round.tap()
+        }
         sleep(1)   // let the pop finish
     }
 
@@ -239,7 +243,10 @@ final class CoverageUITests: XCTestCase {
         let strip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Show the next alert within'")).firstMatch
         XCTAssertTrue(reveal(strip))
         strip.tap()
-        app.buttons.matching(NSPredicate(format: "label CONTAINS 'mi' OR label CONTAINS 'km'")).element(boundBy: 0).tap()
+        let whole = app.buttons["Whole route"].firstMatch
+        XCTAssertTrue(whole.waitForExistence(timeout: 5), "strip distance choices")
+        whole.tap()
+        sleep(1)
         back(); back()
         openPage("testing")
         XCTAssertTrue(reveal(app.switches["Simulate driving the route"]), "testing toggle")
