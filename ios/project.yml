@@ -151,6 +151,7 @@ targets:
       - path: CommuteScoutDrive/DayGlass/CameraRoom.swift
       - path: CommuteScoutDrive/DayGlass/WatchClearedText.swift
       - path: CommuteScoutDrive/DayGlass/PageLogic.swift
+      - path: CommuteScoutDrive/DayGlass/SettingsLogic.swift
       - path: CommuteScoutDrive/DayGlass/MoreLogic.swift
       - path: CommuteScoutDrive/Units.swift
       - path: ../shared/voices.json

@@ -1,116 +1,155 @@
-import MapLibreSwiftUI
 import SwiftUI
 
-/// Settings, the way a phone's own Settings app is laid out: a short
-/// home page of categories, each opening a page of its own. A row says
-/// what it holds and what it is set to, so most answers are readable
-/// without opening anything. Values apply at once; route options apply
-/// to the next route.
+/// Settings: a home page of categories, each opening a page of its own.
+/// A row says what it holds and what it is set to, so most answers are
+/// readable without opening anything. Values apply at once; route
+/// options apply to the next route.
 struct SettingsSheet: View {
     @EnvironmentObject var model: AppModel
+    @State private var detent: PresentationDetent = .large
+
+    /// How far the sheet comes down on the Map style page, so the real
+    /// map above it shows the style picked.
+    static let peek = PresentationDetent.fraction(0.6)
+
+    var body: some View {
+        NavigationStack {
+            SettingsHome(detent: $detent)
+        }
+        .presentationDetents([.large, Self.peek], selection: $detent)
+        .presentationDragIndicator(.visible)
+        .modifier(DGSheetCorner())
+    }
+}
+
+/// The sheet's rounded top in the design's radius, where iOS allows it.
+private struct DGSheetCorner: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 16.4, *) {
+            content.presentationCornerRadius(DG.R.sheet).presentationBackground(DG.background)
+        } else {
+            content
+        }
+    }
+}
+
+private struct SettingsHome: View {
+    @EnvironmentObject var model: AppModel
+    @ObservedObject private var health = SourcesHealthStore.shared
     @Environment(\.dismiss) private var dismiss
-    @State private var showSignIn = false
+    @Binding var detent: PresentationDetent
 
     private var prefs: Prefs { model.prefs }
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    NavigationLink { AccountSettings(showSignIn: $showSignIn) } label: { accountCard }
-                        .accessibilityIdentifier("settings-account")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("Settings").font(DG.font(30, .bold)).foregroundStyle(DG.ink).accessibilityAddTraits(.isHeader)
+                    Spacer()
+                    DGBackButton(symbol: "xmark") { dismiss() }
                 }
-                Section {
-                    row("Appearance", "paintpalette.fill", .indigo, value: prefs.theme.label) { AppearanceSettings() }
-                    row("Units", "ruler.fill", .teal, value: Units.useMiles ? "Miles" : "Kilometers") { UnitsSettings() }
+                .padding(.top, 18).padding(.bottom, 14)
+
+                SettingsLink(id: "account") { AccountPage() } label: { AccountCard(account: model.account) }
+
+                DGSectionLabel("Map and display")
+                DGGroup {
+                    row("map-style", "Map style", "map.fill", 0x5b6cf0, value: MapStylePage.name(prefs.mapStyle, dark: model.isDark)) {
+                        MapStylePage(detent: $detent)
+                    }
+                    DGDivider()
+                    row("units", "Units and region", "ruler.fill", 0x0f9a9a,
+                        value: SettingsSummary.units(miles: Units.useMiles, clock24: Units.clock24)) { UnitsPage() }
                 }
-                Section("Driving") {
-                    row("Navigation", "arrow.triangle.turn.up.right.diamond.fill", .blue, value: navigationSummary) { NavigationSettings() }
-                    row("Alerts", "bell.badge.fill", .red, value: alertsSummary) { AlertSettings() }
-                    row("Voice", "waveform", .pink, value: voiceSummary) { VoiceSettings() }
+
+                DGSectionLabel("Driving")
+                DGGroup {
+                    row("voice", "Voice", "speaker.wave.2.fill", 0x2f7cf6, value: model.muted ? "Off" : voiceSummary) { VoiceSettings() }
+                    DGDivider()
+                    row("alerts", "Alerts", "bell.fill", 0xe5484d,
+                        value: SettingsSummary.alerts(delivery: prefs.alertDelivery, aheadMeters: prefs.alertAheadMeters,
+                                                      advanced: prefs.advancedAlerts, miles: Units.useMiles)) { AlertsPage() }
+                    DGDivider()
+                    row("route-options", "Route options", "arrow.triangle.turn.up.right.diamond.fill", 0x14a35a,
+                        value: SettingsSummary.route(tolls: prefs.avoidTolls, highways: prefs.avoidHighways, ferries: prefs.avoidFerries)) {
+                        RouteOptionsPage()
+                    }
                 }
-                Section("Map") {
-                    row("Map layers", "square.3.layers.3d", .orange, value: layersSummary) { LayerSettings() }
-                    row("Plugins", "puzzlepiece.extension.fill", .purple, value: pluginsSummary) { MarketplaceView() }
-                    row("Offline maps", "arrow.down.circle.fill", .green, value: offlineSummary) { OfflineMapsView() }
-                    row("Saved places", "star.fill", .yellow, value: placesSummary) { PlaceSettings() }
+
+                DGSectionLabel("Map data")
+                DGGroup {
+                    SettingsLink(id: "data-sources") { DataSourcesPage() } label: {
+                        DGRow(title: "Data sources", leading: { DGTile(symbol: "antenna.radiowaves.left.and.right", color: DG.hex(0x0e1726)) },
+                              trailing: { sourcesValue })
+                    }
+                    DGDivider()
+                    row("map-layers", "Map layers", "square.3.layers.3d", 0xee8b0c, value: layersSummary) { LayersPage() }
+                    DGDivider()
+                    row("plugins", "Plugins", "puzzlepiece.extension.fill", 0x7c5cf0, value: pluginsSummary) { MarketplaceView() }
+                    DGDivider()
+                    row("offline-maps", "Offline maps", "arrow.down.to.line", 0x0f9a8c, value: offlineSummary) { OfflineMapsView() }
+                    DGDivider()
+                    row("saved-places", "Saved places", "star.fill", 0xd9a300, value: placesSummary) { PlaceSettings() }
                 }
-                Section {
-                    row("Help", "questionmark.circle.fill", .gray, value: nil) { HelpSettings() }
-                    row("About", "info.circle.fill", .gray, value: AppInfo.version) { AboutSettings() }
+
+                DGSectionLabel("Help")
+                DGGroup {
+                    row("help", "Help and feedback", "questionmark", 0x8a94a6, value: nil) { HelpPage() }
+                    DGDivider()
+                    row("about", "About and privacy", "info", 0x8a94a6, value: "Version " + AppInfo.version) { AboutPage() }
                     #if DEBUG
-                    row("Testing", "hammer.fill", .brown, value: model.simulating ? "Simulating" : nil) { TestingSettings() }
+                    DGDivider()
+                    row("testing", "Testing", "hammer.fill", 0x8a94a6, value: model.simulating ? "Simulating" : nil) { TestingSettings() }
                     #endif
                 }
+
+                Text("Not affiliated with any government agency. Check 511 or your state DOT before you drive.")
+                    .font(DG.font(13)).foregroundStyle(DG.faint).multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity).padding(.top, 22).padding(.horizontal, 20)
             }
-            .listStyle(.insetGrouped)
-            .navigationTitle("Settings")
-            .toolbar { Button("Done") { dismiss() } }
-            .sheet(isPresented: $showSignIn) { SignInSheet(reason: "Sign in to report, keep watch areas and manage API keys.") }
+            .padding(.horizontal, 16).padding(.bottom, 40)
         }
+        .background(DGPageBackground())
+        .toolbar(.hidden, for: .navigationBar)
+        .task { await health.refresh() }
+        .task { await model.sources.loadCatalog() }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("page-settings")
     }
 
-    /// The profile card at the top: who is signed in, or the invitation to.
-    private var accountCard: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle().fill(model.account.signedIn ? Color.accentColor.gradient : Color.gray.gradient)
-                if model.account.signedIn {
-                    Text(String(model.account.displayName.prefix(1)).uppercased())
-                        .font(.title2.weight(.semibold)).foregroundStyle(.white)
-                } else {
-                    Image(systemName: "person.fill").font(.title2).foregroundStyle(.white)
-                }
-            }
-            .frame(width: 54, height: 54)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.account.signedIn ? model.account.displayName : "Sign in").font(.headline).lineLimit(1)
-                Text(model.account.signedIn ? "Account, sign out" : "Reports, watch areas, sync")
-                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func row<Page: View>(_ title: String, _ symbol: String, _ color: Color, value: String?,
+    private func row<Page: View>(_ id: String, _ title: String, _ symbol: String, _ color: UInt32, value: String?,
                                  @ViewBuilder page: @escaping () -> Page) -> some View {
-        NavigationLink { page() } label: {
-            HStack(spacing: 12) {
-                SettingsIcon(symbol: symbol, color: color)
-                Text(title)
-                Spacer(minLength: 8)
-                if let value { Text(value).foregroundStyle(.secondary).lineLimit(1).font(.subheadline) }
-            }
+        SettingsLink(id: id, page: page) {
+            DGRow(title: title, value: value) { DGTile(symbol: symbol, color: DG.hex(color)) }
         }
-        .accessibilityIdentifier("settings-" + title.lowercased().replacingOccurrences(of: " ", with: "-"))
     }
 
-    private var navigationSummary: String {
-        let avoid = [prefs.avoidTolls ? "tolls" : nil, prefs.avoidHighways ? "highways" : nil, prefs.avoidFerries ? "ferries" : nil].compactMap { $0 }
-        return avoid.isEmpty ? (model.muted ? "Voice off" : "Voice on") : "Avoids " + avoid.joined(separator: ", ")
+    @ViewBuilder private var sourcesValue: some View {
+        if let r = health.report {
+            HStack(spacing: 6) {
+                if r.worst != .fresh { Circle().fill(SourcesUI.color(r.worst)).frame(width: 7, height: 7) }
+                Text(r.headline).font(DG.font(15, r.worst == .fresh ? .regular : .semibold))
+                    .foregroundStyle(r.worst == .fresh ? DG.sub : SourcesUI.ink(r.worst))
+            }
+        } else if health.busy {
+            ProgressView().controlSize(.small)
+        }
     }
 
-    private var alertsSummary: String {
-        if prefs.advancedAlerts { return "Per kind" }
-        return (prefs.spokenAlerts ? "Spoken, " : "Silent, ") + Units.distance(prefs.alertAheadMeters) + " ahead"
-    }
-
-    /// The voice that speaks, picked or automatic.
     private var voiceSummary: String {
         _ = prefs.voiceId   // read so the row follows a new pick
         return Voice.neural?.voice.name ?? Voice.current?.name ?? "System voice"
     }
 
     private var layersSummary: String {
-        let on = Prefs.layerKinds.filter { prefs.isChosen($0.key) }.count
-        return "\(on) of \(Prefs.layerKinds.count) on"
+        "\(Prefs.layerKinds.filter { prefs.isChosen($0.key) }.count) of \(Prefs.layerKinds.count)"
     }
 
     private var pluginsSummary: String {
         let all = model.sources.catalog.count + model.sources.mine.count
         if all == 0 { return "None" }
-        let on = model.sources.catalog.filter { model.sources.isOn($0.id) }.count + model.sources.mine.count
-        return "\(on) on"
+        return "\(model.sources.catalog.filter { model.sources.isOn($0.id) }.count + model.sources.mine.count) on"
     }
 
     private var offlineSummary: String {
@@ -124,295 +163,242 @@ struct SettingsSheet: View {
     }
 }
 
-/// The colored rounded tile beside a settings row.
-struct SettingsIcon: View {
-    let symbol: String
-    let color: Color
+/// A row that pushes a page, with the identifier tests find it by.
+struct SettingsLink<Page: View, Label: View>: View {
+    var id: String
+    @ViewBuilder var page: () -> Page
+    @ViewBuilder var label: () -> Label
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 7, style: .continuous).fill(color.gradient)
-            .frame(width: 30, height: 30)
-            .overlay(Image(systemName: symbol).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white))
-            .accessibilityHidden(true)
+        NavigationLink { page() } label: { label() }
+            .buttonStyle(DGRowPress())
+            .accessibilityIdentifier("settings-" + id)
     }
 }
 
-// MARK: - Pages
+/// A row darkens a little under the finger.
+struct DGRowPress: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.background(DG.ink.opacity(configuration.isPressed ? 0.05 : 0))
+    }
+}
 
-private struct AccountSettings: View {
-    @EnvironmentObject var model: AppModel
-    @Binding var showSignIn: Bool
-    @State private var confirmDelete = false
+/// The profile card: who is signed in, or the invitation to.
+struct AccountCard: View {
+    @ObservedObject var account: Account
+    var chevron = true
+    /// Its own white card; off when it sits inside a group.
+    var framed = true
 
     var body: some View {
-        Form {
-            if model.account.signedIn {
-                Section {
-                    LabeledContent("Signed in as", value: model.account.displayName)
-                    if let email = model.account.email, email != model.account.displayName {
-                        LabeledContent("Email", value: email)
-                    }
-                } footer: { Text("The same account as commutescout.com: your places, plugins and watch areas follow it.") }
-                Section {
-                    Button("Sign out") { model.account.signOut() }
-                }
-                Section {
-                    Button("Delete account", role: .destructive) { confirmDelete = true }
-                        .confirmationDialog("Delete your account?", isPresented: $confirmDelete, titleVisibility: .visible) {
-                            Button("Delete account", role: .destructive) { Task { _ = await model.account.deleteAccount() } }
-                            Button("Cancel", role: .cancel) {}
-                        } message: { Text("This removes your watches, API keys and reports. It cannot be undone.") }
-                } footer: { Text("Deleting removes your watches, API keys and reports from commutescout.com.") }
+        HStack(spacing: 14) {
+            AccountAvatar(account: account, size: 56)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(account.signedIn ? account.displayName : "Sign in").font(DG.font(18, .semibold)).foregroundStyle(DG.ink).lineLimit(1)
+                Text(account.signedIn ? (account.email ?? "Signed in") : "Reports, watch areas and plugins")
+                    .font(DG.font(14)).foregroundStyle(DG.sub).lineLimit(1)
+            }
+            Spacer(minLength: 6)
+            if chevron { Image(systemName: "chevron.right").font(.system(size: 15, weight: .bold)).foregroundStyle(DG.ink) }
+        }
+        .padding(14)
+        .background(Color.white.opacity(framed ? 0.84 : 0), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(framed ? DG.hair : .clear, lineWidth: 1))
+        .shadow(color: DG.ink.opacity(framed ? 0.04 : 0), radius: 8, y: 2)
+        .contentShape(Rectangle())
+    }
+}
+
+struct AccountAvatar: View {
+    @ObservedObject var account: Account
+    var size: CGFloat
+    var body: some View {
+        ZStack {
+            Circle().fill(LinearGradient(colors: account.signedIn ? [DG.hex(0x5fa0ff), DG.hex(0x2f6fe0)] : [DG.hex(0xb7c0cf), DG.hex(0x8a94a6)],
+                                         startPoint: .top, endPoint: .bottom))
+            if account.signedIn {
+                Text(String(account.displayName.prefix(1)).uppercased()).font(DG.font(size * 0.42, .semibold)).foregroundStyle(.white)
             } else {
-                Section {
-                    Button("Sign in") { showSignIn = true }
-                } footer: {
-                    Text("Sign in to report from the road, keep watch areas, and manage API keys. Same account as the website.")
-                }
+                Image(systemName: "person.fill").font(.system(size: size * 0.4)).foregroundStyle(.white)
             }
         }
-        .navigationTitle("Account")
-        .navigationBarTitleDisplayMode(.inline)
+        .frame(width: size, height: size)
+        .shadow(color: DG.path.opacity(account.signedIn ? 0.3 : 0), radius: 8, y: 4)
+        .accessibilityHidden(true)
     }
 }
 
-private struct AppearanceSettings: View {
+// MARK: - Small pages
+
+private struct RouteOptionsPage: View {
     @EnvironmentObject var model: AppModel
     private var prefs: Prefs { model.prefs }
 
-    var body: some View {
-        Form {
-            Section("Theme") {
-                Picker("Theme", selection: Binding(get: { prefs.theme }, set: { prefs.theme = $0 })) {
-                    ForEach(Prefs.Theme.allCases) { t in Text(t.label).tag(t) }
-                }
-                .pickerStyle(.segmented)
-            }
-            Section {
-                // The map as it will look, around the driver, in the
-                // chosen style: no need to close Settings to see it.
-                MapView(styleURL: model.styleURL,
-                        camera: .constant(.center(model.here ?? model.viewCenter ?? AppModel.defaultCenter, zoom: 13)))
-                    .unsafeMapViewControllerModifier { c in
-                        c.mapView.isUserInteractionEnabled = false
-                        c.mapView.logoView.isHidden = true
-                        c.mapView.attributionButton.isHidden = true
-                    }
-                    .frame(height: 180)
-                    .listRowInsets(EdgeInsets())
-                    .accessibilityIdentifier("basemap-preview")
-                BaseMapCards(choice: Binding(get: { prefs.mapStyle }, set: { prefs.mapStyle = $0 }), dark: model.isDark)
-                    .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
-            } header: {
-                Text("Base map")
-            } footer: {
-                Text("Match theme follows the Theme setting above: Light by day, Dark at night.")
-            }
-            Section {
-                Toggle("3D perspective", isOn: Binding(get: { prefs.is3D }, set: { _ in model.toggle3D() }))
-            } footer: { Text("Tilts the map while you drive, so more of the road ahead is in view.") }
-        }
-        .navigationTitle("Appearance")
-        .navigationBarTitleDisplayMode(.inline)
+    private func flag(_ key: ReferenceWritableKeyPath<Prefs, Bool>) -> Binding<Bool> {
+        Binding(get: { prefs[keyPath: key] }, set: { prefs[keyPath: key] = $0; prefs.objectWillChange.send() })
     }
-}
-
-/// The base maps as cards: a picture of each, the way the website
-/// shows them. Tapping one applies it at once.
-struct BaseMapCards: View {
-    @Binding var choice: Prefs.MapStyle
-    let dark: Bool
-
-    private let columns = [GridItem(.adaptive(minimum: 104), spacing: 10)]
 
     var body: some View {
-        LazyVGrid(columns: columns, spacing: 10) {
-            ForEach(Prefs.MapStyle.allCases) { s in
-                Button { choice = s } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ZStack(alignment: .topTrailing) {
-                            thumbnail(s.flavor(dark: dark))
-                                .resizable().aspectRatio(3 / 2, contentMode: .fill)
-                                .frame(maxWidth: .infinity).clipped()
-                            if choice == s {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.title3).foregroundStyle(.white, Color.accentColor).padding(6)
-                            }
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(choice == s ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: choice == s ? 2.5 : 1))
-                        Text(s.label).font(.subheadline.weight(choice == s ? .semibold : .regular)).foregroundStyle(.primary)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("basemap-\(s.rawValue)")
+        DGPage(title: "Route options", identifier: "page-route-options") {
+            DGGroup {
+                DGSwitchRow(title: "Avoid tolls", isOn: flag(\.avoidTolls))
+                DGDivider(inset: 14)
+                DGSwitchRow(title: "Avoid highways", isOn: flag(\.avoidHighways))
+                DGDivider(inset: 14)
+                DGSwitchRow(title: "Avoid ferries", isOn: flag(\.avoidFerries))
+            }
+            .padding(.top, 8)
+            DGFootnote("Full road closures are always avoided. Changes apply to the next route.")
+            DGSectionLabel("While driving")
+            DGGroup {
+                DGSwitchRow(title: "Show speed limit", isOn: flag(\.showSpeedLimit))
+                DGDivider(inset: 14)
+                DGSwitchRow(title: "Keep the screen on", sub: "While a trip runs or the car is moving.", isOn: flag(\.keepAwake))
             }
         }
     }
-
-    private func thumbnail(_ flavor: String) -> Image {
-        let url = Bundle.main.resourceURL!.appendingPathComponent("Map/thumbs/\(flavor).webp")
-        if let img = UIImage(contentsOfFile: url.path) { return Image(uiImage: img) }
-        return Image(systemName: "map")
-    }
 }
 
-private struct UnitsSettings: View {
+private struct LayersPage: View {
     @EnvironmentObject var model: AppModel
-    @State private var miles = Units.useMiles
-
-    var body: some View {
-        Form {
-            Section {
-                Picker("Distances", selection: $miles) {
-                    Text("Miles").tag(true)
-                    Text("Kilometers").tag(false)
-                }
-                .pickerStyle(.inline).labelsHidden()
-                .onChange(of: miles) { v in
-                    Units.useMiles = v; model.prefs.unitsRaw = v ? "mi" : "km"; model.prefs.objectWillChange.send()
-                }
-            } footer: { Text("Used for distances on the map, in guidance and in spoken alerts.") }
-        }
-        .navigationTitle("Units")
-        .navigationBarTitleDisplayMode(.inline)
-    }
+    var body: some View { LayersContent(prefs: model.prefs, sources: model.sources) }
 }
 
-private struct NavigationSettings: View {
+private struct LayersContent: View {
     @EnvironmentObject var model: AppModel
-    private var prefs: Prefs { model.prefs }
-
-    var body: some View {
-        Form {
-            Section {
-                Toggle("Avoid tolls", isOn: Binding(get: { prefs.avoidTolls }, set: { prefs.avoidTolls = $0; prefs.objectWillChange.send() }))
-                Toggle("Avoid highways", isOn: Binding(get: { prefs.avoidHighways }, set: { prefs.avoidHighways = $0; prefs.objectWillChange.send() }))
-                Toggle("Avoid ferries", isOn: Binding(get: { prefs.avoidFerries }, set: { prefs.avoidFerries = $0; prefs.objectWillChange.send() }))
-            } header: { Text("Route options") } footer: {
-                Text("Full road closures are always avoided. Changes apply to the next route.")
-            }
-            Section("While driving") {
-                Toggle("Voice guidance", isOn: Binding(get: { !model.muted }, set: { _ in model.toggleMute() }))
-                Toggle("Show speed limit", isOn: Binding(get: { prefs.showSpeedLimit }, set: { prefs.showSpeedLimit = $0; prefs.objectWillChange.send() }))
-                Toggle("Keep the screen on", isOn: Binding(get: { prefs.keepAwake }, set: { prefs.keepAwake = $0; prefs.objectWillChange.send() }))
-            }
-        }
-        .navigationTitle("Navigation")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-private struct AlertSettings: View {
-    @EnvironmentObject var model: AppModel
-    private var prefs: Prefs { model.prefs }
-
-    var body: some View {
-        Form {
-            Section {
-                Toggle("Speak road alerts", isOn: Binding(get: { prefs.spokenAlerts }, set: { prefs.spokenAlerts = $0; prefs.objectWillChange.send() }))
-                Picker("Warn about alerts", selection: Binding(get: { prefs.alertAheadMeters }, set: { prefs.alertAheadMeters = $0; prefs.objectWillChange.send() })) {
-                    Text(Units.useMiles ? "0.5 mi ahead" : "800 m ahead").tag(800.0)
-                    Text(Units.useMiles ? "1 mi ahead" : "1.5 km ahead").tag(1500.0)
-                    Text(Units.useMiles ? "2 mi ahead" : "3 km ahead").tag(3000.0)
-                }
-            } footer: { Text("How far before an alert on your route the app warns you.") }
-            Section {
-                Picker("Show the next alert within", selection: Binding(get: { prefs.stripAheadMeters }, set: { prefs.stripAheadMeters = $0; prefs.objectWillChange.send() })) {
-                    Text(Units.useMiles ? "5 mi" : "8 km").tag(8047.0)
-                    Text(Units.useMiles ? "10 mi" : "16 km").tag(16093.0)
-                    Text(Units.useMiles ? "25 mi" : "40 km").tag(40234.0)
-                    Text("Whole route").tag(1e9)
-                }
-            } footer: { Text("The card under the next turn shows the nearest alert inside this distance.") }
-            Section {
-                NavigationLink { AdvancedAlertsView() } label: {
-                    LabeledContent("Advanced alerts", value: prefs.advancedAlerts ? "On" : "Off")
-                }
-                .accessibilityIdentifier("advanced-alerts")
-            } footer: { Text("A warning distance, a second warning and a voice for each kind of alert.") }
-        }
-        .navigationTitle("Alerts")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-private struct LayerSettings: View {
-    @EnvironmentObject var model: AppModel
-    private var prefs: Prefs { model.prefs }
+    @ObservedObject var prefs: Prefs
+    @ObservedObject var sources: SourcesStore
 
     private var filter: Binding<Prefs.SourceFilter> {
         Binding(get: { prefs.sourceFilter }, set: { prefs.sourceFilter = $0; model.markers.refresh(force: true) })
     }
 
+    private func shown(_ key: String) -> Binding<Bool> {
+        Binding(get: { prefs.isChosen(key) }, set: { prefs.setShown(key, $0); model.markers.refresh(force: true) })
+    }
+
     var body: some View {
-        Form {
-            Section {
-                Picker("Sources", selection: filter) {
-                    ForEach(Prefs.SourceFilter.allCases) { f in Text(f.label).tag(f) }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("layers-filter")
-            } footer: {
-                Text(footer)
-            }
+        DGPage(title: "Map layers", identifier: "page-map-layers") {
+            DGSegmented(options: Prefs.SourceFilter.allCases.map { ($0, $0.label, nil) }, selection: filter, identifier: "layers-filter")
+                .padding(.top, 8)
+            DGFootnote(footer)
             if prefs.sourceFilter != .plugins {
-                Section("Official sources") {
-                    Toggle("Traffic", isOn: Binding(get: { prefs.traffic }, set: { prefs.traffic = $0; prefs.objectWillChange.send() }))
+                DGSectionLabel("Official sources")
+                DGGroup {
+                    DGSwitchRow(title: "Traffic", isOn: Binding(get: { prefs.traffic }, set: { prefs.traffic = $0; prefs.objectWillChange.send() })) {
+                        DGTile(symbol: "car.2.fill", color: DG.hex(0xee8b0c), size: 30)
+                    }
                     ForEach(Prefs.layerKinds.filter { $0.key != "plugin" }, id: \.key) { k in
-                        Toggle(isOn: Binding(get: { prefs.isChosen(k.key) },
-                                             set: { prefs.setShown(k.key, $0); model.markers.refresh(force: true) })) {
-                            Label { Text(k.label) } icon: {
-                                Image(systemName: MarkerIcons.name(k.key)).foregroundStyle(MarkerIcons.tint(k.key))
-                            }
+                        DGDivider()
+                        DGSwitchRow(title: k.label, isOn: shown(k.key)) {
+                            DGTile(symbol: MarkerIcons.name(k.key), color: MarkerIcons.tint(k.key), size: 30)
                         }
                     }
                 }
+                DGFootnote("Cameras and toll prices start off, the same as the website. Cameras are the densest layer.")
             }
             if prefs.sourceFilter != .official {
-                Section {
-                    Toggle(isOn: Binding(get: { prefs.isChosen("plugin") },
-                                         set: { prefs.setShown("plugin", $0); model.markers.refresh(force: true) })) {
-                        Label("Show plugin alerts", systemImage: "puzzlepiece.extension.fill")
+                DGSectionLabel("Plugins", trailing: AnyView(DGTag(text: "Not official", color: DG.hex(0x7c5cf0))))
+                DGGroup {
+                    DGSwitchRow(title: "Show plugin alerts", isOn: shown("plugin")) {
+                        DGTile(symbol: "puzzlepiece.extension.fill", color: DG.hex(0x7c5cf0), size: 30)
                     }
-                    ForEach(model.sources.catalog) { p in
-                        Toggle(isOn: Binding(get: { model.sources.isOn(p.id) },
-                                             set: { model.sources.setOn(p.id, $0); model.markers.refresh(force: true) })) {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(p.name).lineLimit(2)
-                                    Text(p.kinds.isEmpty ? "Alerts" : "Loads " + p.kindsLabel)
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                            } icon: {
-                                PluginBadge(sourceId: p.id, category: p.oneCategory, size: 22)
-                            }
+                    DGDivider()
+                    // Each plugin's own switch is on its page, so it is not repeated here.
+                    SettingsLink(id: "layers-plugins-link") { MarketplaceView() } label: {
+                        DGRow(title: "Choose plugins", value: sources.catalog.isEmpty ? nil : "\(sources.catalog.filter { sources.isOn($0.id) }.count) on") {
+                            EmptyView()
                         }
                     }
-                    if model.sources.catalog.isEmpty {
-                        Text("No plugin is installed. Find one in the marketplace.").foregroundStyle(.secondary)
-                    }
-                } header: {
-                    Text("Plugins")
-                } footer: {
-                    Text("A plugin's alerts are badges in its own color, and this says what each one puts on the map.")
                 }
+                DGFootnote("Plugin alerts are badges in each plugin's own color. Turn a plugin on or off on its page in Plugins.")
             }
         }
-        .navigationTitle("Map layers")
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await model.sources.loadCatalog() }
+        .task { await sources.loadCatalog() }
     }
 
     private var footer: String {
         switch prefs.sourceFilter {
         case .all: "Everything the map can show: agency data and the plugins you installed."
         case .official: "Agency data only: state DOT and 511 feeds, cameras, signs and weather stations."
-        case .plugins: "Plugin alerts only, with what each plugin loads."
+        case .plugins: "Plugin alerts only."
         }
     }
 }
+
+private struct HelpPage: View {
+    var body: some View {
+        DGPage(title: "Help and feedback", identifier: "page-help") {
+            DGGroup {
+                link("Contact", "envelope.fill", 0x2f7cf6, "https://commutescout.com/contact")
+                DGDivider()
+                link("Data sources", "list.bullet.rectangle.fill", 0x0e1726, "https://commutescout.com/data-sources")
+                DGDivider()
+                link("Live map on the web", "map.fill", 0x5b6cf0, "https://commutescout.com/map")
+                DGDivider()
+                link("Developers and API", "chevron.left.forwardslash.chevron.right", 0x7c5cf0, "https://commutescout.com/developers")
+            }
+            .padding(.top, 8)
+            DGGroup {
+                ShareLink(item: DriveLog.url) {
+                    DGRow(title: "Share the drive log", chevron: false) { DGTile(symbol: "doc.text.fill", color: DG.hex(0x8a94a6)) }
+                }
+                .buttonStyle(DGRowPress())
+                .disabled(!FileManager.default.fileExists(atPath: DriveLog.url.path))
+            }
+            .padding(.top, 20)
+            DGFootnote("What the app noted while driving: fixes, alerts, reroutes, fetches. No account details. Send it along with a report of something that went wrong.")
+        }
+    }
+
+    private func link(_ title: String, _ symbol: String, _ color: UInt32, _ url: String) -> some View {
+        Link(destination: URL(string: url)!) {
+            DGRow(title: title, chevron: false, leading: { DGTile(symbol: symbol, color: DG.hex(color)) },
+                  trailing: { Image(systemName: "arrow.up.right").font(.system(size: 13, weight: .bold)).foregroundStyle(DG.faint) })
+        }
+        .buttonStyle(DGRowPress())
+    }
+}
+
+private struct AboutPage: View {
+    var body: some View {
+        DGPage(title: "About and privacy", identifier: "page-about") {
+            DGGroup {
+                DGRow(title: "Version", value: AppInfo.version, chevron: false) { EmptyView() }
+                DGDivider(inset: 14)
+                NavigationLink { VoiceLicensesView() } label: { DGRow(title: "Voice licenses") { EmptyView() } }
+                    .buttonStyle(DGRowPress())
+                    .accessibilityIdentifier("about-voice-licenses")
+                DGDivider(inset: 14)
+                Link(destination: URL(string: "https://commutescout.com/about")!) { DGRow(title: "About CommuteScout", chevron: false) { EmptyView() } }
+                    .buttonStyle(DGRowPress())
+                DGDivider(inset: 14)
+                Link(destination: URL(string: "https://commutescout.com/privacy")!) { DGRow(title: "Privacy", chevron: false) { EmptyView() } }
+                    .buttonStyle(DGRowPress())
+            }
+            .padding(.top, 8)
+            DGFootnote("Routing and address lookup by Stadia Maps. Map data (c) OpenStreetMap contributors, drawn from files CommuteScout hosts and from OpenFreeMap. Road data from the agencies listed on commutescout.com. Not affiliated with any government agency. Verify before you drive.")
+        }
+    }
+}
+
+#if DEBUG
+private struct TestingSettings: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        Form {
+            Section { Toggle("Simulate driving the route", isOn: $model.simulating) }
+            Section("Design") {
+                NavigationLink("Every alert") { AlertCatalog(page: .alerts) }
+                NavigationLink("App messages") { AlertCatalog(page: .system) }
+            }
+        }
+        .navigationTitle("Testing")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+#endif
 
 private struct PlaceSettings: View {
     @EnvironmentObject var model: AppModel
@@ -447,6 +433,7 @@ private struct PlaceSettings: View {
         }
         .navigationTitle("Saved places")
         .navigationBarTitleDisplayMode(.inline)
+        .dgFormPage()
         .sheet(item: $picking) { kind in PlacePickerSheet(kind: kind) }
     }
 
@@ -580,69 +567,6 @@ struct PlacePickerSheet: View {
     }
 }
 
-private struct HelpSettings: View {
-    var body: some View {
-        Form {
-            Section {
-                Link(destination: URL(string: "https://commutescout.com/contact")!) { Label("Contact", systemImage: "envelope") }
-                Link(destination: URL(string: "https://commutescout.com/data-sources")!) { Label("Data sources", systemImage: "list.bullet.rectangle") }
-                Link(destination: URL(string: "https://commutescout.com/map")!) { Label("Live map on the web", systemImage: "map") }
-            }
-            Section {
-                Link(destination: URL(string: "https://commutescout.com/developers")!) { Label("Developers and API", systemImage: "chevron.left.forwardslash.chevron.right") }
-                Link(destination: URL(string: "https://commutescout.com/about")!) { Label("About CommuteScout", systemImage: "info.circle") }
-                Link(destination: URL(string: "https://commutescout.com/privacy")!) { Label("Privacy", systemImage: "hand.raised") }
-            }
-            Section {
-                ShareLink(item: DriveLog.url) { Label("Share the drive log", systemImage: "doc.text") }
-                    .disabled(!FileManager.default.fileExists(atPath: DriveLog.url.path))
-            } footer: {
-                Text("What the app noted while driving: fixes, alerts, reroutes, fetches. No account details. Send it along with a report of something that went wrong.")
-            }
-        }
-        .navigationTitle("Help")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-private struct AboutSettings: View {
-    var body: some View {
-        Form {
-            Section {
-                LabeledContent("Version", value: AppInfo.version)
-            } footer: {
-                Text("Routing and address lookup by Stadia Maps. Map data (c) OpenStreetMap contributors, drawn from files CommuteScout hosts and from OpenFreeMap. Road data from the agencies listed on commutescout.com. Verify before you drive.")
-            }
-            Section {
-                NavigationLink { VoiceLicensesView() } label: { Label("Voice licenses", systemImage: "doc.text") }
-                    .accessibilityIdentifier("about-voice-licenses")
-            } footer: {
-                Text("Credits and license terms for the CommuteScout voices and the speech engine.")
-            }
-        }
-        .navigationTitle("About")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-#if DEBUG
-private struct TestingSettings: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        Form {
-            Section { Toggle("Simulate driving the route", isOn: $model.simulating) }
-            Section("Design") {
-                NavigationLink("Every alert") { AlertCatalog(page: .alerts) }
-                NavigationLink("App messages") { AlertCatalog(page: .system) }
-            }
-        }
-        .navigationTitle("Testing")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-#endif
-
 /// Highway Radar-style control: per kind, at what distance the first
 /// warning comes, whether it repeats closer, and whether it is spoken.
 struct AdvancedAlertsView: View {
@@ -658,9 +582,17 @@ struct AdvancedAlertsView: View {
             Section {
                 Toggle("Set alerts per kind", isOn: Binding(get: { prefs.advancedAlerts }, set: { prefs.advancedAlerts = $0; prefs.objectWillChange.send() }))
                     .accessibilityIdentifier("advanced-toggle")
-                Text("Off: every alert uses the one distance in While driving. On: each kind below has its own first warning, an optional second warning closer in, and its own voice.")
+                Text("Off: every alert uses the one distance on the Alerts page. On: each kind below has its own first warning, an optional second warning closer in, and its own voice.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
+            Section {
+                Picker("Show the next alert within", selection: Binding(get: { prefs.stripAheadMeters }, set: { prefs.stripAheadMeters = $0; prefs.objectWillChange.send() })) {
+                    Text(Units.useMiles ? "5 mi" : "8 km").tag(8047.0)
+                    Text(Units.useMiles ? "10 mi" : "16 km").tag(16093.0)
+                    Text(Units.useMiles ? "25 mi" : "40 km").tag(40234.0)
+                    Text("Whole route").tag(1e9)
+                }
+            } footer: { Text("The card under the next turn shows the nearest alert inside this distance.") }
             if prefs.advancedAlerts {
                 ForEach(Prefs.alertKinds, id: \.key) { k in
                     Section(k.label) {
@@ -683,10 +615,63 @@ struct AdvancedAlertsView: View {
                 }
             }
         }
-        .navigationTitle("Advanced alerts")
+        .navigationTitle("Warnings for each kind")
+        .navigationBarTitleDisplayMode(.inline)
+        .dgFormPage()
     }
 
     private func nearest(_ m: Double) -> Double {
         steps.min { abs($0 - m) < abs($1 - m) } ?? m
     }
 }
+
+extension View {
+    /// A system form page that sits with the Day Glass+ pages: the same
+    /// soft background, with the system navigation bar.
+    func dgFormPage() -> some View {
+        scrollContentBackground(.hidden)
+            .background(DGPageBackground())
+            .toolbar(.visible, for: .navigationBar)
+    }
+}
+/// The base maps as cards: a picture of each, the way the website
+/// shows them. Tapping one applies it at once.
+struct BaseMapCards: View {
+    @Binding var choice: Prefs.MapStyle
+    let dark: Bool
+
+    private let columns = [GridItem(.adaptive(minimum: 104), spacing: 10)]
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 10) {
+            ForEach(Prefs.MapStyle.allCases) { s in
+                Button { choice = s } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ZStack(alignment: .topTrailing) {
+                            thumbnail(s.flavor(dark: dark))
+                                .resizable().aspectRatio(3 / 2, contentMode: .fill)
+                                .frame(maxWidth: .infinity).clipped()
+                            if choice == s {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.title3).foregroundStyle(.white, Color.accentColor).padding(6)
+                            }
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(choice == s ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: choice == s ? 2.5 : 1))
+                        Text(s.label).font(.subheadline.weight(choice == s ? .semibold : .regular)).foregroundStyle(.primary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("basemap-\(s.rawValue)")
+            }
+        }
+    }
+
+    private func thumbnail(_ flavor: String) -> Image {
+        let url = Bundle.main.resourceURL!.appendingPathComponent("Map/thumbs/\(flavor).webp")
+        if let img = UIImage(contentsOfFile: url.path) { return Image(uiImage: img) }
+        return Image(systemName: "map")
+    }
+}
+

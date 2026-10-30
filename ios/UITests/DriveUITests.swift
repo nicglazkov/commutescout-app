@@ -16,7 +16,8 @@ final class DriveUITests: XCTestCase {
     /// Forms are lazy: swipe until the element is on screen.
     @discardableResult
     private func reveal(_ element: XCUIElement, tries: Int = 16) -> Bool {
-        let form = app.collectionViews.firstMatch.exists ? app.collectionViews.firstMatch : app.tables.firstMatch
+        let form: XCUIElement = app.collectionViews.firstMatch.exists ? app.collectionViews.firstMatch
+            : app.tables.firstMatch.exists ? app.tables.firstMatch : app
         for _ in 0 ..< tries {
             if element.exists && element.isHittable { return true }
             // A third of the form at a time, so no row is skipped: lazy
@@ -94,12 +95,12 @@ final class DriveUITests: XCTestCase {
         // And it is listed in Settings, where it can be removed.
         app.buttons["place-close"].tap()
         app.buttons["settings"].tap()
-        XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-map-style"].firstMatch.waitForExistence(timeout: 5))
         openPage("saved-places")
         // In the list itself: the places tray under the sheet has a "Home" row too.
         XCTAssertTrue(reveal(app.cells.staticTexts["Home"].firstMatch), "Home listed under Saved places")
         back()
-        app.buttons["Done"].tap()
+        app.buttons["page-close"].firstMatch.tap()
     }
 
     /// Settings is a home page of categories: open one by its row.
@@ -109,26 +110,28 @@ final class DriveUITests: XCTestCase {
         row.tap()
     }
 
+    /// A system form page has a navigation bar; a Day Glass+ page its own
+    /// round back button.
     private func back() {
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let bar = app.navigationBars.buttons.element(boundBy: 0)
+        if bar.exists && bar.isHittable { bar.tap() } else { app.buttons["page-back"].firstMatch.tap() }
         sleep(1)   // let the pop finish
     }
 
     func testSettingsAndLayers() {
         app.buttons["settings"].tap()
-        XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-map-style"].firstMatch.waitForExistence(timeout: 5))
         openPage("units")
-        XCTAssertTrue(app.buttons["Kilometers"].waitForExistence(timeout: 5))
-        app.buttons["Kilometers"].tap()
-        app.buttons["Miles"].tap()
+        XCTAssertTrue(app.buttons["units-km"].waitForExistence(timeout: 5))
+        app.buttons["units-km"].tap()
+        app.buttons["units-phone"].tap()
         back()
-        openPage("navigation")
+        openPage("route-options")
         let tolls = app.switches["Avoid tolls"]
-        if tolls.waitForExistence(timeout: 5) { tolls.tap(); tolls.tap() }
+        if tolls.waitForExistence(timeout: 5) { tolls.switches.firstMatch.tap(); tolls.switches.firstMatch.tap() }
         back()
         openPage("alerts")
-        // The row is a NavigationLink: a button labelled "Advanced alerts, Off".
-        let advanced = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Advanced alerts'")).firstMatch
+        let advanced = app.buttons["advanced-alerts"].firstMatch
         XCTAssertTrue(reveal(advanced), "advanced alerts row")
         advanced.tap()
         let toggle = app.switches["advanced-toggle"]
@@ -138,7 +141,7 @@ final class DriveUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Incidents"].waitForExistence(timeout: 5), "per-kind rules appear")
         XCTAssertTrue(reveal(app.staticTexts["Police reports"]), "community kinds have rules too")
         // Back to the top of the screen the simple way: leave and re-enter, then switch it off again.
-        app.navigationBars.buttons.firstMatch.tap()
+        back()
         XCTAssertTrue(reveal(advanced))
         advanced.tap()
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
@@ -151,7 +154,7 @@ final class DriveUITests: XCTestCase {
         let link = app.staticTexts["Live map on the web"]
         XCTAssertTrue(reveal(link) || link.exists, "link back to the website")
         back()
-        app.buttons["Done"].tap()
+        app.buttons["page-close"].firstMatch.tap()
         app.buttons["tools"].tap()
         app.buttons["tool-layers"].tap()
         XCTAssertTrue(app.staticTexts["Base map"].waitForExistence(timeout: 5))

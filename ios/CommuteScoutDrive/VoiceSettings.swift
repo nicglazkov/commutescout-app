@@ -15,6 +15,7 @@ struct VoiceSettings: View {
     @State private var offer: VoiceCatalog.Voice?
     @State private var noSpace: String?
     @StateObject private var previews = VoicePreviewPlayer()
+    @StateObject private var sampler = VoiceSampler()
     @ObservedObject private var packs = VoicePacks.shared
     @ObservedObject private var connectivity = Connectivity.shared
 
@@ -59,7 +60,7 @@ struct VoiceSettings: View {
     private var automatic: Bool { !offered.contains { $0.id == prefs.voiceId } && pickedNeural == nil }
 
     /// What a drive sounds like, in the driver's units.
-    private var sample: String { "In \(Units.spoken(805)), turn right onto Main Street. Police reported ahead." }
+    private var sample: String { "In \(Units.spoken(805)), crash in the right lane. Move one lane left." }
 
     var body: some View {
         dialogs(form)
@@ -68,7 +69,7 @@ struct VoiceSettings: View {
                 // Ready the sample in the voice in use, so Test voice speaks at once.
                 if Voice.neural != nil, !model.state.isNavigating { NeuralVoices.shared.prerender([(sample, -1)]) }
             }
-            .onDisappear { previews.stop() }
+            .onDisappear { previews.stop(); sampler.stop() }
             .onChange(of: scenePhase) { phase in
                 if phase == .active { reload() }
             }
@@ -76,13 +77,20 @@ struct VoiceSettings: View {
     }
 
     private var form: some View {
-        Form {
+        DGPage(title: "Voice", identifier: "page-voice") {
+            DGGroup {
+                DGSwitchRow(title: "Speak directions and alerts",
+                            sub: "Turn this off to mute every voice. Alerts still show on screen.",
+                            isOn: Binding(get: { !model.muted }, set: { _ in model.toggleMute() }),
+                            identifier: "voice-speak") {
+                    DGTile(symbol: "speaker.wave.2.fill", color: DG.hex(0x2f7cf6))
+                }
+            }
+            .padding(.top, 8)
             voiceSection
             speedSection
             VoicePackSection(previews: previews, picked: prefs.voiceId) { pick($0) }
         }
-        .navigationTitle("Voice")
-        .navigationBarTitleDisplayMode(.inline)
     }
 
     private var offerTitle: String { offer.map { "Download \($0.name)?" } ?? "" }
@@ -115,77 +123,124 @@ struct VoiceSettings: View {
     }
 
     private var voiceSection: some View {
-        Section {
-            row("Automatic", automaticDetail, selected: automatic, id: "voice-automatic") { pick("") }
-            ForEach(neuralVoices.filter { show($0.voice.accent, $0.voice.id) }, id: \.voice.id) { item in
-                neuralRow(item.voice, in: item.pack)
+        VStack(alignment: .leading, spacing: 0) {
+            DGSectionLabel("Voices on this phone", trailing: AnyView(DGTag(text: "Free, works offline")))
+            DGGroup {
+                row("Automatic", automaticDetail, selected: automatic, id: "voice-automatic") { pick("") }
+                ForEach(neuralVoices.filter { show($0.voice.accent, $0.voice.id) }, id: \.voice.id) { item in
+                    DGDivider(inset: 44)
+                    neuralRow(item.voice, in: item.pack)
+                }
+                ForEach(offered.filter { show($0.language, $0.id) }) { v in
+                    DGDivider(inset: 44)
+                    row(v.name, detail(v), quality: v.quality, selected: !automatic && prefs.voiceId == v.id, id: "voice-\(v.id)",
+                        play: { previews.stop(); sampler.play(sample, voice: v.id) }) { pick(v.id) }
+                }
+                if hasOtherAccents {
+                    DGDivider(inset: 14)
+                    DGSwitchRow(title: "Show all English accents", isOn: $allAccents, identifier: "voice-all-accents")
+                }
             }
-            ForEach(offered.filter { show($0.language, $0.id) }) { v in
-                row(v.name, detail(v), quality: v.quality, selected: !automatic && prefs.voiceId == v.id, id: "voice-\(v.id)") { pick(v.id) }
-            }
-            if hasOtherAccents {
-                Toggle("Show all English accents", isOn: $allAccents)
-                    .accessibilityIdentifier("voice-all-accents")
-            }
-        } header: { Text("Voice") } footer: {
-            Text("Tap a voice to choose it and hear it. CommuteScout voices are computer-generated, run on this phone, and need no signal once downloaded. Voices you add to iOS in Settings > Accessibility > Spoken Content also appear here.")
+            DGFootnote("These voices are built into your phone and cost nothing. Add more in your phone's Spoken content settings. CommuteScout voices are computer-generated and need no signal once downloaded.")
         }
     }
 
+    private func slider(_ title: String, _ value: String, @ViewBuilder _ control: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title).font(DG.font(16, .medium)).foregroundStyle(DG.ink)
+                Spacer()
+                Text(value).font(DG.font(15)).foregroundStyle(DG.sub)
+            }
+            control().tint(DG.path)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+    }
+
     private var speedSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 4) {
-                LabeledContent("Speed", value: percent(prefs.voiceRate, of: Voice.defaultRate))
-                Slider(value: binding(\.voiceRate, step: 0.01), in: Voice.rateRange) { Text("Speed") }
-                    minimumValueLabel: { Image(systemName: "tortoise.fill").foregroundStyle(.secondary) }
-                    maximumValueLabel: { Image(systemName: "hare.fill").foregroundStyle(.secondary) }
-                    onEditingChanged: { if !$0 { play() } }
-                    .accessibilityIdentifier("voice-speed")
-            }
-            if neural == nil {
-                VStack(alignment: .leading, spacing: 4) {
-                    LabeledContent("Pitch", value: percent(prefs.voicePitch, of: Voice.defaultPitch))
-                    Slider(value: binding(\.voicePitch, step: 0.05), in: Voice.pitchRange) { Text("Pitch") }
-                        minimumValueLabel: { Text("Low").font(.caption).foregroundStyle(.secondary) }
-                        maximumValueLabel: { Text("High").font(.caption).foregroundStyle(.secondary) }
+        VStack(alignment: .leading, spacing: 0) {
+            DGSectionLabel("Speed and pitch")
+            DGGroup {
+                slider("Speed", percent(prefs.voiceRate, of: Voice.defaultRate)) {
+                    Slider(value: binding(\.voiceRate, step: 0.01), in: Voice.rateRange) { Text("Speed") }
+                        minimumValueLabel: { Image(systemName: "tortoise.fill").foregroundStyle(DG.faint) }
+                        maximumValueLabel: { Image(systemName: "hare.fill").foregroundStyle(DG.faint) }
                         onEditingChanged: { if !$0 { play() } }
-                        .accessibilityIdentifier("voice-pitch")
+                        .accessibilityIdentifier("voice-speed")
                 }
+                if neural == nil {
+                    DGDivider(inset: 14)
+                    slider("Pitch", percent(prefs.voicePitch, of: Voice.defaultPitch)) {
+                        Slider(value: binding(\.voicePitch, step: 0.05), in: Voice.pitchRange) { Text("Pitch") }
+                            minimumValueLabel: { Text("Low").font(DG.font(12)).foregroundStyle(DG.faint) }
+                            maximumValueLabel: { Text("High").font(DG.font(12)).foregroundStyle(DG.faint) }
+                            onEditingChanged: { if !$0 { play() } }
+                            .accessibilityIdentifier("voice-pitch")
+                    }
+                }
+                DGDivider(inset: 14)
+                HStack(spacing: 10) {
+                    Button { play() } label: { Label("Test voice", systemImage: "play.fill") }
+                        .buttonStyle(DGButtonStyle(kind: .tinted(.low), height: 40))
+                        .accessibilityIdentifier("voice-test")
+                    Button("Reset to normal") {
+                        prefs.voiceRate = Voice.defaultRate
+                        prefs.voicePitch = Voice.defaultPitch
+                        prefs.objectWillChange.send()
+                    }
+                    .buttonStyle(DGButtonStyle(kind: .glass, height: 40))
+                    .disabled(prefs.voiceRate == Voice.defaultRate && prefs.voicePitch == Voice.defaultPitch)
+                    .accessibilityIdentifier("voice-reset")
+                }
+                .padding(14)
             }
-            Button { play() } label: { Label("Test voice", systemImage: "play.circle.fill") }
-                .accessibilityIdentifier("voice-test")
-            Button("Reset to normal") {
-                prefs.voiceRate = Voice.defaultRate
-                prefs.voicePitch = Voice.defaultPitch
-                prefs.objectWillChange.send()
-            }
-            .disabled(prefs.voiceRate == Voice.defaultRate && prefs.voicePitch == Voice.defaultPitch)
-            .accessibilityIdentifier("voice-reset")
-        } header: { Text("Speed and pitch") } footer: { Text(speakingNote) }
+            DGFootnote(speakingNote)
+        }
     }
 
     // MARK: rows
 
+    /// A voice: the check, its name and accent, and a round play button
+    /// that plays the sample without picking it. A tap on the row picks
+    /// the voice and plays it.
     private func row(_ title: String, _ subtitle: String, quality: VoiceOption.Quality? = nil, status: String? = nil,
-                     selected: Bool, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).foregroundStyle(.primary)
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    if let status { Text(status).font(.caption).foregroundStyle(Color.accentColor).monospacedDigit() }
+                     selected: Bool, id: String, play: (() -> Void)? = nil, action: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Button(action: action) {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark").font(.system(size: 15, weight: .bold)).foregroundStyle(DG.path)
+                        .frame(width: 24).opacity(selected ? 1 : 0)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(title).font(DG.font(16, .medium)).foregroundStyle(DG.ink)
+                            if let quality, quality > .standard {
+                                Text(quality.label).font(DG.font(12, .semibold)).foregroundStyle(DG.sub)
+                            }
+                        }
+                        Text(subtitle).font(DG.T.rowSub).foregroundStyle(DG.sub).lineLimit(2)
+                        if let status { Text(status).font(DG.font(13, .medium)).foregroundStyle(DG.path).monospacedDigit() }
+                    }
+                    Spacer(minLength: 8)
                 }
-                Spacer(minLength: 8)
-                if let quality, quality > .standard { VoiceQualityBadge(quality: quality) }
-                Image(systemName: "checkmark").font(.body.weight(.semibold)).foregroundStyle(Color.accentColor)
-                    .opacity(selected ? 1 : 0)
-                    .accessibilityHidden(true)
+                .padding(.vertical, 9)
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityIdentifier(id)
+            if let play {
+                Button(action: play) {
+                    Image(systemName: "play.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(DG.inkColor(.low))
+                        .frame(width: 42, height: 42).background(DG.path.opacity(0.1), in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(DGPressStyle())
+                .accessibilityLabel("Play \(title)")
+                .accessibilityIdentifier("play-" + id)
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityIdentifier(id)
+        .padding(.leading, 10).padding(.trailing, 12).frame(minHeight: 60)
     }
 
     /// A CommuteScout voice. Not on the phone: its size, and while its
@@ -202,7 +257,8 @@ struct VoiceSettings: View {
         case .none: subtitle += ", \(VoicePackFiles.label(pack.downloadSize)) download"
         }
         if previews.loading == v.id || previews.playing == v.id { status = "Playing a sample" }
-        return row(v.name, subtitle, status: status, selected: prefs.voiceId == v.id, id: "voice-\(v.id)") { tap(v, in: pack) }
+        return row(v.name, subtitle, status: status, selected: prefs.voiceId == v.id, id: "voice-\(v.id)",
+                   play: { sampler.stop(); previews.play(v) }) { tap(v, in: pack) }
     }
 
     /// "English (UK), female".
@@ -283,6 +339,7 @@ struct VoiceSettings: View {
     /// during a trip it waits its turn behind the guidance.
     private func play() {
         previews.stop()
+        sampler.stop()
         model.alerts.preview(sample, interrupt: !model.state.isNavigating)
     }
 
@@ -298,6 +355,24 @@ struct VoiceSettings: View {
             return NotificationCenter.default.publisher(for: AVSpeechSynthesizer.availableVoicesDidChangeNotification)
         }
         return NotificationCenter.default.publisher(for: Notification.Name("cs.voice.never"))
+    }
+}
+
+/// Plays the sample in one system voice without picking it, at the
+/// driver's speed and pitch, so voices can be compared down the list.
+@MainActor
+final class VoiceSampler: ObservableObject {
+    private let synth = AVSpeechSynthesizer()
+
+    func play(_ text: String, voice id: String) {
+        stop()
+        let u = Voice.utterance(text)
+        u.voice = AVSpeechSynthesisVoice(identifier: id) ?? u.voice
+        synth.speak(u)
+    }
+
+    func stop() {
+        if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
     }
 }
 

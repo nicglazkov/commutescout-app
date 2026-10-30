@@ -102,6 +102,79 @@ final class Prefs: ObservableObject {
         var speak = true
         var firstMeters = 1500.0
         var repeatMeters = 0.0       // 0 = no second warning
+        /// A short chime when it is not spoken (the Sound delivery, and
+        /// plugin alerts that are not spoken). Never stored.
+        var chime = false
+
+        init(enabled: Bool = true, speak: Bool = true, firstMeters: Double = 1500, repeatMeters: Double = 0, chime: Bool = false) {
+            self.enabled = enabled; self.speak = speak; self.firstMeters = firstMeters
+            self.repeatMeters = repeatMeters; self.chime = chime
+        }
+
+        private enum CodingKeys: String, CodingKey { case enabled, speak, firstMeters, repeatMeters }
+
+        /// Tolerant: a rule saved by an older build, or missing a field, still reads.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+            speak = try c.decodeIfPresent(Bool.self, forKey: .speak) ?? true
+            firstMeters = try c.decodeIfPresent(Double.self, forKey: .firstMeters) ?? 1500
+            repeatMeters = try c.decodeIfPresent(Double.self, forKey: .repeatMeters) ?? 0
+        }
+    }
+
+    /// How alerts reach the driver. Unset, it follows the old "speak
+    /// road alerts" switch: on is Voice, off is Silent.
+    @AppStorage("cs.alerts.delivery") var alertDeliveryRaw: String = ""
+    /// Official alert chips that do not alert, by AlertChips key. Their
+    /// markers still show on the map.
+    @AppStorage("cs.alerts.chips.off") var alertChipsOffRaw: String = AlertChips.offByDefault.sorted().joined(separator: ",")
+    /// Plugins, by source id, whose alerts do not alert.
+    @AppStorage("cs.alerts.plugins.off") var pluginAlertsOffRaw: String = ""
+    /// Plugin alerts are spoken too; off, they chime.
+    @AppStorage("cs.alerts.plugins.speak") var speakPluginAlerts: Bool = false
+    /// The first run is done or skipped.
+    @AppStorage("cs.welcome.done") var welcomeDone: Bool = false
+
+    var alertDelivery: AlertDelivery {
+        get { AlertDelivery(rawValue: alertDeliveryRaw) ?? (spokenAlerts ? .voice : .silent) }
+        set { alertDeliveryRaw = newValue.rawValue; spokenAlerts = newValue == .voice; objectWillChange.send() }
+    }
+
+    var alertChipsOff: Set<String> {
+        get { Set(alertChipsOffRaw.split(separator: ",").map(String.init)) }
+        set { alertChipsOffRaw = newValue.sorted().joined(separator: ","); objectWillChange.send() }
+    }
+
+    var pluginAlertsOff: Set<String> {
+        get { Set(pluginAlertsOffRaw.split(separator: ",").map(String.init)) }
+        set { pluginAlertsOffRaw = newValue.sorted().joined(separator: ","); objectWillChange.send() }
+    }
+
+    /// Whether the first run should show, decided once at launch: never
+    /// on an install that was set up before it existed, and never in a
+    /// test run ("-cs..." arguments) unless "-csWelcome" asks for it.
+    static let welcomeIsDue: Bool = {
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("-csWelcome") { return true }
+        if args.contains(where: { $0.hasPrefix("-cs") }) { return false }
+        let d = UserDefaults.standard
+        let others = d.dictionaryRepresentation().keys.contains { $0.hasPrefix("cs.") && $0 != "cs.welcome.done" }
+        return WelcomeStep.shouldShow(done: d.bool(forKey: "cs.welcome.done"), hasOtherPrefs: others)
+    }()
+
+    /// One marker's rule after the Alerts page: its kind's rule, then the
+    /// chips, the plugin switches and the delivery.
+    func ruleFor(_ m: RoadMarker) -> AlertRule {
+        var r = rule(for: Self.ruleKind(for: m))
+        let plugin = m.kind == "plugin"
+        let chip = plugin ? "" : AlertChips.key(forKind: DGKind(marker: m).rawValue)
+        let o = AlertChips.apply(enabled: r.enabled, speak: r.speak, plugin: plugin,
+                                 chipOff: alertChipsOff.contains(chip),
+                                 pluginOff: plugin && pluginAlertsOff.contains(PluginStyle.sourceId(m)),
+                                 delivery: alertDelivery, speakPlugins: speakPluginAlerts)
+        r.enabled = o.enabled; r.speak = o.speak; r.chime = o.chime
+        return r
     }
 
     /// The kinds a rule can be set for: the road data kinds plus the
@@ -128,7 +201,7 @@ final class Prefs: ObservableObject {
     }
 
     func rule(for kind: String) -> AlertRule {
-        if !advancedAlerts { return AlertRule(enabled: true, speak: spokenAlerts, firstMeters: alertAheadMeters, repeatMeters: 0) }
+        if !advancedAlerts { return AlertRule(enabled: true, speak: true, firstMeters: alertAheadMeters, repeatMeters: 0) }
         return alertRules[kind] ?? AlertRule()
     }
 
