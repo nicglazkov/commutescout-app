@@ -105,6 +105,17 @@ data class AlertTap(
         private data class Link(val lat: Double, val lon: Double, val kind: String?)
 
         /** focus=LAT,LON and k=KIND out of a map link. */
+        /**
+         * A summary push ("3 new alerts in Home area") has no one spot to
+         * show: it links to the watch page, so the app opens watch areas.
+         */
+        fun opensWatchAreas(data: Map<String, String?>): Boolean {
+            if (data["event_kind"]?.trim()?.lowercase() == "summary") return true
+            val url = (data["url"] ?: data["csUrl"])?.trim()?.takeIf { it.isNotEmpty() } ?: return false
+            val path = runCatching { URI(url).path }.getOrNull()?.trimEnd('/') ?: return false
+            return path.endsWith("/watch") && linkParts(url) == null
+        }
+
         private fun linkParts(url: String): Link? {
             val query = runCatching { URI(url.trim()).rawQuery }.getOrNull() ?: return null
             val params = query.split("&").mapNotNull { pair ->

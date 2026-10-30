@@ -225,6 +225,10 @@ fun DriveScreen(model: DriveViewModel) {
         .filter { (it.source ?: "") !in hiddenSources }
     // Saved across a recreate (a font-size change, a theme switch at dusk): an open sheet stays open.
     var tool by rememberSaveable { mutableStateOf<Tool?>(null) }
+    val toolRequest by model.toolRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(toolRequest) {
+        toolRequest?.let { tool = it; model.toolRequestHandled() }
+    }
     var showTools by remember { mutableStateOf(false) }
     val mapState = rememberNavigationMapState()
     val scope = rememberCoroutineScope()
