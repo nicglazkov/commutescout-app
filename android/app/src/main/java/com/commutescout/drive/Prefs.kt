@@ -107,6 +107,14 @@ class Prefs(context: Context) {
     var sourceFilter by state(runCatching { SourceFilter.valueOf(p.getString("layers.sources", "ALL")!!) }.getOrDefault(SourceFilter.ALL)) {
         p.edit().putString("layers.sources", it.name).apply()
     }
+    init {
+        // Plugin alerts had their own layer switch. The source filter on the
+        // Plugins page does that job now, so a driver who hid them stays hidden.
+        if ("plugin" in hiddenKinds) {
+            hiddenKinds = hiddenKinds - "plugin"
+            if (sourceFilter == SourceFilter.ALL) sourceFilter = SourceFilter.OFFICIAL
+        }
+    }
     /** How alerts reach the driver: spoken, a chime, or only on screen. */
     var alertDelivery by state(runCatching { AlertDelivery.valueOf(p.getString("alerts.delivery", null)!!) }.getOrElse {
         if (p.getBoolean("spokenalerts", true)) AlertDelivery.VOICE else AlertDelivery.SILENT

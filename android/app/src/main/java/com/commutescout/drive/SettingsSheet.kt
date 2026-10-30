@@ -110,9 +110,12 @@ val LocalSettingsNav = staticCompositionLocalOf<SettingsNav?> { null }
  * closes the sheet. Map style drops the sheet's top so the live map
  * above shows the style being picked. Confirm questions rise as a card
  * inside the sheet, not a system dialog.
+ *
+ * With [pageOnly], [start] stands on its own with a close button and no
+ * home page behind it: the map's Layers button is Settings > Map layers.
  */
 @Composable
-fun SettingsSheet(model: DriveViewModel, start: SettingsPage? = null, onClose: () -> Unit) {
+fun SettingsSheet(model: DriveViewModel, start: SettingsPage? = null, pageOnly: Boolean = false, onClose: () -> Unit) {
     var stack by remember { mutableStateOf(listOfNotNull(start)) }
     var forward by remember { mutableStateOf(true) }
     var confirm by remember { mutableStateOf<ConfirmRequest?>(null) }
@@ -126,7 +129,7 @@ fun SettingsSheet(model: DriveViewModel, start: SettingsPage? = null, onClose: (
         scope.launch { rise.animateTo(1f, tween(260, easing = DG.hideEase)); onClose() }
     }
     fun push(p: SettingsPage) { forward = true; stack = stack + p }
-    fun back() { if (stack.isEmpty()) close() else { forward = false; stack = stack.dropLast(1) } }
+    fun back() { if (stack.size <= (if (pageOnly) 1 else 0)) close() else { forward = false; stack = stack.dropLast(1) } }
     val nav = remember { SettingsNav({ push(it) }, { back() }, { confirm = it; shown = it }, { close() }) }
     LaunchedEffect(Unit) {
         rise.animateTo(0f, DG.slide())
@@ -150,6 +153,7 @@ fun SettingsSheet(model: DriveViewModel, start: SettingsPage? = null, onClose: (
                 }) { current ->
                     Column(Modifier.fillMaxSize()) {
                         if (current == null) PageNav("Settings", onClose = { close() }, home = true, closeTag = "settings-close")
+                        else if (pageOnly && current == start) PageNav(current.title, onClose = { close() }, home = true, closeTag = "settings-close")
                         else PageNav(current.title, onBack = { back() }, backTag = "settings-back")
                         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.navigationBars)
                             .padding(bottom = 28.dp)) {
@@ -182,35 +186,6 @@ fun SettingsSheet(model: DriveViewModel, start: SettingsPage? = null, onClose: (
                 c.actions.forEach { a ->
                     DGButton(a.label, { confirm = null; a.run() }, Modifier.weight(1f).then(if (a.tag != null) Modifier.tag(a.tag) else Modifier), style = a.style)
                 }
-            }
-        }
-    }
-}
-
-/**
- * Map layers on its own, from the map's tools: the same frosted sheet as
- * Settings and the same switches as Settings > Map layers, with the map
- * styles on top.
- */
-@Composable
-fun LayersOverlay(model: DriveViewModel, onClose: () -> Unit) {
-    val rise = remember { Animatable(1f) }
-    val scope = rememberCoroutineScope()
-    var leaving by remember { mutableStateOf(false) }
-    fun close() {
-        if (leaving) return
-        leaving = true
-        scope.launch { rise.animateTo(1f, tween(260, easing = DG.hideEase)); onClose() }
-    }
-    LaunchedEffect(Unit) { rise.animateTo(0f, DG.slide()) }
-    BackHandler(enabled = !leaving) { close() }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val height = with(LocalDensity.current) { maxHeight.toPx() }
-        Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) { close() })
-        PageSheet(Modifier.padding(top = maxHeight * .12f).graphicsLayer { translationY = rise.value * height }.testTag("layers-sheet")) {
-            PageNav("Layers", onClose = { close() }, home = true, closeTag = "layers-close")
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 28.dp)) {
-                LayersContent(model, withStyles = true)
             }
         }
     }
@@ -263,7 +238,8 @@ private fun SettingsHome(model: DriveViewModel, open: (SettingsPage) -> Unit) {
             }
         }
         RowDivider()
-        HomeRow("Map layers", "map-layers", "layers", DG.mid, "${Prefs.layerKinds.count { prefs.isChosen(it.key) }} of ${Prefs.layerKinds.size}") { open(SettingsPage.LAYERS) }
+        val official = Prefs.layerKinds.filter { it.key != "plugin" }
+        HomeRow("Map layers", "map-layers", "layers", DG.mid, "${official.count { prefs.isChosen(it.key) }} of ${official.size}") { open(SettingsPage.LAYERS) }
         RowDivider()
         val pluginsOn = catalog.count { it.id !in off } + mine.size
         HomeRow("Plugins", "plugins", "puzzle", DG.plug, if (catalog.isEmpty() && mine.isEmpty()) "None" else "$pluginsOn on") { open(SettingsPage.PLUGINS) }
