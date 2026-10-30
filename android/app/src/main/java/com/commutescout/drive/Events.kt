@@ -491,7 +491,9 @@ object EventText {
      */
     fun schedule(m: RoadMarker, nowMs: Long, viewer: ZoneId): Schedule {
         val now = nowMs / 1000.0
-        val agency = m.src?.takeIf { it.isNotEmpty() } ?: "Caltrans"
+        val agency = m.src?.takeIf { it.isNotEmpty() }
+        val who = agency ?: "the state transportation agency"
+        val whoStarts = agency ?: "The state transportation agency"
         val tz = roadZone(m.src)
         val since = m.since?.takeIf { it != 0L }
         val until = m.until?.takeIf { it != 0L }
@@ -500,13 +502,13 @@ object EventText {
         val (head, tail) = when {
             until != null && until < now -> ("Was scheduled to end " + whenPhrase(until, tz, 2, nowMs, viewer)) to
                 ("That was " + spanPhrase(until, nowMs) + " ago. " +
-                    if (full) "$agency has not reported it open. Assume the road is still closed."
-                    else "$agency has not reported it clear. Assume the restriction is still there.")
+                    if (full) "$whoStarts has not reported it open. Assume the road is still closed."
+                    else "$whoStarts has not reported it clear. Assume the restriction is still there.")
             until != null -> ("Scheduled to end " + whenPhrase(until, tz, 2, nowMs, viewer)) to
                 ("That is " + spanPhrase(until, nowMs) + " from now." + started)
             else -> "No scheduled end" to
-                ((if (full) "The road stays closed until $agency reports it open."
-                  else "The restriction stays until $agency reports it clear.") + started)
+                ((if (full) "The road stays closed until $who reports it open."
+                  else "The restriction stays until $who reports it clear.") + started)
         }
         val rows = listOfNotNull(since?.let { "Start" to it }, until?.let { "Scheduled end" to it })
         val differs = rows.any { (_, ep) -> !sameClock(Instant.ofEpochSecond(ep), tz, viewer) }
@@ -581,13 +583,13 @@ data class EventCard(
                 chip = "Camera", title = m.name?.takeIf { it.isNotBlank() } ?: "Roadside camera",
                 subtitle = listOf(listOfNotNull(m.route, m.direction).filter { it.isNotBlank() }.joinToString(" "), m.near ?: "")
                     .filter { it.isNotBlank() }.joinToString(", ").ifEmpty { null },
-                footer = listOf("Source: " + (m.src?.takeIf { it.isNotBlank() }?.let { "$it camera network" } ?: "Caltrans CCTV")),
+                footer = listOf("Source: " + (m.src?.takeIf { it.isNotBlank() }?.let { "$it camera network" } ?: "State transportation agency cameras")),
             )
             "sign" -> EventCard(
                 chip = "Message sign",
                 title = listOfNotNull(m.route, m.direction).filter { it.isNotBlank() }.joinToString(" ").ifEmpty { "Changeable sign" },
                 subtitle = m.near?.takeIf { it.isNotBlank() },
-                footer = listOf("Source: " + (m.src?.takeIf { it.isNotBlank() }?.let { "$it message signs" } ?: "Caltrans CMS")),
+                footer = listOf("Source: " + (m.src?.takeIf { it.isNotBlank() }?.let { "$it message signs" } ?: "State transportation agency message signs")),
             )
             "rwis" -> weather(m, miles)
             "toll" -> EventCard(
@@ -667,7 +669,7 @@ data class EventCard(
                     m.facility?.takeIf { it.isNotEmpty() && m.cls == "ramp" }?.let { "Facility" to it },
                     m.windows?.takeIf { it != 0.0 }?.let { "Windows" to "${EventText.num(it - 1)} more scheduled at this spot" },
                 ),
-                footer = listOf("Source: " + (m.src?.takeIf { it.isNotEmpty() }?.let { "$it data feed" } ?: "Caltrans lane closure system")),
+                footer = listOf("Source: " + (m.src?.takeIf { it.isNotEmpty() }?.let { "$it data feed" } ?: "State transportation agency lane closures")),
                 schedule = EventText.schedule(m, nowMs, viewer),
             )
         }
@@ -742,7 +744,7 @@ data class EventCard(
                 subtitle = m.route?.takeIf { it.isNotEmpty() },
                 gloss = if (facts.isEmpty()) "This station is online. It has no readings right now." else null,
                 facts = facts,
-                footer = listOf("Source: " + (m.src?.takeIf { it.isNotEmpty() }?.let { "$it weather station" } ?: "Caltrans roadside weather station")),
+                footer = listOf("Source: " + (m.src?.takeIf { it.isNotEmpty() }?.let { "$it weather station" } ?: "State transportation agency weather station")),
             )
         }
 
