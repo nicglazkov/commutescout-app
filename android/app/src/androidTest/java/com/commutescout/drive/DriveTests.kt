@@ -237,7 +237,9 @@ class DriveTests {
     @Test fun settingsSwitchesPickersAndPerspective() {
         fun flip(vararg labels: String) { for (label in labels) { val sw = scrollTo(tag("switch-$label")); sw.performClick(); sw.performClick() } }
         openSettingsPage("Map style")
-        for (s in listOf("dark", "outdoors", "positron")) scrollTo(tag("basemap-$s")).performClick()
+        for (s in listOf("bright", "slate", "outdoors", "positron")) scrollTo(tag("basemap-$s")).performClick()
+        assertTrue("exactly four looks", !tagExists("basemap-dark") && !tagExists("basemap-light"))
+        for (t in listOf("dark", "light", "system")) scrollTo(tag("theme-$t")).performClick()
         openSettingsPage("Units")
         for (u in listOf("km", "miles", "auto")) scrollTo(tag("unit-distance-$u")).performClick()
         openSettingsPage("Navigation")
@@ -299,7 +301,7 @@ class DriveTests {
         assertTrue(exists("Sign in") || exists("watch"))
         closeSheet("watches-sheet")
         openTool("tool-layers"); waitFor { tagExists("layers-sheet") }
-        for (st in listOf("dark", "positron")) scrollTo(tag("basemap-$st")).performClick()
+        for (st in listOf("slate", "positron")) scrollTo(tag("basemap-$st")).performClick()
         closeSheet("layers-sheet")
     }
 

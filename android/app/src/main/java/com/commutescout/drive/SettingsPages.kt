@@ -95,8 +95,16 @@ fun RadioRow(label: String, selected: Boolean, tag: String, sub: String? = null,
 fun MapStylePage(model: DriveViewModel) {
     val prefs = model.prefs
     Spacer(Modifier.height(4.dp))
-    BaseMapCards(prefs.mapStyle, model.isDark) { prefs.mapStyle = it }
+    BaseMapCards(prefs.mapStyle) { prefs.mapStyle = it }
     GroupFoot("The map above shows the style you pick. Alerts, your route and the car look the same in every style.", Modifier.padding(top = 4.dp))
+    GroupHead("Theme")
+    Group {
+        Prefs.Theme.entries.forEachIndexed { i, t ->
+            if (i > 0) RowDivider(18.dp)
+            RadioRow(t.label, prefs.theme == t, "theme-${t.name.lowercase()}") { prefs.theme = t }
+        }
+    }
+    GroupFoot("In the dark theme, Positron dims for night driving. Bright, Slate and Gray keep their colors.")
 }
 
 // MARK: units and region
@@ -536,7 +544,7 @@ fun LayersContent(model: DriveViewModel, withStyles: Boolean = false) {
     LaunchedEffect(Unit) { model.sources.loadCatalog() }
     if (withStyles) {
         GroupHead("Map style")
-        BaseMapCards(prefs.mapStyle, model.isDark) { prefs.mapStyle = it }
+        BaseMapCards(prefs.mapStyle) { prefs.mapStyle = it }
     }
     GroupHead("Show")
     Box(Modifier.padding(horizontal = 14.dp)) {

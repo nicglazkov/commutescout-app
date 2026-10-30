@@ -110,7 +110,7 @@ fun BaseMapPreview(model: DriveViewModel, height: Int = 180) {
 }
 
 /** The base maps as cards: a picture of each, the way the website shows them. Tapping one applies it at once. */
-/** The map styles the picker offers, in order, with the line under each. Gray is the OUTDOORS key, kept for saved choices. */
+/** The four map styles, in order, with the line under each. Gray is the OUTDOORS key, kept for saved choices. */
 object MapStyles {
     data class Look(val style: Prefs.MapStyle, val name: String, val about: String)
     val looks = listOf(
@@ -118,26 +118,20 @@ object MapStyles {
         Look(Prefs.MapStyle.BRIGHT, "Bright", "More color for roads, parks and water"),
         Look(Prefs.MapStyle.SLATE, "Slate", "Cool blue-gray, easy on the eyes"),
         Look(Prefs.MapStyle.OUTDOORS, "Gray", "Neutral, with no color but alerts"),
-        Look(Prefs.MapStyle.LIGHT, "Light", "Classic street map colors"),
-        Look(Prefs.MapStyle.DARK, "Dark", "Dim, for driving at night"),
     )
-    /** The card that shows as chosen: Match theme reads as Positron by day and Dark at night. */
-    fun chosen(choice: Prefs.MapStyle, dark: Boolean): Prefs.MapStyle =
-        if (choice == Prefs.MapStyle.AUTO) (if (dark) Prefs.MapStyle.DARK else Prefs.MapStyle.POSITRON) else choice
-    fun name(choice: Prefs.MapStyle, dark: Boolean): String = chosen(choice, dark).let { c -> looks.first { it.style == c }.name }
+    fun name(choice: Prefs.MapStyle): String = looks.first { it.style == choice }.name
 }
 
 /** The map styles as picture cards, two to a row: a blue ring and a check on the chosen one. */
 @Composable
-fun BaseMapCards(choice: Prefs.MapStyle, dark: Boolean, onPick: (Prefs.MapStyle) -> Unit) {
+fun BaseMapCards(choice: Prefs.MapStyle, onPick: (Prefs.MapStyle) -> Unit) {
     val context = LocalContext.current
-    val chosen = MapStyles.chosen(choice, dark)
     Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         MapStyles.looks.chunked(2).forEach { pair ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 pair.forEach { look ->
                     val s = look.style
-                    val picked = s == chosen
+                    val picked = s == choice
                     val bitmap = remember(s) {
                         runCatching { context.assets.open("thumbs/${s.flavor(false)}.webp").use { BitmapFactory.decodeStream(it) } }.getOrNull()
                     }

@@ -17,28 +17,28 @@ class Prefs(context: Context) {
     /** A phone that had this app before the first-run screen counts as past it. */
     private val upgraded = p.all.isNotEmpty() && !p.contains("welcome.done")
 
-    enum class Theme(val label: String) { SYSTEM("System"), LIGHT("Light"), DARK("Dark") }
+    enum class Theme(val label: String) { SYSTEM("Match my phone"), LIGHT("Light"), DARK("Dark") }
     /**
-     * The same base maps the website offers, in its order. Positron and
-     * Bright are OpenFreeMap's styles, read from its tiles while online;
-     * without a signal the map falls back to Light, drawn from the file
-     * saved on the phone. The other four are CommuteScout's own styles.
-     * OUTDOORS is the old stored name for Grayscale, kept so a saved
-     * choice still reads.
+     * The four looks the app offers, in order. Positron and Bright are
+     * OpenFreeMap's styles, read from its tiles while online; without a
+     * signal the map falls back to Light, drawn from the file saved on
+     * the phone. Slate and Gray are CommuteScout's own. OUTDOORS is the
+     * old stored name for Gray, kept so a saved choice still reads.
      */
     enum class MapStyle(val label: String) {
-        AUTO("Match theme"), POSITRON("Positron"), BRIGHT("Bright"), SLATE("Slate"),
-        LIGHT("Light"), DARK("Dark"), OUTDOORS("Grayscale");
+        POSITRON("Positron"), BRIGHT("Bright"), SLATE("Slate"), OUTDOORS("Gray");
 
-        /** The bundled style for this choice in the given appearance. */
+        /** The bundled style for this choice in the given theme: Positron, the default, dims at night. */
         fun flavor(dark: Boolean): String = when (this) {
-            AUTO -> if (dark) "dark" else "positron"
-            POSITRON -> "positron"
+            POSITRON -> if (dark) "dark" else "positron"
             BRIGHT -> "bright"
             SLATE -> "slate"
-            LIGHT -> "light"
-            DARK -> "dark"
             OUTDOORS -> "grayscale"
+        }
+
+        companion object {
+            /** A saved choice: one that is no longer offered becomes Positron. */
+            fun saved(name: String?): MapStyle = entries.firstOrNull { it.name == name } ?: POSITRON
         }
     }
 
@@ -78,7 +78,7 @@ class Prefs(context: Context) {
     /** Back to defaults, for UI tests that must start the same way every run. */
     fun resetForTests() {
         p.edit().clear().apply()
-        theme = Theme.SYSTEM; mapStyle = MapStyle.AUTO; is3D = false; traffic = false; hiddenKinds = offByDefault; sourceFilter = SourceFilter.ALL
+        theme = Theme.SYSTEM; mapStyle = MapStyle.POSITRON; is3D = false; traffic = false; hiddenKinds = offByDefault; sourceFilter = SourceFilter.ALL
         spokenAlerts = true; alertAheadMeters = 1500.0; showSpeedLimit = true; keepAwake = true
         avoidTolls = false; avoidHighways = false; avoidFerries = false; stripAheadMeters = 16093.0
         advancedAlerts = false; alertRulesRaw = ""; distanceUnit = DistanceChoice.MILES
@@ -91,7 +91,14 @@ class Prefs(context: Context) {
 
     // A name dropped in an update must not be a crash loop at launch.
     var theme by state(runCatching { Theme.valueOf(p.getString("theme", "SYSTEM")!!) }.getOrDefault(Theme.SYSTEM)) { p.edit().putString("theme", it.name).apply() }
-    var mapStyle by state(runCatching { MapStyle.valueOf(p.getString("mapstyle", "AUTO")!!) }.getOrDefault(MapStyle.AUTO)) { p.edit().putString("mapstyle", it.name).apply() }
+    var mapStyle by state(MapStyle.saved(p.getString("mapstyle", null))) { p.edit().putString("mapstyle", it.name).apply() }
+    init {
+        // Dark was a map style; the dark theme gives that driver the same map now.
+        if (p.getString("mapstyle", null) == "DARK") {
+            if (theme == Theme.SYSTEM) theme = Theme.DARK
+            mapStyle = MapStyle.POSITRON
+        }
+    }
     var is3D by state(p.getBoolean("3d", false)) { p.edit().putBoolean("3d", it).apply() }
     var traffic by state(p.getBoolean("traffic", false)) { p.edit().putBoolean("traffic", it).apply() }
     /** Save the map along a route when a trip starts, on Wi-Fi. */

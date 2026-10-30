@@ -124,6 +124,26 @@ class SettingsLogicTest {
         assertEquals("All fresh", SourcesHealth.report(emptyList(), null).headline)
     }
 
+    // MARK: map style
+
+    @Test fun fourLooksInOrder() {
+        assertEquals(listOf("Positron", "Bright", "Slate", "Gray"), MapStyles.looks.map { it.name })
+        assertEquals(Prefs.MapStyle.entries.toList(), MapStyles.looks.map { it.style })
+    }
+
+    @Test fun aSavedStyleNoLongerOfferedBecomesPositron() {
+        for (old in listOf("AUTO", "LIGHT", "DARK", "SOMETHING", null)) assertEquals(Prefs.MapStyle.POSITRON, Prefs.MapStyle.saved(old))
+        assertEquals(Prefs.MapStyle.OUTDOORS, Prefs.MapStyle.saved("OUTDOORS"))
+        assertEquals(Prefs.MapStyle.SLATE, Prefs.MapStyle.saved("SLATE"))
+    }
+
+    @Test fun theDarkThemeKeepsADarkMap() {
+        assertEquals("positron", Prefs.MapStyle.POSITRON.flavor(false))
+        assertEquals("dark", Prefs.MapStyle.POSITRON.flavor(true))
+        assertEquals("slate", Prefs.MapStyle.SLATE.flavor(true))
+        assertEquals("grayscale", Prefs.MapStyle.OUTDOORS.flavor(true))
+    }
+
     // MARK: API use
 
     @Test fun usageMeterReadsTheAccountsLimit() {
