@@ -150,7 +150,11 @@ class SettingsLogicTest {
         val u = ApiUsage.parse("""{"keys": [{"id": "k", "tier": "pro", "daily_limit": 10000}], "tiers": {"free": 2000, "pro": 10000}}""")!!
         assertEquals("pro", u.tier)
         assertEquals(10000, u.limit)
-        assertEquals(0, u.requests)
+        assertNull(u.requests)
+        assertEquals("Unavailable", u.usedText)
+        assertEquals("", u.limitText)
+        assertEquals(0f, u.fraction)
+        assertFalse(u.full)
         assertEquals("a day with your pro key", u.tierText)
         val none = ApiUsage.parse("""{"keys": []}""")!!
         assertEquals(ApiUsage.FREE_DAILY, none.limit)
