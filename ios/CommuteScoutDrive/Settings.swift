@@ -22,6 +22,21 @@ struct SettingsSheet: View {
     }
 }
 
+/// Map layers on its own, from the map's Layers button: the same page
+/// as Settings > Map layers, with the sheet's close button.
+struct MapLayersSheet: View {
+    @State private var detent: PresentationDetent = .large
+
+    var body: some View {
+        NavigationStack {
+            LayersPage(detent: $detent, inSheet: true)
+        }
+        .presentationDetents([.large, SettingsSheet.peek], selection: $detent)
+        .presentationDragIndicator(.visible)
+        .modifier(DGSheetCorner())
+    }
+}
+
 /// The sheet's rounded top in the design's radius, where iOS allows it.
 private struct DGSheetCorner: ViewModifier {
     func body(content: Content) -> some View {
@@ -84,7 +99,7 @@ private struct SettingsHome: View {
                               trailing: { sourcesValue })
                     }
                     DGDivider()
-                    row("map-layers", "Map layers", "square.3.layers.3d", 0xee8b0c, value: layersSummary) { LayersPage() }
+                    row("map-layers", "Map layers", "square.3.layers.3d", 0xee8b0c, value: layersSummary) { LayersPage(detent: $detent) }
                     DGDivider()
                     row("plugins", "Plugins", "puzzlepiece.extension.fill", 0x7c5cf0, value: pluginsSummary) { MarketplaceView() }
                     DGDivider()
@@ -259,15 +274,21 @@ private struct RouteOptionsPage: View {
     }
 }
 
+/// What the map shows. Settings > Map layers and the map's Layers button
+/// both open this page.
 private struct LayersPage: View {
     @EnvironmentObject var model: AppModel
-    var body: some View { LayersContent(prefs: model.prefs, sources: model.sources) }
+    @Binding var detent: PresentationDetent
+    var inSheet = false
+    var body: some View { LayersContent(prefs: model.prefs, sources: model.sources, detent: $detent, inSheet: inSheet) }
 }
 
 private struct LayersContent: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var prefs: Prefs
     @ObservedObject var sources: SourcesStore
+    @Binding var detent: PresentationDetent
+    var inSheet = false
 
     private var filter: Binding<Prefs.SourceFilter> {
         Binding(get: { prefs.sourceFilter }, set: { prefs.sourceFilter = $0; model.markers.refresh(force: true) })
@@ -278,7 +299,7 @@ private struct LayersContent: View {
     }
 
     var body: some View {
-        DGPage(title: "Map layers", identifier: "page-map-layers") {
+        DGPage(title: "Map layers", identifier: "page-map-layers", backSymbol: inSheet ? "xmark" : "chevron.left") {
             DGSegmented(options: Prefs.SourceFilter.allCases.map { ($0, $0.label, nil) }, selection: filter, identifier: "layers-filter")
                 .padding(.top, 8)
             DGFootnote(footer)
@@ -313,6 +334,14 @@ private struct LayersContent: View {
                 }
                 DGFootnote("Plugin alerts are badges in each plugin's own color. Turn a plugin on or off on its page in Plugins.")
             }
+            DGGroup {
+                SettingsLink(id: "layers-map-style") { MapStylePage(detent: $detent) } label: {
+                    DGRow(title: "Map style", value: MapStylePage.name(prefs.mapStyle, dark: model.isDark)) {
+                        DGTile(symbol: "map.fill", color: DG.hex(0x5b6cf0), size: 30)
+                    }
+                }
+            }
+            .padding(.top, 20)
         }
         .task { await sources.loadCatalog() }
     }
@@ -634,44 +663,3 @@ extension View {
             .toolbar(.visible, for: .navigationBar)
     }
 }
-/// The base maps as cards: a picture of each, the way the website
-/// shows them. Tapping one applies it at once.
-struct BaseMapCards: View {
-    @Binding var choice: Prefs.MapStyle
-    let dark: Bool
-
-    private let columns = [GridItem(.adaptive(minimum: 104), spacing: 10)]
-
-    var body: some View {
-        LazyVGrid(columns: columns, spacing: 10) {
-            ForEach(Prefs.MapStyle.allCases) { s in
-                Button { choice = s } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ZStack(alignment: .topTrailing) {
-                            thumbnail(s.flavor(dark: dark))
-                                .resizable().aspectRatio(3 / 2, contentMode: .fill)
-                                .frame(maxWidth: .infinity).clipped()
-                            if choice == s {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.title3).foregroundStyle(.white, Color.accentColor).padding(6)
-                            }
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(choice == s ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: choice == s ? 2.5 : 1))
-                        Text(s.label).font(.subheadline.weight(choice == s ? .semibold : .regular)).foregroundStyle(.primary)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("basemap-\(s.rawValue)")
-            }
-        }
-    }
-
-    private func thumbnail(_ flavor: String) -> Image {
-        let url = Bundle.main.resourceURL!.appendingPathComponent("Map/thumbs/\(flavor).webp")
-        if let img = UIImage(contentsOfFile: url.path) { return Image(uiImage: img) }
-        return Image(systemName: "map")
-    }
-}
-
