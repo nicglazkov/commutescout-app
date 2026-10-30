@@ -192,3 +192,12 @@ schemes:
         - CommuteScoutDriveUITests
     archive:
       config: Release
+  # The logic tests alone, for CI: nothing here builds or launches the app.
+  CommuteScoutDriveTests:
+    build:
+      targets:
+        CommuteScoutDriveTests: [test]
+    test:
+      config: Debug
+      targets:
+        - CommuteScoutDriveTests

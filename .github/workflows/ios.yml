@@ -3,8 +3,8 @@
 # A hosted macOS runner has Xcode and the simulators already, and this
 # repository is public, so the minutes are free.
 #
-# Signing is off: this proves the code compiles and the tests pass, not
-# that it can be shipped. Shipping still goes through scripts/ios_build.sh
+# Signing is off: this proves the code compiles and the unit tests pass,
+# not that it can be shipped. Shipping still goes through scripts/ios_build.sh
 # on the maintainer's Mac, which has the certificates.
 name: iOS
 
@@ -52,4 +52,32 @@ jobs:
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tail -40
+          exit ${PIPESTATUS[0]}
+      - name: Pick the simulator
+        id: sim
+        # A device id, not a name: a name can match several runtimes on a
+        # hosted image, and xcodebuild then chooses for itself. The newest
+        # iOS 18 runtime's iPhone 16, or a plain failure saying so.
+        run: |
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          ios18 = [r for r in runtimes if ".iOS-18-" in r]
+          ios18.sort(key=lambda r: [int(n) for n in r.rsplit("iOS-", 1)[1].split("-")])
+          for runtime in reversed(ios18):
+              for device in runtimes[runtime]:
+                  if device["name"] == "iPhone 16":
+                      print(device["udid"])
+                      sys.exit()
+          ')
+          test -n "$udid" || { echo "No iPhone 16 on an iOS 18 runtime on this image"; exit 1; }
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: Unit tests
+        # Their own scheme, so this builds the logic tests alone. They
+        # compile the files they test and load no app, so no
+        # GoogleService-Info.plist is needed. UI tests stay on the Mac.
+        working-directory: ios
+        timeout-minutes: 20
+        run: |
+          xcodebuild -project CommuteScoutDrive.xcodeproj             -scheme CommuteScoutDriveTests             -destination "id=${{ steps.sim.outputs.udid }}"             -derivedDataPath build             -skipMacroValidation             -parallel-testing-enabled NO             CODE_SIGNING_ALLOWED=NO             test 2>&1 | tail -60
           exit ${PIPESTATUS[0]}
