@@ -134,12 +134,10 @@ final class CoverageUITests: XCTestCase {
         openSettings()
         openPage("saved-places")
         // In the list itself: the places tray under the sheet has a "Work" row too.
-        let work = app.cells.staticTexts["Work"].firstMatch
+        let work = app.buttons["remove-Work"].firstMatch
         XCTAssertTrue(reveal(work), "Work listed under Saved places")
         // Every place row swipes to Remove.
-        app.cells.containing(.staticText, identifier: "Work").firstMatch.swipeLeft()
-        XCTAssertTrue(app.buttons["Remove"].firstMatch.waitForExistence(timeout: 5), "Remove on a swipe")
-        app.buttons["Remove"].firstMatch.tap()
+        work.tap()
         XCTAssertTrue(app.buttons["set-work"].waitForExistence(timeout: 5), "Work is unset")
         closeSettings()
         // The shortcut list under the field shows what is left (the favorite).
@@ -306,7 +304,7 @@ final class CoverageUITests: XCTestCase {
             app.buttons["account-sign-in"].tap()
             XCTAssertTrue(app.buttons["Continue with Apple"].waitForExistence(timeout: 5))
             XCTAssertTrue(app.buttons["Continue with Google"].exists)
-            app.buttons["Cancel"].firstMatch.tap()
+            app.buttons["page-close"].firstMatch.tap()
         } else {
             XCTAssertTrue(app.buttons["account-sign-out"].exists, "signed in: Sign out offered")
             XCTAssertTrue(reveal(app.descendants(matching: .any)["api-usage"].firstMatch), "API use today")
@@ -367,12 +365,12 @@ final class CoverageUITests: XCTestCase {
     func testAlertsNearbyRowCentersOnTheMarker() {
         app.buttons["tools"].tap()
         app.buttons["tool-alerts"].tap()
-        XCTAssertTrue(app.navigationBars["Alerts nearby"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.descendants(matching: .any)["page-alerts"].firstMatch.waitForExistence(timeout: 8))
         sleep(3)   // markers for the visible area
-        let rows = app.collectionViews.firstMatch.buttons
+        let rows = app.buttons.matching(identifier: "alert-row")
         if rows.count > 0 {
             rows.firstMatch.tap()
-            XCTAssertTrue(app.navigationBars["Alerts nearby"].waitForNonExistence(timeout: 5))
+            XCTAssertTrue(app.descendants(matching: .any)["page-alerts"].firstMatch.waitForNonExistence(timeout: 5))
             XCTAssertTrue(app.buttons["tool-alerts"].waitForNonExistence(timeout: 5), "the Tools menu closes with its page")
             XCTAssertTrue(app.buttons["Navigate here"].waitForExistence(timeout: 8), "marker card for the chosen alert")
             app.buttons["Navigate here"].tap()
@@ -382,14 +380,14 @@ final class CoverageUITests: XCTestCase {
             app.buttons["routes-close"].tap()
         } else {
             XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Nothing reported'")).firstMatch.exists)
-            app.buttons["Done"].firstMatch.tap()
+            app.buttons["page-close"].firstMatch.tap()
         }
     }
 
     func testDirectionsFromAnotherPlaceShowsRoutes() {
         app.buttons["tools"].tap()
         app.buttons["tool-directions"].tap()
-        XCTAssertTrue(app.navigationBars["Directions"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["page-directions"].firstMatch.waitForExistence(timeout: 5))
         // Coordinates, not names: the planner reads them itself, so the
         // test does not depend on what the live geocoder returns. Two
         // distinct places, so a pick never matches the other field's row.
@@ -423,21 +421,21 @@ final class CoverageUITests: XCTestCase {
         if app.buttons["Sign in"].exists {
             app.buttons["Sign in"].tap()
             XCTAssertTrue(app.buttons["Continue with Google"].waitForExistence(timeout: 5))
-            app.buttons["Cancel"].firstMatch.tap()
+            app.buttons["page-close"].firstMatch.tap()
         } else {
             XCTAssertTrue(app.buttons["watch-new"].waitForExistence(timeout: 15), "new watch area")
             XCTAssertTrue(reveal(app.switches["watch-push"]), "how you hear about it")
         }
         app.buttons["page-close"].firstMatch.tap()
         XCTAssertTrue(app.buttons["tool-watches"].waitForExistence(timeout: 5))
-        app.buttons["Done"].firstMatch.tap()
+        app.buttons["page-close"].firstMatch.tap()
     }
 
 
     func testAskAnswersAQuestion() {
         app.buttons["tools"].tap()
         app.buttons["tool-ask"].tap()
-        XCTAssertTrue(app.navigationBars["Ask"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["page-ask"].firstMatch.waitForExistence(timeout: 5))
         let field = app.textFields["ask-field"].exists ? app.textFields["ask-field"] : app.textViews["ask-field"]
         field.tap()
         field.typeText("Is there anything on US-101 near San Jose right now?")
@@ -445,7 +443,7 @@ final class CoverageUITests: XCTestCase {
         // Something comes back: an answer, a status line, or an error; never a hang.
         let anyText = app.staticTexts.matching(NSPredicate(format: "label MATCHES '(?s).{40,}'")).firstMatch
         XCTAssertTrue(anyText.waitForExistence(timeout: 60), "an answer or a message")
-        app.buttons["Done"].firstMatch.tap()
+        app.buttons["page-close"].firstMatch.tap()
     }
 
     func testMarketplaceTilesAndInstall() {
@@ -482,9 +480,8 @@ final class CoverageUITests: XCTestCase {
         XCTAssertFalse(app.buttons["tool-layers"].exists)
         XCTAssertFalse(app.buttons["tool-marketplace"].exists)
         // The web link is the last row; a shorter screen needs a scroll to reach it.
-        if !app.staticTexts["Open the full map on the web"].exists { app.swipeUp() }
-        XCTAssertTrue(app.staticTexts["Open the full map on the web"].waitForExistence(timeout: 5))
-        app.buttons["Done"].tap()
+        XCTAssertTrue(reveal(app.descendants(matching: .any)["tool-web"].firstMatch), "web link")
+        app.buttons["page-close"].firstMatch.tap()
     }
 
     // MARK: reports
@@ -499,7 +496,7 @@ final class CoverageUITests: XCTestCase {
         // Signed out, a kind asks for an account first.
         app.buttons["report-POLICE_VISIBLE"].tap()
         XCTAssertTrue(app.buttons["Continue with Google"].waitForExistence(timeout: 5), "reports need an account")
-        app.buttons["Cancel"].firstMatch.tap()
+        app.buttons["page-close"].firstMatch.tap()
         app.buttons["report-close"].tap()
         XCTAssertTrue(app.textFields["search"].waitForExistence(timeout: 5))
     }

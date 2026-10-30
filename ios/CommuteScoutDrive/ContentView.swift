@@ -358,23 +358,23 @@ struct ResumeCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Resume your trip to \(trip.place.shortName)?").font(.headline)
+                Text("Resume your trip to \(trip.place.shortName)?").font(DG.T.noteTitle).foregroundStyle(DG.ink)
                 Text("Started at \(OfflineText.time(trip.startedAt)). Works without a signal.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(DG.T.rowSub).foregroundStyle(DG.sub)
             }
             HStack(spacing: 8) {
                 Button { model.resume() } label: {
-                    Label("Resume", systemImage: "location.north.line.fill").frame(maxWidth: .infinity).padding(.vertical, 10)
+                    Label("Resume", systemImage: "location.north.line.fill")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.dgBlue)
                 .accessibilityIdentifier("resume-trip")
                 Button("Not now") { model.dismissResume() }
-                    .buttonStyle(.bordered).padding(.vertical, 10)
+                    .buttonStyle(.dgGlass)
                     .accessibilityIdentifier("dismiss-trip")
             }
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .dgGlass(radius: DG.R.card)
         .padding(12)
     }
 }

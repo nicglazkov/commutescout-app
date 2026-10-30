@@ -320,6 +320,40 @@ struct DGFootnote: View {
     }
 }
 
+/// A text box on a white card, for pages without a form around them.
+struct DGField: View {
+    var placeholder: String
+    @Binding var text: String
+    var axis: Axis = .horizontal
+
+    var body: some View {
+        TextField(placeholder, text: $text, axis: axis)
+            .font(DG.font(16)).foregroundStyle(DG.ink)
+            .padding(.horizontal, 14).padding(.vertical, 13)
+            .background(Color.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
+    }
+}
+
+/// A row that opens a short menu of choices, with the choice as its value.
+struct DGChoiceRow<V: Hashable, Choices: View>: View {
+    var title: String
+    var value: String
+    @Binding var selection: V
+    @ViewBuilder var choices: () -> Choices
+
+    var body: some View {
+        Menu {
+            Picker(title, selection: $selection) { choices() }
+        } label: {
+            DGRow(title: title, value: value, chevron: false, leading: { EmptyView() }, trailing: { EmptyView() })
+        }
+        .buttonStyle(DGRowPress())
+        .accessibilityLabel(title)
+        .accessibilityValue(value)
+    }
+}
+
 /// The dark bar pinned to the bottom of a "more" page, over a fade.
 struct DGDock<Content: View>: View {
     @ViewBuilder var content: () -> Content

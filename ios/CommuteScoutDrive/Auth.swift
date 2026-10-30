@@ -187,30 +187,27 @@ struct SignInSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                Image(systemName: "person.crop.circle.badge.checkmark").font(.system(size: 44)).foregroundStyle(.tint)
-                Text(reason).multilineTextAlignment(.center).foregroundStyle(.secondary).padding(.horizontal)
-                Button {
-                    Task { await model.account.signInWithApple(); if model.account.signedIn { dismiss() } }
-                } label: {
-                    Label("Continue with Apple", systemImage: "apple.logo").frame(maxWidth: .infinity).padding(.vertical, 8)
+            DGPage(title: "Sign in", identifier: "page-sign-in", backSymbol: "xmark") {
+                VStack(spacing: 14) {
+                    Text(reason).font(DG.font(16)).multilineTextAlignment(.center).foregroundStyle(DG.sub)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button {
+                        Task { await model.account.signInWithApple(); if model.account.signedIn { dismiss() } }
+                    } label: { Label("Continue with Apple", systemImage: "apple.logo") }
+                    .buttonStyle(.dgPrimary)
+                    Button {
+                        Task { await model.account.signInWithGoogle(); if model.account.signedIn { dismiss() } }
+                    } label: { Label("Continue with Google", systemImage: "g.circle") }
+                    .buttonStyle(.dgGlass)
+                    if model.account.busy { ProgressView() }
+                    Text("Same account as commutescout.com. Reports carry a pseudonym, never your name or email.")
+                        .font(DG.font(13)).foregroundStyle(DG.sub).multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Link("Privacy", destination: URL(string: "https://commutescout.com/privacy")!)
+                        .font(DG.font(13, .semibold)).foregroundStyle(DG.inkColor(.low))
                 }
-                .buttonStyle(.borderedProminent).tint(.black)
-                Button {
-                    Task { await model.account.signInWithGoogle(); if model.account.signedIn { dismiss() } }
-                } label: {
-                    Label("Continue with Google", systemImage: "g.circle").frame(maxWidth: .infinity).padding(.vertical, 8)
-                }
-                .buttonStyle(.bordered)
-                if model.account.busy { ProgressView() }
-                Text("Same account as commutescout.com. Reports carry a pseudonym, never your name or email.")
-                    .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal)
-                Link("Privacy", destination: URL(string: "https://commutescout.com/privacy")!).font(.footnote)
-                Spacer()
+                .frame(maxWidth: .infinity).padding(.top, 8)
             }
-            .padding(.top, 24).padding(.horizontal, 20)
-            .navigationTitle("Sign in")
-            .toolbar { Button("Cancel") { dismiss() } }
             .alert("Sign-in failed", isPresented: Binding(get: { model.account.error != nil }, set: { if !$0 { model.account.error = nil } })) {
                 Button("OK") { model.account.error = nil }
             } message: { Text(model.account.error ?? "") }
