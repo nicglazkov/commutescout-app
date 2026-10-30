@@ -44,6 +44,13 @@ enum DGKind: String, CaseIterable {
         }
     }
 
+    /// The words when one clears, on the capsule and out loud alike:
+    /// "Crash ahead has cleared", "Lanes closed ahead has cleared".
+    var clearedTitle: String {
+        let place = short.hasSuffix(" ahead") || short.hasSuffix(" nearby") ? short : short + " ahead"
+        return place + " has cleared"
+    }
+
     init(marker m: RoadMarker) {
         self.init(kind: m.kind, words: [m.type, m.label, m.flareKind, m.cls].compactMap { $0?.lowercased() }.joined(separator: " "))
     }

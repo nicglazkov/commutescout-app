@@ -104,13 +104,29 @@ final class AlertsEngine: ObservableObject {
         let shown = previous.filter { !dismissed.contains($0.id) && (rules?($0.marker).enabled ?? true) }
         let gone = ClearingRule.vanished(previous: shown.map { .init(key: $0.id, along: $0.alongMeters) },
                                          now: keys, here: hereAlong, within: clearingWithin)
-        guard let first = gone.first, let item = previous.first(where: { $0.id == first }) else { return }
+        let markers = now.map(\.marker)
+        let items = gone.compactMap { key in previous.first { $0.id == key } }
+        guard let item = items.first(where: { !ClearingRule.stillReported($0.marker, among: markers) }) else { return }
         DriveLog.note("alerts: \(item.marker.kind) ahead has cleared")
         cleared = item
+        sayCleared(item)
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64((self?.clearedHold ?? 4) * 1e9))
             if self?.cleared?.id == item.id { self?.cleared = nil }
         }
+    }
+
+    /// The capsule's words, said the way any alert is. The rule holds
+    /// the voice and plugin settings and the per-kind choices.
+    private func sayCleared(_ item: Upcoming) {
+        let rule = rules?(item.marker) ?? Prefs.AlertRule(enabled: true, speak: spoken, firstMeters: announceAheadMeters, repeatMeters: 0)
+        guard ClearingRule.speaks(ruleSpeaks: rule.speak, muted: muted, onRoute: !freeDrive && !route.isEmpty) else { return }
+        let text = DGKind(marker: item.marker).clearedTitle
+        if let t = spokenAt[text], Date().timeIntervalSince(t) < 90 { return }
+        spokenAt[text] = Date()
+        lastAnnounced = text
+        DriveLog.note("alert spoken: \(text)")
+        speak(text)
     }
 
     #if DEBUG

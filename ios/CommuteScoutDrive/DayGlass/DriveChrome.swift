@@ -236,7 +236,7 @@ struct DriveAlert: View {
     }
 
     private var title: String {
-        if cleared { return "\(kind.short) has cleared" }
+        if cleared { return kind.clearedTitle }
         if plugin, let r = item.marker.road, !r.isEmpty { return kind.short }
         return kind.short
     }

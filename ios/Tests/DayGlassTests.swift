@@ -82,6 +82,35 @@ final class DayGlassTests: XCTestCase {
         XCTAssertEqual(ClearingRule.vanished(previous: seen, now: ["ahead", "kept", "far", "behind"], here: 1000, within: 16093), [])
     }
 
+    func testClearedWordsMatchEveryKind() {
+        XCTAssertEqual(DGKind.crash.clearedTitle, "Crash ahead has cleared")
+        XCTAssertEqual(DGKind.closure.clearedTitle, "Lanes closed ahead has cleared")
+        XCTAssertEqual(DGKind.police.clearedTitle, "Police ahead has cleared")
+        XCTAssertEqual(DGKind.fire.clearedTitle, "Wildfire nearby has cleared")
+    }
+
+    func testClearingIsSpokenOnlyWhenAllowed() {
+        XCTAssertTrue(ClearingRule.speaks(ruleSpeaks: true, muted: false, onRoute: true))
+        XCTAssertFalse(ClearingRule.speaks(ruleSpeaks: false, muted: false, onRoute: true), "voice, plugin or per-kind setting off")
+        XCTAssertFalse(ClearingRule.speaks(ruleSpeaks: true, muted: true, onRoute: true), "muted")
+        XCTAssertFalse(ClearingRule.speaks(ruleSpeaks: true, muted: false, onRoute: false), "free drive")
+    }
+
+    func testAnIdlessMarkerWithANewLabelHasNotCleared() throws {
+        let was = try marker(#"{"kind":"incident","lat":37.442,"lon":-122.143,"label":"Crash on US-101"}"#)
+        let relabeled = try marker(#"{"kind":"incident","lat":37.442,"lon":-122.143,"label":"Crash on US-101, right lane"}"#)
+        XCTAssertNotEqual(was.key, relabeled.key)
+        XCTAssertTrue(ClearingRule.stillReported(was, among: [relabeled]))
+        // Gone from the place, a different kind there, or a real id: it did clear.
+        let elsewhere = try marker(#"{"kind":"incident","lat":37.452,"lon":-122.143,"label":"Crash on US-101"}"#)
+        let otherKind = try marker(#"{"kind":"lane_closure","lat":37.442,"lon":-122.143}"#)
+        let withId = try marker(#"{"id":"a","kind":"incident","lat":37.442,"lon":-122.143}"#)
+        XCTAssertFalse(ClearingRule.stillReported(was, among: []))
+        XCTAssertFalse(ClearingRule.stillReported(was, among: [elsewhere]))
+        XCTAssertFalse(ClearingRule.stillReported(was, among: [otherKind]))
+        XCTAssertFalse(ClearingRule.stillReported(withId, among: [relabeled]))
+    }
+
     func testKinds() throws {
         func kind(_ json: String) throws -> DGKind { DGKind(marker: try marker(json)) }
         XCTAssertEqual(try kind(#"{"kind":"incident","lat":0,"lon":0,"type":"Traffic Collision"}"#), .crash)

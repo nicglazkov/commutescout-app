@@ -143,4 +143,23 @@ enum ClearingRule {
             .sorted { $0.along < $1.along }
             .map(\.key)
     }
+
+    /// How close two reports of one kind sit to be one event, in degrees
+    /// (about 55 m).
+    static let samePlace = 0.0005
+
+    /// A marker with no id is keyed by its words too, so a new label
+    /// reads as a new key. The same kind in the same place is the same
+    /// event, not one that cleared.
+    static func stillReported(_ m: RoadMarker, among now: [RoadMarker]) -> Bool {
+        guard m.id == nil else { return false }
+        return now.contains { $0.kind == m.kind && abs($0.lat - m.lat) <= samePlace && abs($0.lon - m.lon) <= samePlace }
+    }
+
+    /// Whether a clearing is said out loud: the alert's own rule, which
+    /// already holds the voice setting, the plugin setting and the
+    /// per-kind choices, unless the driver muted alerts. Only on a route.
+    static func speaks(ruleSpeaks: Bool, muted: Bool, onRoute: Bool) -> Bool {
+        ruleSpeaks && !muted && onRoute
+    }
 }
