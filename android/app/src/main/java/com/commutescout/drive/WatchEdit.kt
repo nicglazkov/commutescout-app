@@ -333,7 +333,7 @@ fun WatchEditor(model: DriveViewModel, mapState: NavigationMapState, existing: W
                             saving = false
                             if (status in 200..299 || status == 404) { onSaved(); onClose() } else { error = WatchBodies.error(status, text); confirmDelete = false }
                         }
-                    }, Modifier.weight(1f).tag("watch-delete-yes"), style = BtnStyle.DANGER, enabled = !saving)
+                    }, Modifier.weight(1f).tag("watch-delete-yes"), style = BtnStyle.DANGER_SOLID, enabled = !saving)
                 } else {
                     val none = kinds.isEmpty()
                     val label = saved?.let { "Saved. Watching $it" } ?: if (none) "Pick at least one kind" else if (saving) "Saving" else "Save watch area"

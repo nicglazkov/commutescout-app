@@ -141,7 +141,8 @@ fun SettingsSheet(model: DriveViewModel, start: SettingsPage? = null, onClose: (
             // Above the sheet: a tap closes it, except over the live map of Map style.
             Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) { if (page != SettingsPage.MAP_STYLE) close() })
             val top by animateDpAsState(if (page == SettingsPage.MAP_STYLE) maxHeight * .38f else 0.dp, DG.snap(), label = "sheet-top")
-            PageSheet(Modifier.padding(top = top).graphicsLayer { translationY = rise.value * height }.testTag("settings-sheet")) {
+            // The spring overshoots on its way back to 0; padding must never go below it.
+            PageSheet(Modifier.padding(top = top.coerceAtLeast(0.dp)).graphicsLayer { translationY = rise.value * height }.testTag("settings-sheet")) {
                 AnimatedContent(page, Modifier.fillMaxSize(), label = "settings-page", transitionSpec = {
                     val d = if (forward) 1 else -1
                     (slideInHorizontally(tween(420, 120, DG.easeOut)) { d * 90 } + fadeIn(tween(420, 120, DG.easeOut))) togetherWith

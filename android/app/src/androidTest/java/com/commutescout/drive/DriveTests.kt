@@ -25,6 +25,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.geometry.Offset
 import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.By
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.test.core.app.ActivityScenario
@@ -63,14 +64,36 @@ class DriveTests {
         compose.waitUntil(45_000) { compose.onAllNodesWithTag("search").fetchSemanticsNodes().isNotEmpty() }
     }
 
-    @Before fun start() { launch() }
+    @Before fun start() {
+        // A busy Compose gives up in seconds, not the default 26, so the fallback can take over.
+        androidx.test.espresso.IdlingPolicies.setIdlingResourceTimeout(6, java.util.concurrent.TimeUnit.SECONDS)
+        launch()
+    }
     @After fun stop() { scenario?.close() }
 
     private fun tag(t: String): SemanticsNodeInteraction = compose.onNodeWithTag(t, useUnmergedTree = true)
     private fun text(t: String, sub: Boolean = false) = compose.onNodeWithText(t, substring = sub, useUnmergedTree = true)
     private fun waitFor(timeoutMs: Long = 15_000, what: () -> Boolean) = compose.waitUntil(timeoutMs) { what() }
     private fun exists(t: String) = compose.onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
-    private fun tagExists(t: String) = compose.onAllNodesWithTag(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+    private fun tagExists(t: String) = whileBusy({ device().hasObject(By.res(t)) }) {
+        compose.onAllNodesWithTag(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+    }
+    /** A tap that still lands while a live trip keeps Compose from going idle. */
+    private fun click(t: String) = whileBusy({ device().findObject(By.res(t))?.click() ?: throw AssertionError("no node tagged $t") }) {
+        tag(t).performClick(); Unit
+    }
+    private fun device() = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+    /**
+     * While navigating, the map camera follows the car frame by frame and
+     * Compose may not report idle. Then the same check goes through
+     * UiAutomator, which reads the screen without waiting.
+     */
+    private fun <T> whileBusy(fallback: () -> T, block: () -> T): T = try { block() } catch (e: Throwable) {
+        val busy = generateSequence(e) { it.cause }.any { c -> c::class.java.simpleName.let { "NotIdle" in it || "IdlingResourceTimeout" in it } }
+        if (!busy) throw e
+        fallback()
+    }
+    private fun existsExact(t: String) = compose.onAllNodesWithText(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
     private fun search(q: String) {
         tag("search").performClick()
@@ -96,7 +119,15 @@ class DriveTests {
         scrollTo(tag("settings-" + name.lowercase().replace(' ', '-'))).performClick()
         waitFor { tagExists("settings-back") }
     }
-    private fun settingsHome() { tag("settings-back").performClick(); waitFor { !tagExists("settings-back") } }
+    /** Back until the home page: a page can sit on another (Alerts, then each kind). */
+    private fun settingsHome() {
+        for (i in 0 until 4) {
+            if (!tagExists("settings-back")) return
+            compose.onAllNodesWithTag("settings-back", useUnmergedTree = true)[0].performClick()
+            compose.waitForIdle()
+        }
+        waitFor { !tagExists("settings-back") }
+    }
     private fun openTool(t: String) { tag("tools").performClick(); waitFor { tagExists("tools-sheet") }; tag(t).performClick() }
     /** A tap on the scrim above the sheet closes it, as a person would.
      *  Injected by the system so Compose's idle wait cannot stall on the map. */
@@ -124,7 +155,7 @@ class DriveTests {
         if (tagExists("route-1")) { tag("route-1").performClick(); tag("route-0").performClick() }
         tag("start").performClick()
         waitFor(45_000) { !tagExists("search") }    // navigating: the search bar is gone
-        tag("perspective").performClick(); tag("perspective").performClick()
+        click("perspective"); click("perspective")
         stopNavigation()
         waitFor { tagExists("search") }
     }
@@ -195,33 +226,31 @@ class DriveTests {
 
     @Test fun settingsHomeListsEveryCategoryWithItsValue() {
         openSettings()
-        for (name in listOf("account", "appearance", "units", "navigation", "alerts", "map-layers", "plugins",
+        for (name in listOf("account", "map-style", "units", "voice", "alerts", "navigation", "map-layers", "plugins",
                             "offline-maps", "saved-places", "help", "about")) scrollTo(tag("settings-$name")).assertIsDisplayed()
         // A row says what it is set to without being opened.
-        assertTrue(exists("Miles") || exists("Kilometers"))
-        assertTrue(exists("Voice on") || exists("Voice off") || exists("Avoids"))
+        assertTrue(exists("Miles,") || exists("Kilometers,"))
+        assertTrue(exists("Fastest") || exists("Avoids"))
         closeSheet("settings-sheet")
     }
 
     @Test fun settingsSwitchesPickersAndPerspective() {
         fun flip(vararg labels: String) { for (label in labels) { val sw = scrollTo(tag("switch-$label")); sw.performClick(); sw.performClick() } }
-        openSettingsPage("Appearance")
-        flip("3D perspective")
-        for (label in listOf("Light", "Dark", "System")) scrollTo(compose.onAllNodesWithText(label, useUnmergedTree = true)[0]).performClick()
-        for (label in listOf("Grayscale", "Match theme")) scrollTo(compose.onAllNodesWithText(label, useUnmergedTree = true)[0]).performClick()
-        scrollTo(compose.onAllNodesWithText("Dark", useUnmergedTree = true)[1]).performClick()
-        scrollTo(compose.onAllNodesWithText("Light", useUnmergedTree = true)[1]).performClick()
+        openSettingsPage("Map style")
+        for (s in listOf("dark", "outdoors", "positron")) scrollTo(tag("basemap-$s")).performClick()
+        openSettingsPage("Units")
+        for (u in listOf("km", "miles", "auto")) scrollTo(tag("unit-distance-$u")).performClick()
         openSettingsPage("Navigation")
         flip("Avoid tolls", "Avoid highways", "Avoid ferries", "Show speed limit", "Keep the screen on")
         openSettingsPage("Alerts")
-        flip("Speak road alerts")
-        scrollTo(text("Advanced alerts", sub = true)).performClick()
+        flip("Speak plugin alerts")
+        scrollTo(tag("alerts-per-kind")).performClick()
         waitFor { tagExists("advanced-alerts") }
         scrollTo(tag("switch-Set alerts per kind")).performClick()
         waitFor { exists("Incidents") }
         scrollTo(text("Reset to defaults")).performClick()
-        closeSheet("advanced-alerts")
-        // Back goes to the home page first, not out of Settings.
+        scrollTo(tag("switch-Set alerts per kind")).performClick()
+        // Back steps out one page at a time, to the home page, not out of Settings.
         settingsHome()
         assertTrue(tagExists("settings-sheet"))
         closeSheet("settings-sheet")
@@ -233,8 +262,9 @@ class DriveTests {
         for (k in Prefs.layerKinds) { val sw = scrollTo(tag("switch-${k.label}")); sw.performClick(); sw.performClick() }
         openSettingsPage("About")
         scrollTo(text("Version", sub = true)).assertIsDisplayed()
+        scrollTo(text("Privacy")).assertIsDisplayed()
         openSettingsPage("Help")
-        for (label in listOf("Live map on the web", "Data sources", "Developers and API", "Privacy")) scrollTo(text(label, sub = true)).assertIsDisplayed()
+        for (label in listOf("Live map on the web", "Data sources", "Developers and API")) scrollTo(text(label, sub = true)).assertIsDisplayed()
     }
 
     @Test fun accountRowSignedOutOrIn() {
@@ -260,14 +290,16 @@ class DriveTests {
         scrollTo(tag("add-source")).performClick()
         waitFor { tagExists("source-url") }
         tag("source-url").performTextInput("http://example.com")
-        text("Add").performClick()
+        // The keyboard sits over the buttons; put it away as a person would.
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        scrollTo(tag("source-add")).performClick()
         waitFor { exists("must start with https://") }
         closeSheet("sources-sheet")
         openTool("tool-watches"); waitFor { tagExists("watches-sheet") }
         assertTrue(exists("Sign in") || exists("watch"))
         closeSheet("watches-sheet")
         openTool("tool-layers"); waitFor { tagExists("layers-sheet") }
-        for (label in listOf("Dark", "Match theme")) scrollTo(compose.onAllNodesWithText(label, useUnmergedTree = true)[0]).performClick()
+        for (st in listOf("dark", "positron")) scrollTo(tag("basemap-$st")).performClick()
         closeSheet("layers-sheet")
     }
 
@@ -277,9 +309,9 @@ class DriveTests {
         if (tagExists("plugin-card")) {
             val btns = compose.onAllNodes(androidx.compose.ui.test.hasTestTag("install-wz-flare"), useUnmergedTree = true)
             if (btns.fetchSemanticsNodes().isNotEmpty()) {
-                val wasInstalled = exists("Installed")
+                val wasAdded = existsExact("Added")
                 btns[0].performClick()
-                waitFor { exists(if (wasInstalled) "Install" else "Installed") }
+                waitFor { existsExact(if (wasAdded) "Add" else "Added") }
                 compose.onAllNodes(androidx.compose.ui.test.hasTestTag("install-wz-flare"), useUnmergedTree = true)[0].performClick()
             }
         }
@@ -355,9 +387,9 @@ class DriveTests {
         waitFor { tagExists("perspective") }
         assertTrue("Ferrostar owns recenter while navigating", !tagExists("locate"))
         if (runCatching { waitFor(45_000) { tagExists("alert-strip") } }.isSuccess) {
-            tag("alert-collapse").performClick()
+            click("alert-collapse")
             waitFor { tagExists("alert-pill") }
-            tag("alert-pill").performClick()
+            click("alert-pill")
             waitFor { tagExists("alert-strip") }
         }
         stopNavigation()
