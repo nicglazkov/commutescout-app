@@ -331,6 +331,10 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     /** A camera the screen moves to once the map is up (debug hook "csView"). */
     var wantedView: List<Double>? = null
     var wantedTour = false
+    /** Debug builds: open the next alert ahead as soon as it shows ("csSeeMore"). */
+    var wantedOpen = false
+    /** Debug builds: a design gallery over the map ("csGallery"). */
+    var wantedGallery: String? = null
 
     val reportLatLon: LatLon?
         get() = (_state.value as? DriveState.Found)?.place?.let { LatLon(it.lat, it.lon) } ?: _here.value ?: viewCenter
