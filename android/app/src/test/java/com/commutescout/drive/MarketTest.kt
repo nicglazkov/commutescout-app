@@ -50,7 +50,7 @@ class MarketTest {
     @Test fun detailsCopy() {
         assertEquals("Its alerts are on your map", Market.showSub(true))
         assertEquals("Off for now. Nothing is shown or asked for.", Market.showSub(false))
-        assertTrue(Market.inAlerts(cams).startsWith("Its alerts can be spoken"))
+        assertTrue(Market.inAlerts(cams).startsWith("Shown on your map. Spoken only if"))
         assertTrue(Market.inAlerts(waze).startsWith("Not reviewed"))
         assertEquals("None", Market.alertsNow(0))
         assertEquals("1 alert", Market.alertsNow(1))
@@ -81,5 +81,16 @@ class MarketTest {
         val own = Market.uses(waze.copy(base = "https://x", ownSessionPath = "/s"))
         assertEquals("Your sign-in", own[1].title)
         assertTrue(Market.uses(waze.copy(acceptsReports = true)).any { it.title.startsWith("Reports") })
+    }
+
+    @Test fun aPluginRowSaysAddedBeforeOnOrOff() {
+        assertEquals("Not added", Market.rowValue("a", setOf("a"), emptySet()))
+        assertEquals("Off", Market.rowValue("a", setOf("a"), setOf("a")))
+        assertEquals("On", Market.rowValue("a", emptySet(), emptySet()))
+    }
+
+    @Test fun aFailedListDoesNotReadAsAnEmptyOne() {
+        assertEquals("No plugin is listed yet.", Market.emptyLine(false))
+        assertEquals("The plugin list is not available right now.", Market.emptyLine(true))
     }
 }

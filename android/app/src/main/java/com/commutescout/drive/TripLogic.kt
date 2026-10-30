@@ -13,6 +13,13 @@ import kotlin.math.roundToInt
  */
 
 object TripText {
+    /** The place sheet with no drive time to show: on its way, not to be had, or no place to start from. */
+    fun driveStatus(asked: Boolean, located: Boolean): String = when {
+        asked -> "Drive time is not available right now"
+        located -> "Checking the drive"
+        else -> "Waiting for your location"
+    }
+
     /** How many leading characters of [name] the query [q] matches, to set in bold; 0 when it does not start the name. */
     fun boldPrefix(name: String, q: String): Int {
         val t = q.trim()

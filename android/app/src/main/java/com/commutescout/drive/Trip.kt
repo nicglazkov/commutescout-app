@@ -360,7 +360,7 @@ internal fun PlaceSheet(place: Place, here: LatLon?, model: DriveViewModel, onWa
                 } else {
                     val away = here?.let { Units.distance(AlertsEngine.meters(it, LatLon(place.lat, place.lon))) + " away" }
                     if (away != null) Text(away, style = DGType.alertTitle, color = DG.ink)
-                    Text(if (mine == null) "Checking the drive" else "Drive time is not available right now",
+                    Text(TripText.driveStatus(asked = mine != null, located = model.canRoute),
                         Modifier.padding(top = 4.dp), style = DGType.alertBody, color = DG.faint)
                 }
             }
@@ -450,7 +450,7 @@ private fun WayRow(u: Upcoming, onClick: () -> Unit) {
 
 // routes
 
-/** The alternatives, fastest first, a highlight that slides to the one chosen, leave later, and Start. */
+/** The alternatives, a highlight that slides to the one chosen, leave later, and Start. */
 @Composable
 internal fun RoutesSheet(routes: List<Route>, place: Place, model: DriveViewModel, onChosen: (Route) -> Unit) {
     var chosen by remember(routes) { mutableStateOf(0) }
@@ -458,6 +458,7 @@ internal fun RoutesSheet(routes: List<Route>, place: Place, model: DriveViewMode
     LaunchedEffect(place) { model.loadLeaveLater(place) }
     val leave by model.leaveLater.collectAsStateWithLifecycle()
     val events = remember(routes) { routes.map { model.eventsOn(it) } }
+    val fastest = remember(routes) { routes.indices.minByOrNull { secondsOf(routes[it]) } ?: 0 }
     FitSheet(Modifier.tag("routes-card"), onDismiss = { model.show(place) }) {
         Text("Routes to ${place.shortName}", Modifier.padding(horizontal = 22.dp).padding(bottom = 6.dp), style = PageType.groupHead, color = DG.sub)
         val step = 78.dp
@@ -466,7 +467,7 @@ internal fun RoutesSheet(routes: List<Route>, place: Place, model: DriveViewMode
             Box(Modifier.offset(y = y).fillMaxWidth().height(74.dp).clip(RoundedCornerShape(22.dp)).background(DG.low.copy(alpha = .08f))
                 .border(1.5.dp, DG.low.copy(alpha = .45f), RoundedCornerShape(22.dp)))
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                routes.forEachIndexed { i, r -> RouteRow(r, i, i == chosen, events.getOrNull(i).orEmpty()) { chosen = i } }
+                routes.forEachIndexed { i, r -> RouteRow(r, i, i == chosen, i == fastest, events.getOrNull(i).orEmpty()) { chosen = i } }
             }
         }
         val answer = leave?.takeIf { it.first.lat == place.lat && it.first.lon == place.lon }?.second
@@ -493,14 +494,14 @@ internal fun RoutesSheet(routes: List<Route>, place: Place, model: DriveViewMode
 }
 
 @Composable
-private fun RouteRow(r: Route, i: Int, selected: Boolean, events: List<Upcoming>, onClick: () -> Unit) {
+private fun RouteRow(r: Route, i: Int, selected: Boolean, isFastest: Boolean, events: List<Upcoming>, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(74.dp).clip(RoundedCornerShape(22.dp)).clickable(onClick = onClick).tag("route-$i")
         .padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(viaOf(r)?.let { "via $it" } ?: "Route ${i + 1}",
                     Modifier.weight(1f, fill = false), style = DGType.row, color = DG.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (i == 0) {
+                if (isFastest) {
                     Spacer(Modifier.width(8.dp))
                     Text("Fastest", Modifier.clip(RoundedCornerShape(8.dp)).background(DG.good.copy(alpha = .1f)).padding(horizontal = 7.dp, vertical = 2.dp),
                         style = PageType.tag, color = DG.goodInk)

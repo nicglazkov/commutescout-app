@@ -583,10 +583,12 @@ fun PluginsPage(model: DriveViewModel) {
     var showMarket by remember { mutableStateOf(false) }
     var showMine by remember { mutableStateOf(false) }
     var statusOf by remember { mutableStateOf<String?>(null) }
+    var listFailed by remember { mutableStateOf(false) }
+    val paused by model.sources.paused.collectAsStateWithLifecycle()
     if (showMarket) MarketplaceSheet(model) { showMarket = false }
     if (showMine) SourcesSheet(model) { showMine = false }
     statusOf?.let { PluginStatusSheet(model, it) { statusOf = null } }
-    LaunchedEffect(Unit) { model.sources.loadCatalog() }
+    LaunchedEffect(Unit) { listFailed = !model.sources.loadCatalog() }
     GroupHead("Show on the map", Modifier.padding(top = 0.dp))
     Box(Modifier.padding(horizontal = 14.dp)) {
         Segmented(Prefs.SourceFilter.entries.map { it.label }, model.prefs.sourceFilter.ordinal, {
@@ -600,11 +602,11 @@ fun PluginsPage(model: DriveViewModel) {
     })
     GroupHead("Plugins", trailing = { Tag("Not official", TagLook.PLUGIN, icon = "puzzle") })
     Group(plugin = true) {
-        if (catalog.isEmpty()) Text("No plugin is listed right now.", Modifier.padding(16.dp), style = PageType.rowSub, color = DG.sub)
+        if (catalog.isEmpty()) Text(Market.emptyLine(listFailed), Modifier.padding(16.dp), style = PageType.rowSub, color = DG.sub)
         catalog.forEachIndexed { i, p ->
             if (i > 0) RowDivider(58.dp, plugin = true)
-            SRow(p.name, Modifier.tag("plugin-row-${p.id}"), sub = if (p.ok == false) "Not answering" else "${p.count} alerts",
-                value = if (p.id !in off) "Installed" else "Off", chevron = true,
+            SRow(p.name, Modifier.tag("plugin-row-${p.id}"), sub = if (p.ok == false) "Not answering" else if (p.count == 0) "No alerts now" else Market.alertsNow(p.count),
+                value = Market.rowValue(p.id, off, paused), chevron = true,
                 lead = { PluginBadge(p.id, PluginStyle.oneCategory(p.kinds), 32.dp) }, onClick = { statusOf = p.id })
         }
     }

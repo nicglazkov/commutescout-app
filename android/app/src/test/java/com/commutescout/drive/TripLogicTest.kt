@@ -146,4 +146,10 @@ class TripLogicTest {
         assertEquals(listOf("near", "far"), OnTheWay.along(line, listOf(far, off, camera, near)).map { it.marker.id })
         assertTrue(OnTheWay.along(listOf(LatLon(37.0, -122.0)), listOf(near)).isEmpty())
     }
+
+    @Test fun theDriveLineNeverWaitsForever() {
+        assertEquals("Checking the drive", TripText.driveStatus(asked = false, located = true))
+        assertEquals("Waiting for your location", TripText.driveStatus(asked = false, located = false))
+        assertEquals("Drive time is not available right now", TripText.driveStatus(asked = true, located = true))
+    }
 }

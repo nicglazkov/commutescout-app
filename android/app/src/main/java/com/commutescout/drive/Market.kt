@@ -56,10 +56,9 @@ object Market {
 
     fun showSub(on: Boolean) = if (on) "Its alerts are on your map" else "Off for now. Nothing is shown or asked for."
 
-    /** The "In alerts" line: reviewed plugins may speak; the others only if the person says so. */
+    /** The "In alerts" line: no plugin speaks unless the person says so, reviewed or not. */
     fun inAlerts(s: FlareSource): String = when {
-        s.tier == "approved" -> "Its alerts can be spoken while you drive, like official ones."
-        s.tier == "private" -> "Shown on your map. Spoken only if you turn that on in Settings > Alerts."
+        s.tier == "approved" || s.tier == "private" -> "Shown on your map. Spoken only if you turn that on in Settings > Alerts."
         else -> "Not reviewed: shown on your map, spoken only if you turn that on in Settings > Alerts."
     }
 
@@ -89,6 +88,15 @@ object Market {
     }
 
     fun alertsNow(n: Int) = when (n) { 0 -> "None"; 1 -> "1 alert"; else -> "%,d alerts".format(n) }
+
+    /** A plugin's row on the Plugins page: added or not comes first, then whether it is showing. */
+    fun rowValue(id: String, hidden: Set<String>, paused: Set<String>) = when {
+        !isAdded(id, hidden, paused) -> "Not added"
+        id in hidden -> "Off"
+        else -> "On"
+    }
+
+    fun emptyLine(failed: Boolean) = if (failed) "The plugin list is not available right now." else "No plugin is listed yet."
 
     fun every(seconds: Int): String = when {
         seconds < 60 -> "Every $seconds s"
