@@ -213,7 +213,8 @@ data class RoadMarker(
     /** The lane layout at the event, or null to draw the kind without lanes. */
     val laneLayout: LaneLayout? get() = LaneLayout.from(lane_layout)
 
-    val key: String get() = "$kind:${id ?: "%.4f,%.4f".format(lat, lon)}"
+    /** Worked out once: the marker store reads this for every marker on every pass. */
+    val key: String by lazy(LazyThreadSafetyMode.PUBLICATION) { "$kind:${id ?: "%.4f,%.4f".format(lat, lon)}" }
 
     /** Fires too small or too contained to announce on a drive. */
     val tooMinorToAnnounce: Boolean get() = kind == "wildfire" && ((contained ?: 0.0) >= 90 || (acres != null && acres < 10))

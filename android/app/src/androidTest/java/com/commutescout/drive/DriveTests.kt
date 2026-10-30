@@ -2,6 +2,7 @@ package com.commutescout.drive
 
 import android.Manifest
 import android.content.Intent
+import android.os.SystemClock
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -26,6 +27,7 @@ import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.geometry.Offset
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Until
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.test.core.app.ActivityScenario
@@ -37,7 +39,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
+import org.junit.rules.Timeout
 import org.junit.runner.RunWith
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 /**
  * Every workflow a driver can do, on the emulator or a phone, with a
@@ -47,11 +53,16 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class DriveTests {
-    @get:Rule val compose = createEmptyComposeRule()
-    /** A hang fails with a stack trace instead of stalling the suite. */
-    @get:Rule val timeout: org.junit.rules.Timeout = org.junit.rules.Timeout.seconds(240)
-    @get:Rule val location: GrantPermissionRule = GrantPermissionRule.grant(
-        Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+    private val compose = createEmptyComposeRule()
+    /**
+     * The timeout is the outermost rule, so it also covers the Compose
+     * rule's teardown. A hang fails with the stuck thread's stack trace
+     * instead of stalling the suite.
+     */
+    @get:Rule val rules: RuleChain = RuleChain
+        .outerRule(Timeout.builder().withTimeout(300, TimeUnit.SECONDS).withLookingForStuckThread(true).build())
+        .around(compose)
+        .around(GrantPermissionRule.grant(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     private var scenario: ActivityScenario<MainActivity>? = null
 
     private fun launch(vararg flags: String) {
@@ -59,22 +70,57 @@ class DriveTests {
         val intent = Intent(ctx, MainActivity::class.java)
         for (f in listOf("csSimulate", "csResetPlaces", "csResetPrefs") + flags) intent.putExtra(f, true)
         scenario = ActivityScenario.launch(intent)
+        // A scripted drive starts seconds after launch, which on a slow
+        // emulator is before this line: it has no search bar to wait for,
+        // and stopping "a trip left over" would stop the drive itself.
+        if ("csAutoDrive" in flags) return
         // Process singletons outlive activities: a trip left by an earlier test is stopped here.
         scenario?.onActivity { if (it.model.state.value !is DriveState.Browsing) it.model.stopNavigation() }
-        compose.waitUntil(45_000) { compose.onAllNodesWithTag("search").fetchSemanticsNodes().isNotEmpty() }
+        assertTrue("search bar after launch", device().wait(Until.hasObject(By.res("search")), 60_000))
+        settle()
+    }
+
+    /** A cold start can take longer to settle than one idling timeout. */
+    private fun settle() {
+        val end = SystemClock.uptimeMillis() + 45_000
+        while (true) {
+            try { compose.waitForIdle(); return } catch (e: Throwable) {
+                if (!isBusy(e) || SystemClock.uptimeMillis() > end) throw e
+            }
+        }
     }
 
     @Before fun start() {
         // A busy Compose gives up in seconds, not the default 26, so the fallback can take over.
-        androidx.test.espresso.IdlingPolicies.setIdlingResourceTimeout(6, java.util.concurrent.TimeUnit.SECONDS)
+        androidx.test.espresso.IdlingPolicies.setIdlingResourceTimeout(10, TimeUnit.SECONDS)
         launch()
     }
-    @After fun stop() { scenario?.close() }
+
+    /**
+     * Closing waits for the main thread to go quiet, with no limit and
+     * ignoring interrupts, so it gets its own thread and deadline: a phone
+     * that never settles is then this failure and not a stalled run.
+     */
+    @After fun stop() {
+        val open = scenario ?: return
+        runCatching { open.onActivity { if (it.model.state.value !is DriveState.Browsing) it.model.stopNavigation() } }
+        val closing = thread(isDaemon = true, name = "close-activity") { open.close() }
+        closing.join(60_000)
+        assertTrue("the activity closed within a minute", !closing.isAlive)
+    }
 
     private fun tag(t: String): SemanticsNodeInteraction = compose.onNodeWithTag(t, useUnmergedTree = true)
     private fun text(t: String, sub: Boolean = false) = compose.onNodeWithText(t, substring = sub, useUnmergedTree = true)
-    private fun waitFor(timeoutMs: Long = 15_000, what: () -> Boolean) = compose.waitUntil(timeoutMs) { what() }
-    private fun exists(t: String) = compose.onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+    private fun waitFor(timeoutMs: Long = 15_000, what: () -> Boolean) {
+        val end = SystemClock.uptimeMillis() + timeoutMs
+        while (!what()) {
+            if (SystemClock.uptimeMillis() > end) throw AssertionError("still waiting after $timeoutMs ms")
+            Thread.sleep(100)
+        }
+    }
+    private fun exists(t: String) = whileBusy({ device().hasObject(By.textContains(t)) }) {
+        compose.onAllNodesWithText(t, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+    }
     private fun tagExists(t: String) = whileBusy({ device().hasObject(By.res(t)) }) {
         compose.onAllNodesWithTag(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     }
@@ -89,11 +135,14 @@ class DriveTests {
      * UiAutomator, which reads the screen without waiting.
      */
     private fun <T> whileBusy(fallback: () -> T, block: () -> T): T = try { block() } catch (e: Throwable) {
-        val busy = generateSequence(e) { it.cause }.any { c -> c::class.java.simpleName.let { "NotIdle" in it || "IdlingResourceTimeout" in it } }
-        if (!busy) throw e
+        if (!isBusy(e)) throw e
         fallback()
     }
-    private fun existsExact(t: String) = compose.onAllNodesWithText(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+    private fun isBusy(e: Throwable) =
+        generateSequence(e) { it.cause }.any { c -> c::class.java.simpleName.let { "NotIdle" in it || "IdlingResourceTimeout" in it } }
+    private fun existsExact(t: String) = whileBusy({ device().hasObject(By.text(t)) }) {
+        compose.onAllNodesWithText(t, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+    }
 
     private fun search(q: String) {
         tag("search").performClick()

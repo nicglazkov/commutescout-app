@@ -343,7 +343,6 @@ fun DataSourcesPage() {
     val scope = rememberCoroutineScope()
     var justChecked by remember { mutableStateOf(false) }
     LaunchedEffect(busy) { if (!busy && justChecked) { delay(4000); justChecked = false } }
-    val spin by rememberInfiniteTransition(label = "spin").animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "spin")
     val r = report
     Group(Modifier.padding(top = 4.dp).tag("sources-health")) {
         Row(Modifier.padding(start = 14.dp, end = 10.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -364,7 +363,11 @@ fun DataSourcesPage() {
             Box(Modifier.size(44.dp).clip(CircleShape).background(DG.low.copy(alpha = .1f))
                 .clickable(role = Role.Button) { justChecked = true; scope.launch { DataSources.refresh() } }
                 .semantics { contentDescription = "Check again" }.tag("sources-refresh"), contentAlignment = Alignment.Center) {
-                DGIcon("refresh", DG.low, 20.dp, Modifier.rotate(if (busy) spin else 0f), stroke = 2.4f)
+                if (busy) {
+                    // Composed only while it turns: an endless animation on a still page keeps the screen drawing.
+                    val spin by rememberInfiniteTransition(label = "spin").animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "spin")
+                    DGIcon("refresh", DG.low, 20.dp, Modifier.rotate(spin), stroke = 2.4f)
+                } else DGIcon("refresh", DG.low, 20.dp, stroke = 2.4f)
             }
         }
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
