@@ -1,6 +1,9 @@
 package com.commutescout.drive
 
+import com.commutescout.drive.design.AlertWords
+import com.commutescout.drive.design.Looks
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -34,5 +37,37 @@ class ClearedAheadTest {
 
     @Test fun nothingBeforeTheFirstAnswer() {
         assertTrue(AlertsEngine.clearedAhead(emptyList(), emptyList(), along = 0.0).isEmpty())
+    }
+
+    // What is said, and when.
+
+    @Test fun theVoiceSaysTheCapsulesWords() {
+        val crash = RoadMarker(kind = "incident", lat = 37.442, lon = -122.143, id = "a", label = "Trfc Collision-No Inj")
+        assertEquals("Crash ahead has cleared", AlertWords.clearedLine(AlertWords.shortTitle(crash, Looks.of(crash))))
+        assertEquals("Crash ahead has cleared", AlertsEngine.clearedSentence(crash))
+        val closure = RoadMarker(kind = "lane_closure", lat = 37.442, lon = -122.143, id = "b")
+        assertEquals("Lane closure ahead has cleared", AlertsEngine.clearedSentence(closure))
+    }
+
+    private val on = Prefs.AlertRule(true, true, 1500.0, 0.0)
+
+    @Test fun speaksOnlyOnATripWithTheAlertsRule() {
+        assertTrue(AlertsEngine.speaksCleared(on, muted = false, freeDrive = false))
+        assertFalse(AlertsEngine.speaksCleared(on, muted = true, freeDrive = false))
+        assertFalse(AlertsEngine.speaksCleared(on, muted = false, freeDrive = true))
+        assertFalse(AlertsEngine.speaksCleared(on.copy(speak = false), muted = false, freeDrive = false))
+        assertFalse(AlertsEngine.speaksCleared(on.copy(enabled = false), muted = false, freeDrive = false))
+    }
+
+    @Test fun aPluginEventFollowsThePluginSpeechSetting() {
+        val plugin = RoadMarker(kind = "plugin", lat = 37.442, lon = -122.143, id = "p", source = "Test plugin")
+        fun rule(speakPlugins: Boolean) = AlertChips.apply(on, plugin, AlertDelivery.VOICE, emptySet(), emptySet(), speakPlugins)
+        assertFalse(AlertsEngine.speaksCleared(rule(false), muted = false, freeDrive = false))
+        assertTrue(AlertsEngine.speaksCleared(rule(true), muted = false, freeDrive = false))
+    }
+
+    @Test fun theSilentDeliverySaysNothing() {
+        val m = RoadMarker(kind = "incident", lat = 37.442, lon = -122.143, id = "a")
+        assertFalse(AlertsEngine.speaksCleared(AlertChips.apply(on, m, AlertDelivery.SILENT, emptySet(), emptySet(), false), muted = false, freeDrive = false))
     }
 }
