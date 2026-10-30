@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
             intent?.getStringExtra("csPage")?.let { MorePages.wanted = it }
             // "csArrive" shows the arrive sheet for a made-up trip, for screenshots.
             if (intent?.getBooleanExtra("csArrive", false) == true) model.showArriveDemo()
+            ReportDebug.preview = intent?.getBooleanExtra("csReportPreview", false) == true
             // "csView" = "lat,lon,zoom" puts the camera somewhere, for screenshots.
             intent?.getStringExtra("csView")?.split(",")?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 3 }?.let { model.wantedView = it }
             // "csTour" zooms and pans through a set of views, for a recording.
