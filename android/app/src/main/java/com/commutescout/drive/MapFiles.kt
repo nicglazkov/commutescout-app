@@ -95,6 +95,7 @@ object MapFiles {
         }.getOrDefault(emptyList()).filter { path(it).exists() }
         _manifest.value = runCatching { Backend.json.decodeFromString(Manifest.serializer(), File(folder, "manifest.json").readText()) }.getOrNull()
         scope.launch { Connectivity.online.collect { up -> networkChanged(up) } }
+        _wifiUpdates.value = settings.getBoolean("wifi.update", true)
         scope.launch { refreshManifest() }
         pruneCorridors()
     }
@@ -153,7 +154,11 @@ object MapFiles {
     suspend fun refreshManifest() {
         if (!Connectivity.online.value) return
         runCatching { Backend.get<Manifest>("/api/map/manifest", emptyMap()) }
-            .onSuccess { m -> _manifest.value = m; runCatching { File(folder, "manifest.json").writeText(Backend.json.encodeToString(Manifest.serializer(), m)) } }
+            .onSuccess { m ->
+                _manifest.value = m
+                runCatching { File(folder, "manifest.json").writeText(Backend.json.encodeToString(Manifest.serializer(), m)) }
+                scope.launch { updateStale() }
+            }
             .onFailure { Log.w(TAG, "manifest unavailable: $it") }
     }
 
@@ -211,8 +216,10 @@ object MapFiles {
         try {
             val written = withContext(Dispatchers.IO) {
                 val req = Request.Builder().url(s.url).build()
-                Backend.http.newBuilder().callTimeout(0, java.util.concurrent.TimeUnit.SECONDS).readTimeout(600, java.util.concurrent.TimeUnit.SECONDS).build()
-                    .newCall(req).execute().use { r ->
+                val call = Backend.http.newBuilder().callTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(600, java.util.concurrent.TimeUnit.SECONDS).build().newCall(req)
+                calls[id] = call
+                call.execute().use { r ->
                         if (!r.isSuccessful) throw BackendError("HTTP ${r.code}", r.code)
                         write(r.body.byteStream(), r.body.contentLength(), path(file), id)
                     }
@@ -223,10 +230,105 @@ object MapFiles {
             notice.value = "${s.name} saved (${done.sizeText})."
             Log.i(TAG, "state ${s.code} saved, ${done.sizeText}")
         } catch (e: Exception) {
-            path(file).delete()
-            notice.value = if (Connectivity.isOffline(e)) OfflineText.RETRY else "Could not download ${s.name}."
+            File(path(file).path + ".part").delete()
+            if (calls[id]?.isCanceled() != true) notice.value = if (Connectivity.isOffline(e)) OfflineText.RETRY else "Could not download ${s.name}."
             Log.w(TAG, "state ${s.code} failed: $e")
-        } finally { clearProgress(id) }
+        } finally { calls.remove(id); clearProgress(id) }
+    }
+
+    // ------------------------------------------------- areas, stop, update
+
+    /** Downloads the driver can stop, by file id. */
+    private val calls = java.util.concurrent.ConcurrentHashMap<String, okhttp3.Call>()
+
+    /** Stops a download in flight; its partial file goes and nothing is saved. */
+    fun stop(id: String) { calls[id]?.cancel() }
+
+    /**
+     * An area the driver drew. The map server cuts corridors only, so the
+     * box goes as a path that folds back and forth across it with the
+     * widest buffer, which covers every street inside.
+     */
+    suspend fun saveArea(south: Double, west: Double, north: Double, east: Double, name: String,
+                         id: String = "area-" + System.currentTimeMillis() / 1000): LocalFile? {
+        if (!AreaMath.fits(south, west, north, east)) { notice.value = "That area is too big to save at once. Make it smaller."; return null }
+        val file = LocalFile(id, "area", name, 0, south, west, north, east, System.currentTimeMillis(), _manifest.value?.build)
+        return extract(file, AreaMath.serpentine(south, west, north, east), AreaMath.BUFFER_M)
+    }
+
+    /** Fetches a newer copy of a saved map in place: a state from the manifest, an area or a trip cut again. */
+    suspend fun update(f: LocalFile): LocalFile? = when (f.kind) {
+        "state" -> {
+            if (_manifest.value == null) refreshManifest()
+            val s = _manifest.value?.states?.firstOrNull { "state-${it.code}" == f.id }
+            if (s == null) { notice.value = "Could not find ${f.name} in the list of maps. Try again later."; null }
+            else { downloadState(s); has(s.code) }
+        }
+        "area" -> saveArea(f.south, f.west, f.north, f.east, f.name, f.id)
+        else -> f.path?.takeIf { it.size >= 2 }?.let { p ->
+            extract(f, p.map { LatLon(it[0], it[1]) }, _manifest.value?.corridor?.buffer_m ?: 2500.0)
+        }
+    }
+
+    /** Cuts [file] from the online map along [path] and saves it, replacing any file with the same id. */
+    private suspend fun extract(file: LocalFile, path: List<LatLon>, bufferM: Double): LocalFile? {
+        val id = file.id
+        if (!Connectivity.online.value || path.size < 2 || _progress.value.containsKey(id)) return null
+        setProgress(id, 0f)
+        val step = maxOf(1, path.size / 2000 + 1)
+        val body = buildJsonObject {
+            put("path", buildJsonArray { for (i in path.indices step step) add(JsonArray(listOf(JsonPrimitive(path[i].lat), JsonPrimitive(path[i].lon)))) })
+            put("buffer_m", JsonPrimitive(bufferM))
+        }.toString()
+        val fresh = File(folder, "$id.new")
+        try {
+            val written = withContext(Dispatchers.IO) {
+                val req = Request.Builder().url("${Backend.BASE}/api/map/extract").post(body.toRequestBody("application/json".toMediaType())).build()
+                val call = Backend.http.newBuilder().callTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS).build().newCall(req)
+                calls[id] = call
+                call.execute().use { r ->
+                    if (!r.isSuccessful) throw BackendError("HTTP ${r.code}", r.code)
+                    write(r.body.byteStream(), r.body.contentLength(), fresh, id)
+                }
+            }
+            val done = file.copy(bytes = written, savedAt = System.currentTimeMillis(), build = _manifest.value?.build ?: file.build)
+            if (_usingLocal.value?.id == id) _usingLocal.value = null
+            path(done).delete()
+            if (!fresh.renameTo(path(done))) throw BackendError("could not move the map file into place")
+            _files.value = _files.value.filter { it.id != id } + done
+            persist()
+            notice.value = "${done.name} saved (${done.sizeText})."
+            return done
+        } catch (e: Exception) {
+            fresh.delete(); File(fresh.path + ".part").delete()
+            if (calls[id]?.isCanceled() != true) notice.value = if (Connectivity.isOffline(e)) OfflineText.RETRY else "Could not save ${file.name}."
+            Log.w(TAG, "$id not saved: $e")
+            return null
+        } finally { calls.remove(id); clearProgress(id) }
+    }
+
+    // ---------------------------------------------------- update on Wi-Fi
+
+    private val settings by lazy { app.getSharedPreferences("mapfiles", Context.MODE_PRIVATE) }
+    /** Saved states and areas refresh when a newer map is out, on Wi-Fi only. */
+    private val _wifiUpdates = MutableStateFlow(true)
+    val wifiUpdates = _wifiUpdates.asStateFlow()
+    fun setWifiUpdates(on: Boolean) {
+        _wifiUpdates.value = on
+        settings.edit().putBoolean("wifi.update", on).apply()
+        if (on) scope.launch { updateStale() }
+    }
+
+    /** Saved states and areas made from an older map than the one out now. */
+    fun stale(): List<LocalFile> {
+        val build = _manifest.value?.build ?: return emptyList()
+        return _files.value.filter { it.kind != "corridor" && it.build != null && it.build != build }
+    }
+
+    private suspend fun updateStale() {
+        if (!_wifiUpdates.value || !Connectivity.onWifi.value) return
+        for (f in stale()) { if (!Connectivity.onWifi.value) break; update(f) }
     }
 
     fun delete(f: LocalFile) {

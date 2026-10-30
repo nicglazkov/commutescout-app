@@ -170,4 +170,12 @@ class WatchAreasTest {
         assertTrue(tiny.trips > 0.02f)
         assertEquals(1f, tiny.states + tiny.areas + tiny.trips, 1e-4f)
     }
+
+    @Test fun savedWhenReadsLikeASentence() {
+        val today = java.time.LocalDate.of(2026, 10, 29)
+        fun at(d: Int, h: Int, m: Int) = java.time.LocalDateTime.of(2026, 10, d, h, m).toInstant(ZoneOffset.UTC).toEpochMilli()
+        assertEquals("today, 6:40 AM", savedWhen(at(29, 6, 40), ZoneOffset.UTC, today))
+        assertEquals("yesterday, 9:05 PM", savedWhen(at(28, 21, 5), ZoneOffset.UTC, today))
+        assertEquals("Oct 12", savedWhen(at(12, 8, 0), ZoneOffset.UTC, today))
+    }
 }
