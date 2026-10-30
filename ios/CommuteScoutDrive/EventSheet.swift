@@ -22,7 +22,7 @@ struct EventPanel: View {
     var body: some View {
         let marker = model.selectedMarker
         VStack(spacing: 0) {
-            Capsule().fill(Color.secondary.opacity(0.4)).frame(width: 36, height: 5)
+            Capsule().fill(DG.ink.opacity(0.18)).frame(width: 40, height: 5)
                 .padding(.top, 8).padding(.bottom, 6)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
@@ -46,9 +46,11 @@ struct EventPanel: View {
                         Text(c.dispatch != nil ? "More details and the dispatch log" : "More details")
                         Image(systemName: "chevron.down")
                     }
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .font(DG.T.button).foregroundStyle(DG.ink)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(DG.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: DG.R.box, style: .continuous))
                 }
+                .buttonStyle(.plain)
                 .padding(.horizontal, 16).padding(.top, 8)
                 .accessibilityIdentifier("event-more")
             }
@@ -56,11 +58,11 @@ struct EventPanel: View {
                 .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 12)
         }
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(uiColor: .systemBackground))
-                // The bottom corners sit under the screen edge.
+            // Day Glass: the sheet's glass, its bottom corners under the
+            // screen edge.
+            Color.clear
+                .dgGlass(DGCorners(radius: DG.R.sheet, corners: [.topLeft, .topRight]))
                 .padding(.bottom, -40)
-                .shadow(color: .black.opacity(0.18), radius: 14, y: -2)
         )
         .offset(y: max(0, drag))
         .gesture(
@@ -96,30 +98,29 @@ struct EventPanel: View {
                     model.show(Place(name: marker.displayTitle, coordinate: marker.coordinate, kind: .recent))
                 } label: {
                     Label("Navigate here", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
-                        .font(.body.weight(.semibold))
-                        .frame(maxWidth: .infinity).padding(.vertical, 8)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.dgPrimary)
                 if marker.kind == "plugin" { ConfirmButtons(marker: marker) }
                 ShareLink(item: marker.webURL) {
-                    Image(systemName: "square.and.arrow.up").padding(.vertical, 8).padding(.horizontal, 6)
+                    Image(systemName: "square.and.arrow.up").font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(DG.ink).frame(width: 48, height: 48)
+                        .background(DG.ink.opacity(0.06), in: Circle())
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(DGPressStyle())
                 .accessibilityLabel("Share")
             } else if let focus = model.alertFocus {
                 Button {
                     model.focusEvent(focus.ref.coordinate, zoom: 15)
                 } label: {
-                    Label("Show on map", systemImage: "map").frame(maxWidth: .infinity).padding(.vertical, 8)
+                    Label("Show on map", systemImage: "map")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.dgGlass)
                 if let nearby = focus.nearby {
                     Button { model.select(nearby) } label: {
                         Text("Another \(AlertRef.noun(nearby.kind)) is reported here")
-                            .font(.subheadline.weight(.semibold)).multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity).padding(.vertical, 8)
+                            .multilineTextAlignment(.center)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.dgPrimary)
                 }
             }
         }
@@ -162,17 +163,17 @@ struct EventBody: View {
         HStack(spacing: 8) {
             HStack(spacing: 6) {
                 Circle().fill(accent).frame(width: 9, height: 9)
-                Text(content?.chip ?? Self.chip(kind)).font(.footnote.weight(.semibold)).foregroundStyle(accent)
+                Text(content?.chip ?? Self.chip(kind)).font(DG.T.chip).foregroundStyle(accent)
                     .lineLimit(1)
             }
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(accent.opacity(0.12), in: Capsule())
             if let ago = content?.ago {
-                Text(ago).font(.footnote).foregroundStyle(.secondary)
+                Text(ago).font(DG.T.noteBody).foregroundStyle(DG.sub)
             }
             Spacer()
             Button { model.clearMarker() } label: {
-                Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundStyle(.secondary)
+                Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundStyle(DG.sub)
                     .frame(width: 30, height: 30).background(Color.secondary.opacity(0.14), in: Circle())
             }
             .accessibilityLabel("Close")
@@ -187,15 +188,15 @@ struct EventBody: View {
 
     @ViewBuilder private func details(_ c: EventContent, _ m: RoadMarker) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(c.title).font(.title3.weight(.bold)).lineLimit(expanded ? nil : 3)
+            Text(c.title).font(DG.T.sheetTitle).lineLimit(expanded ? nil : 3)
                 .fixedSize(horizontal: false, vertical: true)
             if let sub = c.subtitle {
-                Text(sub).font(.subheadline).foregroundStyle(.secondary).lineLimit(expanded ? nil : 2)
+                Text(sub).font(DG.font(15)).foregroundStyle(DG.sub).lineLimit(expanded ? nil : 2)
             }
         }
         if let warning = c.warning {
             Label(warning, systemImage: "exclamationmark.octagon.fill")
-                .font(.subheadline.weight(.bold)).foregroundStyle(.red)
+                .font(DG.font(15, .bold)).foregroundStyle(.red)
         }
         // A camera's picture and a sign's board are the point of them:
         // shown collapsed too.
@@ -203,7 +204,7 @@ struct EventBody: View {
         if m.kind == "sign" { SignBoard(marker: m) }
         let lines = expanded ? c.body : Array(c.body.prefix(1))
         ForEach(lines, id: \.self) { line in
-            Text(line.text).font(line.gloss ? .subheadline.italic() : .body)
+            Text(line.text).font(line.gloss ? DG.font(15).italic() : DG.T.lede)
                 .lineLimit(expanded ? nil : 3)
                 .foregroundStyle(line.gloss ? .secondary : .primary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -221,7 +222,7 @@ struct EventBody: View {
                 }
                 ForEach(c.foot, id: \.self) { Text($0) }
             }
-            .font(.caption).foregroundStyle(.secondary)
+            .font(DG.T.rowSub).foregroundStyle(DG.sub)
         }
     }
 
@@ -247,16 +248,16 @@ struct StatusBanner: View {
                 Image(systemName: icon).font(.system(size: 18, weight: .semibold)).foregroundStyle(color)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(headline).font(.subheadline.weight(.semibold))
-                if let detail { Text(detail).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                Text(headline).font(DG.T.rowTitle)
+                if let detail { Text(detail).font(DG.T.noteBody).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true) }
                 if let retry {
-                    Button("Try again", action: retry).font(.footnote.weight(.semibold)).padding(.top, 2)
+                    Button("Try again", action: retry).font(DG.T.chip).padding(.top, 2)
                 }
             }
             Spacer(minLength: 0)
         }
         .padding(12)
-        .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: DG.R.facts, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("event-status")
     }
@@ -322,22 +323,22 @@ private struct AlertBlock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("YOUR ALERT").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+            Text("YOUR ALERT").font(DG.font(11.5, .bold)).foregroundStyle(DG.sub)
             if let watch = ref.watch {
-                Label(watch, systemImage: "scope").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                Label(watch, systemImage: "scope").font(DG.T.chip).foregroundStyle(DG.sub)
             }
-            Text(ref.title ?? "Watch alert").font(.title3.weight(.bold)).foregroundStyle(.secondary)
+            Text(ref.title ?? "Watch alert").font(DG.T.sheetTitle).foregroundStyle(DG.sub)
                 .fixedSize(horizontal: false, vertical: true)
             if let text = ref.body {
-                Text(text).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(text).font(DG.font(15)).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
             }
             if let sent = ref.sentAt {
-                Text("Sent " + sent.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.tertiary)
+                Text("Sent " + sent.formatted(date: .abbreviated, time: .shortened)).font(DG.T.rowSub).foregroundStyle(DG.faint)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(DG.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: DG.R.facts, style: .continuous))
     }
 }
 
@@ -350,15 +351,15 @@ private struct FactList: View {
             ForEach(Array(facts.enumerated()), id: \.offset) { i, f in
                 if i > 0 { Divider().padding(.leading, 12) }
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(f.label).foregroundStyle(.secondary)
+                    Text(f.label).foregroundStyle(DG.sub)
                     Spacer(minLength: 8)
                     Text(f.value).multilineTextAlignment(.trailing).fixedSize(horizontal: false, vertical: true)
                 }
-                .font(.subheadline)
+                .font(DG.font(15))
                 .padding(.horizontal, 12).padding(.vertical, 9)
             }
         }
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(DG.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: DG.R.facts, style: .continuous))
     }
 }
 
@@ -369,18 +370,18 @@ private struct ScheduleBox: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Label(schedule.head, systemImage: "calendar.badge.clock").font(.subheadline.weight(.semibold))
-            Text(schedule.tail).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Label(schedule.head, systemImage: "calendar.badge.clock").font(DG.T.rowTitle)
+            Text(schedule.tail).font(DG.font(15)).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
             if !schedule.inYourZone.isEmpty {
-                Text("In your timezone:").font(.caption.weight(.semibold)).padding(.top, 4)
-                ForEach(schedule.inYourZone, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
+                Text("In your timezone:").font(DG.font(12.5, .semibold)).padding(.top, 4)
+                ForEach(schedule.inYourZone, id: \.self) { Text($0).font(DG.T.rowSub).foregroundStyle(DG.sub) }
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .leading) { Rectangle().fill(accent).frame(width: 3) }
-        .background(accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(accent.opacity(0.07), in: RoundedRectangle(cornerRadius: DG.R.facts, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DG.R.facts, style: .continuous))
     }
 }
 
@@ -393,18 +394,18 @@ private struct ChainBox: View {
         VStack(alignment: .leading, spacing: 8) {
             if let active = levels.active {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Caltrans reports \(active.0) here").font(.subheadline.weight(.semibold))
-                    Text(active.1).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text("Caltrans reports \(active.0) here").font(DG.T.rowTitle)
+                    Text(active.1).font(DG.font(15)).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                Text("The other chain control levels:").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                .background(accent.opacity(0.1), in: RoundedRectangle(cornerRadius: DG.R.facts, style: .continuous))
+                Text("The other chain control levels:").font(DG.font(12.5, .semibold)).foregroundStyle(DG.sub)
             }
             ForEach(Array(levels.others.enumerated()), id: \.offset) { _, row in
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(row.0).font(.footnote.weight(.bold).monospaced()).foregroundStyle(accent)
-                    Text(row.1).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(row.1).font(DG.T.noteBody).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -425,11 +426,11 @@ private struct DispatchLogView: View {
                 section("Dispatch log (newest first)", key: "Blue text is a rough translation of the CHP shorthand.")
                 ForEach(Array(log.log.enumerated()), id: \.offset) { _, row in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(row.time).font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 62, alignment: .leading)
+                        Text(row.time).font(.caption.monospacedDigit()).foregroundStyle(DG.sub).frame(width: 62, alignment: .leading)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(row.text).font(.footnote.monospaced()).fixedSize(horizontal: false, vertical: true)
                             if let plain = row.plain {
-                                Text(plain).font(.footnote).foregroundStyle(.blue).fixedSize(horizontal: false, vertical: true)
+                                Text(plain).font(DG.T.noteBody).foregroundStyle(.blue).fixedSize(horizontal: false, vertical: true)
                             }
                         }
                     }
@@ -439,13 +440,13 @@ private struct DispatchLogView: View {
                             key: "One line per unit. \"Cleared to leave\" means the unit finished its part and left the scene. CHP does not name units in the public feed.")
                     ForEach(log.units, id: \.unit) { u in
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text("Unit \(u.unit)").font(.footnote.weight(.bold)).frame(width: 62, alignment: .leading)
+                            Text("Unit \(u.unit)").font(DG.font(13.5, .bold)).frame(width: 62, alignment: .leading)
                             Text(u.steps.map { "\($0.status) \($0.time)" }.joined(separator: ", ") + (u.done ? "" : ". Still working the scene"))
-                                .font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                .font(DG.T.noteBody).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
-                if log.log.isEmpty && log.units.isEmpty { Text("No shared entries yet.").font(.footnote).foregroundStyle(.secondary) }
+                if log.log.isEmpty && log.units.isEmpty { Text("No shared entries yet.").font(DG.T.noteBody).foregroundStyle(DG.sub) }
             } else {
                 Button { Task { await load() } } label: {
                     HStack(spacing: 8) {
@@ -472,8 +473,8 @@ private struct DispatchLogView: View {
 
     private func section(_ title: String, key: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.subheadline.weight(.semibold))
-            Text(key).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(title).font(DG.T.rowTitle)
+            Text(key).font(DG.T.rowSub).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.top, 4)
     }

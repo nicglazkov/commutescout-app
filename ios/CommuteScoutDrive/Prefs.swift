@@ -70,7 +70,7 @@ final class Prefs: ObservableObject {
 
     @AppStorage("cs.theme") var themeRaw: String = Theme.system.rawValue
     @AppStorage("cs.mapstyle") var mapStyleRaw: String = MapStyle.auto.rawValue
-    @AppStorage("cs.3d") var is3D: Bool = true
+    @AppStorage("cs.3d") var is3D: Bool = false   // 2D until the driver picks 3D
     /// Save the map along a route when a trip starts, on Wi-Fi.
     @AppStorage("cs.map.autosave") var mapAutoSave: Bool = true
     @AppStorage("cs.traffic") var traffic: Bool = false

@@ -222,6 +222,9 @@ struct RoadMarker: Decodable, Identifiable, Hashable {
     var end: [Double]? = nil         // closure end point, when there is no path
     var segs: [[[Double]]]? = nil    // toll corridor, one chain per segment
     var poly: [[[Double]]]? = nil    // burn footprint, one list per ring
+    /// The lanes at the event, when the server knows them. Never fails
+    /// to decode; a missing or odd value draws the kind's own picture.
+    var laneLayout: LaneLayout? = nil
 
     enum CodingKeys: String, CodingKey {
         case kind, lat, lon, id, type, cls, label, location, route, status, name, source, description
@@ -244,6 +247,7 @@ struct RoadMarker: Decodable, Identifiable, Hashable {
         case tollDir = "toll_dir"
         case tollNote = "toll_note"
         case asOf = "as_of"
+        case laneLayout = "lane_layout"
     }
 
     /// "I-80 East, Vacaville": the road a camera watches, the direction

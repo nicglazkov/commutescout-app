@@ -62,7 +62,7 @@ final class DriveUITests: XCTestCase {
         perspective.tap()
         perspective.tap()
         // Ferrostar's exit control is the X in the trip bar.
-        let exit = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'exit' OR label CONTAINS[c] 'stop' OR label CONTAINS[c] 'close'")).firstMatch
+        let exit = app.buttons.matching(NSPredicate(format: "identifier == 'end-trip' OR label CONTAINS[c] 'exit' OR label CONTAINS[c] 'stop' OR label CONTAINS[c] 'close'")).firstMatch
         if exit.waitForExistence(timeout: 5) {
             exit.tap()
         } else {

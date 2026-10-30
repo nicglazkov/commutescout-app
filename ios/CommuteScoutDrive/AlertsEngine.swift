@@ -86,6 +86,51 @@ final class AlertsEngine: ObservableObject {
 
     func dismiss(_ id: String) { dismissed.insert(id) }
 
+    /// An event on the route ahead that the server stopped reporting
+    /// before the driver reached it. The banner shows it green for a
+    /// few seconds. Passing an event never sets this.
+    @Published private(set) var cleared: Upcoming?
+    /// How far ahead a vanished event still counts as cleared.
+    var clearingWithin = 16093.0
+    /// Seconds the cleared alert stays up.
+    var clearedHold = 4.0
+    /// Debug builds: events added by a launch argument, kept across fetches.
+    private var debugExtra: [Upcoming] = []
+
+    /// Compares the route's list before and after a good fetch.
+    private func noteCleared(previous: [Upcoming], now: [Upcoming]) {
+        let keys = Set(now.map(\.id))
+        let shown = previous.filter { !dismissed.contains($0.id) && (rules?($0.marker).enabled ?? true) }
+        let gone = ClearingRule.vanished(previous: shown.map { .init(key: $0.id, along: $0.alongMeters) },
+                                         now: keys, here: hereAlong, within: clearingWithin)
+        guard let first = gone.first, let item = previous.first(where: { $0.id == first }) else { return }
+        DriveLog.note("alerts: \(item.marker.kind) ahead has cleared")
+        cleared = item
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64((self?.clearedHold ?? 4) * 1e9))
+            if self?.cleared?.id == item.id { self?.cleared = nil }
+        }
+    }
+
+    #if DEBUG
+    /// Puts a made-up event `meters` ahead on the route, for screenshots.
+    func debugAdd(_ m: RoadMarker, meters: Double) {
+        let u = Upcoming(marker: m, alongMeters: hereAlong + meters)
+        debugExtra.append(u)
+        all = (all + [u]).sorted { $0.alongMeters < $1.alongMeters }
+        ahead = all.filter { $0.alongMeters > hereAlong - 100 }
+    }
+
+    /// Takes the made-up events away the way a fetch would.
+    func debugVanish() {
+        let before = all
+        debugExtra = []
+        all = all.filter { $0.marker.id?.hasPrefix("debug-") != true }
+        ahead = all.filter { $0.alongMeters > hereAlong - 100 }
+        noteCleared(previous: before, now: all)
+    }
+    #endif
+
     /// What the banner shows: the nearest alert ahead that was not
     /// dismissed and is within `within` metres.
     func banner(within: Double) -> Upcoming? {
@@ -135,6 +180,7 @@ final class AlertsEngine: ObservableObject {
     func startFreeDrive() {
         stop()
         dismissed = []
+        cleared = nil
         prerendered = []
         freeDrive = true
         timer = Timer.scheduledTimer(withTimeInterval: Self.refreshSeconds, repeats: true) { [weak self] _ in
@@ -148,6 +194,7 @@ final class AlertsEngine: ObservableObject {
         cumulative = Self.cumulativeDistances(coordinates)
         lastSegment = 0
         dismissed = []
+        cleared = nil
         let lats = coordinates.map(\.latitude), lons = coordinates.map(\.longitude)
         guard let s = lats.min(), let n = lats.max(), let w = lons.min(), let e = lons.max() else { return }
         box = (s - 0.05, w - 0.05, n + 0.05, e + 0.05)
@@ -359,9 +406,11 @@ final class AlertsEngine: ObservableObject {
         guard let box else { return }
         let markers: [RoadMarker]
         let asOf: Date
+        var live = false
         do {
             markers = try await LiveData.markers(in: box, kinds: LiveData.kinds)
             asOf = Date()
+            live = true
         } catch {
             // No answer. A list fetched earlier on this trip covers the
             // whole route, so it is kept, less whatever has gone stale
@@ -395,7 +444,9 @@ final class AlertsEngine: ObservableObject {
                 return Upcoming(marker: m, alongMeters: hit.along, offsetMeters: hit.offset)
             }.sorted { $0.alongMeters < $1.alongMeters }
         }.value
-        all = found
+        let merged = (found + debugExtra).sorted { $0.alongMeters < $1.alongMeters }
+        if live { noteCleared(previous: all, now: merged) }
+        all = merged
         allAsOf = asOf
         prerender(found.filter { $0.alongMeters > hereAlong - 100 }, from: hereAlong)
     }
