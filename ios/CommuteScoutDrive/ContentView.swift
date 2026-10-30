@@ -253,7 +253,7 @@ struct ContentView: View {
 
     private func roundText(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 14, weight: .bold))
+            .font(DG.font(14, .bold))
             .frame(width: 22, height: 22)
             .padding(11)
             .background(.regularMaterial, in: Circle())

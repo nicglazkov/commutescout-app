@@ -9,6 +9,9 @@ struct DriveApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // Alerts and action sheets are drawn by iOS; this is the one way
+        // to give them the app's typeface.
+        UILabel.appearance(whenContainedInInstancesOf: [UIAlertController.self]).font = DG.uiFont(16, .regular)
         // Read before anything else writes a setting: an install that
         // already has settings is an update and skips the first run.
         _ = Prefs.welcomeIsDue
