@@ -96,7 +96,8 @@ final class DriveUITests: XCTestCase {
         app.buttons["settings"].tap()
         XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 5))
         openPage("saved-places")
-        XCTAssertTrue(reveal(app.staticTexts["Home"]), "Home listed under Saved places")
+        // In the list itself: the places tray under the sheet has a "Home" row too.
+        XCTAssertTrue(reveal(app.cells.staticTexts["Home"].firstMatch), "Home listed under Saved places")
         back()
         app.buttons["Done"].tap()
     }
