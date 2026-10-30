@@ -29,7 +29,7 @@ final class MapFiles: ObservableObject {
 
     /// A map file on the phone and the ground it covers.
     struct LocalFile: Codable, Identifiable, Equatable {
-        enum Kind: String, Codable { case corridor, state }
+        enum Kind: String, Codable { case corridor, state, area }
         let id: String
         let kind: Kind
         let name: String
@@ -55,6 +55,8 @@ final class MapFiles: ObservableObject {
     /// The local file the map is drawing from, or nil while online.
     @Published private(set) var usingLocal: LocalFile?
     @Published var lastNotice: String?
+    /// Saved states and areas refresh when a newer map is out, on Wi-Fi only.
+    @Published private(set) var wifiUpdates: Bool = UserDefaults.standard.object(forKey: "cs.map.wifiUpdates") as? Bool ?? true
 
     /// Where the phone is, for choosing which local file to draw from.
     var position: (() -> CLLocationCoordinate2D?)?
@@ -159,6 +161,7 @@ final class MapFiles: ObservableObject {
             let m = try await Backend.get("api/map/manifest", query: [:], as: Manifest.self)
             manifest = m
             if let data = try? JSONEncoder().encode(m) { try? data.write(to: folder.appendingPathComponent("manifest.json")) }
+            Task { await updateStale() }
         } catch {
             DriveLog.note("map: manifest unavailable: \(error)")
         }
@@ -225,7 +228,7 @@ final class MapFiles: ObservableObject {
         do {
             var req = URLRequest(url: url)
             req.timeoutInterval = 3600
-            let written = try await Downloader.fetch(req, to: path(for: file)) { [weak self] p in self?.progress[id] = p }
+            let written = try await Downloader.fetch(req, to: path(for: file), id: id) { [weak self] p in self?.progress[id] = p }
             let done = LocalFile(id: file.id, kind: .state, name: file.name, bytes: written, south: file.south, west: file.west,
                                  north: file.north, east: file.east, savedAt: file.savedAt, build: file.build)
             files.removeAll { $0.id == id }
@@ -234,9 +237,111 @@ final class MapFiles: ObservableObject {
             lastNotice = "\(s.name) saved (\(done.sizeText))."
             DriveLog.note("map: state \(s.code) saved, \(done.sizeText)")
         } catch {
-            try? FileManager.default.removeItem(at: path(for: file))
-            lastNotice = Connectivity.isOffline(error) ? OfflineText.retry : "Could not download \(s.name)."
+            if !(error is CancellationError) {
+                lastNotice = Connectivity.isOffline(error) ? OfflineText.retry : "Could not download \(s.name)."
+            }
             DriveLog.note("map: state \(s.code) failed: \(error)")
+        }
+    }
+
+    // MARK: areas, stop, update
+
+    /// Stops a download in flight; nothing is saved and an older copy stays.
+    func stop(_ id: String) { Downloader.cancel(id) }
+
+    /// An area the driver drew. The map server cuts corridors only, so the
+    /// box goes as a path that folds back and forth across it with the
+    /// widest buffer, which covers every street inside.
+    @discardableResult
+    func saveArea(south: Double, west: Double, north: Double, east: Double, name: String,
+                  id: String = "area-" + String(Int(Date().timeIntervalSince1970))) async -> LocalFile? {
+        guard AreaMath.fits(south: south, west: west, north: north, east: east) else {
+            lastNotice = "That area is too big to save at once. Make it smaller."
+            return nil
+        }
+        let file = LocalFile(id: id, kind: .area, name: name, bytes: 0, south: south, west: west, north: north, east: east,
+                             savedAt: Date(), build: manifest?.build)
+        return await extract(file, along: AreaMath.serpentine(south: south, west: west, north: north, east: east), bufferM: AreaMath.bufferM)
+    }
+
+    /// Fetches a newer copy of a saved map in place: a state from the
+    /// manifest, an area or a trip cut again.
+    @discardableResult
+    func update(_ f: LocalFile) async -> LocalFile? {
+        switch f.kind {
+        case .state:
+            if manifest == nil { await refreshManifest() }
+            guard let s = manifest?.states.first(where: { "state-\($0.code)" == f.id }) else {
+                lastNotice = "Could not find \(f.name) in the list of maps. Try again later."
+                return nil
+            }
+            await downloadState(s)
+            return has(state: s.code)
+        case .area:
+            return await saveArea(south: f.south, west: f.west, north: f.north, east: f.east, name: f.name, id: f.id)
+        case .corridor:
+            guard let p = f.path, p.count >= 2 else { return nil }
+            return await extract(f, along: p.map { CLLocationCoordinate2D(latitude: $0[0], longitude: $0[1]) },
+                                 bufferM: manifest?.corridor.buffer_m ?? 2500)
+        }
+    }
+
+    /// Cuts `file` from the online map along `path` and saves it,
+    /// replacing any file with the same id only once the new one is whole.
+    private func extract(_ file: LocalFile, along line: [CLLocationCoordinate2D], bufferM: Double) async -> LocalFile? {
+        let id = file.id
+        guard Connectivity.shared.online, line.count >= 2, progress[id] == nil else { return nil }
+        progress[id] = 0
+        defer { progress[id] = nil }
+        let step = max(1, line.count / 2000 + 1)
+        let pts = stride(from: 0, to: line.count, by: step).map { [line[$0].latitude, line[$0].longitude] }
+        let fresh = folder.appendingPathComponent("\(id).new")
+        do {
+            var req = URLRequest(url: Backend.base.appendingPathComponent("api/map/extract"))
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONSerialization.data(withJSONObject: ["path": pts, "buffer_m": bufferM] as [String: Any])
+            req.timeoutInterval = 300
+            let written = try await Downloader.fetch(req, to: fresh, id: id) { [weak self] p in self?.progress[id] = p }
+            let done = LocalFile(id: id, kind: file.kind, name: file.name, bytes: written, south: file.south, west: file.west,
+                                 north: file.north, east: file.east, savedAt: Date(), build: manifest?.build ?? file.build, path: file.path)
+            if usingLocal?.id == id { usingLocal = nil }
+            try? FileManager.default.removeItem(at: path(for: done))
+            try FileManager.default.moveItem(at: fresh, to: path(for: done))
+            files.removeAll { $0.id == id }
+            files.append(done)
+            persist()
+            lastNotice = "\(done.name) saved (\(done.sizeText))."
+            return done
+        } catch {
+            try? FileManager.default.removeItem(at: fresh)
+            if !(error is CancellationError) {
+                lastNotice = Connectivity.isOffline(error) ? OfflineText.retry : "Could not save \(file.name)."
+            }
+            DriveLog.note("map: \(id) not saved: \(error)")
+            return nil
+        }
+    }
+
+    // MARK: update on Wi-Fi
+
+    func setWifiUpdates(_ on: Bool) {
+        wifiUpdates = on
+        UserDefaults.standard.set(on, forKey: "cs.map.wifiUpdates")
+        if on { Task { await updateStale() } }
+    }
+
+    /// Saved states and areas made from an older map than the one out now.
+    func stale() -> [LocalFile] {
+        guard let build = manifest?.build else { return [] }
+        return files.filter { $0.kind != .corridor && $0.build != nil && $0.build != build }
+    }
+
+    private func updateStale() async {
+        guard wifiUpdates, Connectivity.shared.onWifi else { return }
+        for f in stale() {
+            guard Connectivity.shared.onWifi else { break }
+            await update(f)
         }
     }
 
@@ -364,13 +469,36 @@ final class Downloader: NSObject, URLSessionDownloadDelegate {
         session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }
 
-    /// Download `request` into `target` (replacing it); returns the byte count.
-    static func fetch(_ request: URLRequest, to target: URL, onProgress: @escaping (Double) -> Void) async throws -> Int64 {
+    private static var running: [String: Downloader] = [:]
+    private static let lock = NSLock()
+    private var cancelled = false
+
+    /// Stops the download running under `id`, if any; its fetch throws
+    /// CancellationError.
+    static func cancel(_ id: String) {
+        lock.lock(); let d = running[id]; lock.unlock()
+        d?.cancelled = true
+        d?.session.invalidateAndCancel()
+    }
+
+    /// Download `request` into `target` (replacing it); returns the byte
+    /// count. With an `id`, `cancel(id)` stops it.
+    static func fetch(_ request: URLRequest, to target: URL, id: String? = nil, onProgress: @escaping (Double) -> Void) async throws -> Int64 {
         let d = Downloader(onProgress: onProgress)
-        defer { d.session.finishTasksAndInvalidate() }
-        let tmp: URL = try await withCheckedThrowingContinuation { cont in
-            d.continuation = cont
-            d.session.downloadTask(with: request).resume()
+        if let id { lock.lock(); running[id] = d; lock.unlock() }
+        defer {
+            if let id { lock.lock(); if running[id] === d { running[id] = nil }; lock.unlock() }
+            d.session.finishTasksAndInvalidate()
+        }
+        let tmp: URL
+        do {
+            tmp = try await withCheckedThrowingContinuation { cont in
+                d.continuation = cont
+                d.session.downloadTask(with: request).resume()
+            }
+        } catch {
+            if d.cancelled { throw CancellationError() }
+            throw error
         }
         try? FileManager.default.removeItem(at: target)
         try FileManager.default.moveItem(at: tmp, to: target)

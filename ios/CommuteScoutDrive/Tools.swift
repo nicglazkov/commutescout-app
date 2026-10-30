@@ -23,7 +23,7 @@ struct ToolsSheet: View {
     @Binding var showLayers: Bool
     @State private var page: Page?
 
-    enum Page: Identifiable { case alerts, watches, ask, sources, directions, marketplace; var id: Self { self } }
+    enum Page: Identifiable { case alerts, watches, ask, directions, marketplace; var id: Self { self } }
 
     var body: some View {
         NavigationStack {
@@ -38,10 +38,8 @@ struct ToolsSheet: View {
                     .accessibilityIdentifier("tool-watches")
                 Button { page = .ask } label: { Label("Ask about the roads", systemImage: "bubble.left.and.text.bubble.right") }
                     .accessibilityIdentifier("tool-ask")
-                Button { page = .marketplace } label: { Label("Plugin marketplace", systemImage: "square.grid.2x2") }
+                Button { page = .marketplace } label: { Label("Plugins", systemImage: "puzzlepiece.extension") }
                     .accessibilityIdentifier("tool-marketplace")
-                Button { page = .sources } label: { Label("My plugins and private sources", systemImage: "antenna.radiowaves.left.and.right") }
-                    .accessibilityIdentifier("tool-sources")
                 Section {
                     Link(destination: URL(string: "https://commutescout.com/map")!) { Label("Open the full map on the web", systemImage: "safari") }
                 }
@@ -54,8 +52,7 @@ struct ToolsSheet: View {
                     case .alerts: AlertsListView()
                     case .watches: WatchesView()
                     case .ask: AskView()
-                    case .sources: SourcesView()
-                    case .marketplace: MarketplaceView()
+                    case .marketplace: NavigationStack { MarketplaceView() }
                     case .directions: DirectionsView()
                     }
                 }

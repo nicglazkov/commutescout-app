@@ -50,7 +50,7 @@ struct FlareSource: Codable, Identifiable, Hashable {
     var coverageLabel: String {
         guard let b = coverage, b.count == 4 else { return "Coverage not stated" }
         let h = b[2] - b[0], w = b[3] - b[1]
-        if h >= 20, w >= 50 { return "Whole country" }
+        if h >= 20, w >= 50 { return "Nationwide" }
         if b[0] >= 32, b[2] <= 36, b[1] >= -121, b[3] <= -114 { return "Southern California" }
         if b[0] >= 32, b[2] <= 42.5, b[1] >= -125, b[3] <= -114 { return "California" }
         return "\(Int(h.rounded()))\u{00B0} by \(Int(w.rounded()))\u{00B0} area"
@@ -156,10 +156,15 @@ final class SourcesStore: ObservableObject {
     @Published private(set) var own: [FlareSource] = []
     var ownSessionIds: Set<String> { Set(own.map(\.id)) }
     @Published var hidden: Set<String> = []     // source ids switched off
+    // Added but switched off for now ("Show on my map" off): hidden from
+    // the map and not asked, yet still in the person's list. Kept on this
+    // phone; the account only knows on and off.
+    @Published private(set) var paused: Set<String> = []
     @Published var error: String?
 
     private let mineKey = "cs.flare.mine.v1"
     private let hiddenKey = "cs.flare.hidden.v1"
+    private let pausedKey = "cs.flare.paused.v1"
     // A private plugin's bearer token lives in the keychain under this
     // prefix plus the plugin id; the rest of the record stays in defaults.
     private let tokenPrefix = "plugin-token:"
@@ -184,6 +189,7 @@ final class SourcesStore: ObservableObject {
             if moved { save() }
         }
         hidden = Set(UserDefaults.standard.stringArray(forKey: hiddenKey) ?? [])
+        paused = Set(UserDefaults.standard.stringArray(forKey: pausedKey) ?? [])
         Task { await loadCatalog() }
         for s in mine { schedule(s) }
     }
@@ -196,6 +202,26 @@ final class SourcesStore: ObservableObject {
         rebuild()
         pushToAccount()
     }
+
+    private func setPaused(_ id: String, _ on: Bool) {
+        if on { paused.insert(id) } else { paused.remove(id) }
+        UserDefaults.standard.set(Array(paused), forKey: pausedKey)
+    }
+
+    /// In this person's list: shown, or switched off for now.
+    func isAdded(_ id: String) -> Bool { Market.isAdded(id, hidden: hidden, paused: paused) }
+
+    /// Add from the marketplace: in the list and on the map.
+    func addPlugin(_ id: String) { setPaused(id, false); setOn(id, true) }
+
+    /// Remove: out of the list and off the map. A private plugin is forgotten.
+    func removePlugin(_ id: String) {
+        setPaused(id, false)
+        if let s = mine.first(where: { $0.id == id }) { setOn(id, true); remove(s) } else { setOn(id, false) }
+    }
+
+    /// "Show on my map": off keeps the plugin in the list but asks it nothing.
+    func setShown(_ id: String, _ on: Bool) { setPaused(id, !on); setOn(id, on) }
 
     // MARK: account sync (Install on one device follows the account)
 
@@ -241,8 +267,10 @@ final class SourcesStore: ObservableObject {
         }
         mine = []
         hidden = []
+        paused = []
         UserDefaults.standard.removeObject(forKey: mineKey)
         UserDefaults.standard.removeObject(forKey: hiddenKey)
+        UserDefaults.standard.removeObject(forKey: pausedKey)
         rebuild()
     }
 
@@ -485,242 +513,5 @@ final class SourcesStore: ObservableObject {
     private func persist() {
         save()
         pushToAccount()
-    }
-}
-
-/// The Sources screen: what feeds the community layer, in the three
-/// tiers (approved, public but not reviewed, private).
-/// The plugin marketplace: one tile per listed plugin, nothing else.
-/// Install turns the plugin on for this phone (the same switch as the
-/// Plugins screen); per-account subscriptions come later.
-struct MarketplaceView: View {
-    @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var showSources = false
-    private var sources: SourcesStore { model.sources }
-    private let columns = [GridItem(.adaptive(minimum: 320), spacing: 12)]
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Plugins add alerts to the map. Every one here is free. Approved ones are reviewed by CommuteScout; the others are public but not reviewed, and say so.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                    if sources.catalog.isEmpty {
-                        Text("No plugin is listed yet.").foregroundStyle(.secondary).padding(.vertical, 24)
-                    }
-                    LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(sources.catalog) { s in PluginCard(source: s) }
-                    }
-                    HStack {
-                        Button { showSources = true } label: { Label("My plugins and private sources", systemImage: "antenna.radiowaves.left.and.right") }
-                            .accessibilityIdentifier("market-mine")
-                        Spacer()
-                        Link(destination: URL(string: "https://commutescout.com/plugins")!) { Label("Write a plugin", systemImage: "safari") }
-                    }
-                    .font(.footnote).padding(.top, 8)
-                }
-                .padding(16)
-            }
-            .navigationTitle("Marketplace")
-            .toolbar { Button("Done") { dismiss() } }
-            .task { await sources.loadCatalog() }
-            .sheet(isPresented: $showSources) { SourcesView() }
-        }
-    }
-}
-
-/// One marketplace listing: icon, name, operator and the install button
-/// on one line, then what it does and a strip of figures.
-struct PluginCard: View {
-    @EnvironmentObject var model: AppModel
-    let source: FlareSource
-    private var installed: Bool { model.sources.isOn(source.id) }
-
-    /// What the plugin is mostly about, read from its kinds: it picks the
-    /// icon and its color, the way a store listing has an app icon.
-    private var icon: (symbol: String, colors: [Color]) {
-        let k = source.kinds
-        if !k.isEmpty, k.allSatisfy({ $0.hasPrefix("CAMERA") }) {
-            return ("camera.fill", [Color(red: 0.98, green: 0.75, blue: 0.14), Color(red: 0.92, green: 0.35, blue: 0.05)])
-        }
-        if k.contains(where: { $0.hasPrefix("POLICE") || $0.hasPrefix("CRASH") || $0.hasPrefix("HAZARD") }) {
-            return ("person.3.fill", [Color(red: 0.22, green: 0.74, blue: 0.97), Color(red: 0.11, green: 0.31, blue: 0.85)])
-        }
-        return ("puzzlepiece.extension.fill", [Color(red: 0.58, green: 0.64, blue: 0.72), Color(red: 0.2, green: 0.25, blue: 0.33)])
-    }
-
-    /// An operator named the same as its plugin says nothing twice.
-    private var operatorName: String {
-        if let a = source.attribution, !a.isEmpty, a != source.name { return a }
-        return "Run by its community"
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(LinearGradient(colors: icon.colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 52, height: 52)
-                    .overlay(Image(systemName: icon.symbol).font(.system(size: 22, weight: .semibold)).foregroundStyle(.white))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(source.name).font(.subheadline.weight(.semibold)).lineLimit(2)
-                    Text(operatorName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                Button {
-                    model.sources.setOn(source.id, !installed)
-                    model.markers.refresh(force: true)
-                } label: {
-                    Text(installed ? "Uninstall" : "Install").font(.subheadline.weight(.bold))
-                        .padding(.horizontal, 14).padding(.vertical, 6)
-                        .foregroundStyle(installed ? Color.primary : Color.white)
-                        .background(installed ? Color(.tertiarySystemFill) : Color.accentColor, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("install-\(source.id)")
-            }
-            Text(source.summary ?? (source.kindsLabel.isEmpty ? "Community alerts for the map." : "Shows \(source.kindsLabel)."))
-                .font(.footnote).foregroundStyle(.secondary).lineLimit(4)
-            Divider()
-            HStack(alignment: .top, spacing: 0) {
-                stat("Alerts now", source.ok == false ? "Offline" : source.count.formatted())
-                Divider()
-                stat("Coverage", source.coverageLabel)
-                Divider()
-                stat("Reports", source.acceptsReports ? "Accepted" : "Read only")
-                Divider()
-                stat("Price", "Free")
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            Divider()
-            HStack {
-                Text(source.trust == "official" ? "Official CommuteScout plugin" : source.tier == "approved" ? "Reviewed by CommuteScout"
-                     : "Public, not reviewed. Its alerts are spoken like any other; change that in Settings > Alerts.")
-                    .font(.caption2).foregroundStyle(source.tier == "approved" ? Color.green : Color.orange)
-                Spacer()
-                NavigationLink { PluginStatusView(sourceId: source.id) } label: {
-                    Text("Status").font(.caption2.weight(.semibold))
-                }
-                .accessibilityIdentifier("status-\(source.id)")
-            }
-        }
-        .padding(16)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        // A container element, so the tile has its id and the Install
-        // button keeps its own (a bare stack passes modifiers to children).
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("plugin-card")
-    }
-
-    private func stat(_ label: String, _ value: String) -> some View {
-        VStack(spacing: 2) {
-            Text(label.uppercased()).font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary).lineLimit(1)
-            Text(value).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 2)
-    }
-}
-
-struct SourcesView: View {
-    @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var showAdd = false
-    @State private var base = ""
-    @State private var token = ""
-    @State private var adding = false
-
-    private var sources: SourcesStore { model.sources }
-
-    private func catalogRow(_ s: FlareSource) -> some View {
-        Toggle(isOn: Binding(get: { sources.isOn(s.id) }, set: { sources.setOn(s.id, $0); model.markers.refresh(force: true) })) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(s.name)
-                Text([s.attribution, "\(s.count) alerts", s.ok == false ? "not answering" : nil]
-                    .compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Text("Community reports come from Flare plugins. Public ones are checked by CommuteScout; private ones you add here are read straight from your phone.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                    Link(destination: URL(string: "https://commutescout.com/plugins")!) {
-                        Label("How to write a plugin", systemImage: "safari")
-                    }
-                }
-                Section {
-                    if sources.catalog.filter({ $0.tier == "approved" }).isEmpty {
-                        Text("No approved plugin is listed right now.").foregroundStyle(.secondary)
-                    }
-                    ForEach(sources.catalog.filter { $0.tier == "approved" }) { s in catalogRow(s) }
-                } header: { Text("Approved plugins") } footer: {
-                    Text("Reviewed by CommuteScout. Drawn by default and may speak.")
-                }
-                Section {
-                    if sources.catalog.filter({ $0.tier != "approved" }).isEmpty {
-                        Text("None listed right now.").foregroundStyle(.secondary)
-                    }
-                    ForEach(sources.catalog.filter { $0.tier != "approved" }) { s in catalogRow(s) }
-                } header: { Text("Public plugins, not reviewed") } footer: {
-                    Text("Anyone who passes the conformance check can be listed. Drawn and labelled; voice only if you turn it on in Advanced alerts.")
-                }
-                Section("My plugins") {
-                    ForEach(sources.mine) { s in
-                        Toggle(isOn: Binding(get: { sources.isOn(s.id) }, set: { sources.setOn(s.id, $0) })) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(s.name)
-                                Text([s.base, s.canReport ? "accepts reports" : nil, "every \(s.refreshS) s"]
-                                    .compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                            }
-                        }
-                        .swipeActions { Button("Remove", role: .destructive) { sources.remove(s) } }
-                    }
-                    Button { showAdd = true } label: { Label("Add a private or unlisted plugin", systemImage: "plus.circle") }
-                        .accessibilityIdentifier("add-source")
-                }
-            }
-            .navigationTitle("Plugins")
-            .toolbar { Button("Done") { dismiss() } }
-            .sheet(isPresented: $showAdd) {
-                NavigationStack {
-                    Form {
-                        Section("Plugin address") {
-                            TextField("https://example.com", text: $base)
-                                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                                .accessibilityIdentifier("source-url")
-                            TextField("Token (private plugins only)", text: $token)
-                                .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        }
-                        Section {
-                            Text("The app asks the plugin who it is (its handshake), then reads its alerts around where you are looking. Only you see them unless the plugin is public.")
-                                .font(.footnote).foregroundStyle(.secondary)
-                        }
-                        if let e = sources.error { Text(e).foregroundStyle(.red).font(.footnote) }
-                    }
-                    .navigationTitle("Add plugin")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showAdd = false } }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button(adding ? "Checking" : "Add") {
-                                Task {
-                                    adding = true
-                                    sources.error = nil
-                                    if await sources.add(base: base, token: token) { showAdd = false; base = ""; token = "" }
-                                    adding = false
-                                }
-                            }
-                            .disabled(base.isEmpty || adding)
-                        }
-                    }
-                }
-                .presentationDetents([.medium])
-            }
-        }
     }
 }
