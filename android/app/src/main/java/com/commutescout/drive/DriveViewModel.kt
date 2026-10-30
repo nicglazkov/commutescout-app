@@ -832,6 +832,9 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     private var autoStart = false
     private var resumedFrom: Long? = null
 
+    /** There is somewhere to route from. Without it the place sheet's drive time never comes. */
+    val canRoute: Boolean get() = routeFrom() != null
+
     private fun routeFrom(): LatLon? = origin?.let { LatLon(it.lat, it.lon) } ?: if (simulating.value) LatLon(37.3382, -121.8863) else _here.value
 
     private fun Preview.matches(p: Place) = Math.abs(lat - p.lat) < 1e-5 && Math.abs(lon - p.lon) < 1e-5

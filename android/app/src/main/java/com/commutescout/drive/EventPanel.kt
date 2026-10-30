@@ -387,7 +387,7 @@ private fun DispatchLog(id: String, count: Int, onOpen: () -> Unit) {
     when (val s = state) {
         LogState.Idle -> OutlinedButton({ onOpen(); asked++ }, Modifier.testTag("dispatch-log")) { Text("Show dispatch log ($count)") }
         LogState.Loading -> OutlinedButton({}, enabled = false) { Text("Loading…") }
-        LogState.Failed -> OutlinedButton({}, enabled = false) { Text("Log unavailable right now") }
+        LogState.Failed -> OutlinedButton({ asked++ }, Modifier.testTag("dispatch-log")) { Text("Log not available. Try again") }
         LogState.Ended -> Gloss("The dispatch log ends when CHP clears the call.")
         is LogState.Loaded -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val d = s.dispatch

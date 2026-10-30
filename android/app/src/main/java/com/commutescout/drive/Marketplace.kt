@@ -120,12 +120,13 @@ fun MarketplaceSheet(model: DriveViewModel, onClose: () -> Unit) {
     val paused by model.sources.paused.collectAsStateWithLifecycle()
     var filter by remember { mutableStateOf(Market.Filter.ALL) }
     var detailsOf by remember { mutableStateOf<String?>(null) }
+    var listFailed by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val shown = remember { Animatable(0f) }
     var leaving by remember { mutableStateOf(false) }
     fun close() { if (!leaving) { leaving = true; scope.launch { shown.animateTo(0f, tween(220, easing = DG.hideEase)); onClose() } } }
-    LaunchedEffect(Unit) { model.sources.loadCatalog() }
+    LaunchedEffect(Unit) { listFailed = !model.sources.loadCatalog() }
     LaunchedEffect(Unit) { shown.animateTo(1f, DG.soft()) }
 
     DGLayer(onBack = ::close) {
@@ -150,7 +151,7 @@ fun MarketplaceSheet(model: DriveViewModel, onClose: () -> Unit) {
                         Modifier.padding(horizontal = 14.dp).glass(RoundedCornerShape(24.dp), elevation = 8.dp), tagPrefix = "market-filter", selectedColor = DG.lowInk)
                 }
                 item(key = "count") {
-                    Text(if (catalog.isEmpty()) "No plugin is listed yet." else Market.countLine(list.size, added),
+                    Text(if (catalog.isEmpty()) Market.emptyLine(listFailed) else Market.countLine(list.size, added),
                         Modifier.padding(start = 24.dp, end = 24.dp, top = 22.dp, bottom = 8.dp).tag("market-count"), style = PageType.groupHead, color = DG.sub)
                 }
                 itemsIndexed(list, key = { _, s -> "${filter.name}:${s.id}" }) { i, s ->
