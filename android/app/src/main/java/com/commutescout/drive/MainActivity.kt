@@ -70,6 +70,8 @@ class MainActivity : ComponentActivity() {
                 DebugScenes.forceAhead(k, clearAfterMs = if (clearing) 7000L else null)
             }
             intent?.getStringExtra("csGallery")?.let { model.wantedGallery = it }
+            // "csArrive" shows the arrive sheet for a made-up trip, for screenshots.
+            if (intent?.getBooleanExtra("csArrive", false) == true) model.showArriveDemo()
             // "csView" = "lat,lon,zoom" puts the camera somewhere, for screenshots.
             intent?.getStringExtra("csView")?.split(",")?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 3 }?.let { model.wantedView = it }
             // "csTour" zooms and pans through a set of views, for a recording.
