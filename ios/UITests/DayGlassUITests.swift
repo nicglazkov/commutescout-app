@@ -43,7 +43,7 @@ final class DayGlassUITests: XCTestCase {
 
     func testEveryAppMessageRenders() {
         let app = launch(["-csCatalog", "system"])
-        for id in ["faster", "confirm", "speeding", "gps", "offline", "watch", "arrive"] {
+        for id in ["confirm", "speeding", "gps", "offline", "watch", "arrive"] {
             let note = app.descendants(matching: .any)["catalog-note-" + id]
             if !note.exists { app.swipeUp() }
             XCTAssertTrue(note.waitForExistence(timeout: 5), "message \(id)")

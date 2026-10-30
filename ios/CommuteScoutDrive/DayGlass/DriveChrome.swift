@@ -417,7 +417,7 @@ struct SpeedDisc: View {
     }
 }
 
-/// A message from the app itself: a faster route, a lost signal, a
+/// A message from the app itself: a reroute, a lost signal, a
 /// watch alert, arrival. The mockups' capsule: tinted glass, the icon in
 /// a small disc, a bold line and a small one, and up to two actions
 /// under them. A short message with no actions hugs its words; one

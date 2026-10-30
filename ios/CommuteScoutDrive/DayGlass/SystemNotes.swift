@@ -3,7 +3,7 @@ import Foundation
 /// A message from the app itself, shown in the capsule while driving:
 /// what it says, how urgent it is, and the buttons under it.
 struct SystemNote: Equatable {
-    enum ID: String, CaseIterable { case arrive, offline, reroute, gps, speeding, confirm, watch, faster }
+    enum ID: String, CaseIterable { case arrive, offline, reroute, gps, speeding, confirm, watch }
 
     var id: ID
     var icon: String
@@ -20,7 +20,7 @@ struct SystemNote: Equatable {
     /// Each message's tone, as in the mockups.
     static func tone(_ id: ID) -> DGTone {
         switch id {
-        case .faster, .reroute: return .low
+        case .reroute: return .low
         case .confirm: return .mid
         case .speeding: return .high
         case .gps, .offline: return .clear
@@ -31,7 +31,8 @@ struct SystemNote: Equatable {
 
 /// Picks the one message to show while driving. The order is the
 /// mockups': arrival, then no connection, rerouting, a lost signal,
-/// speeding, and last a question about a report just passed.
+/// speeding, a question about a report just passed, and last a watch
+/// alert tapped during the trip.
 enum SystemNotes {
     struct Input {
         var navigating = false
@@ -45,6 +46,7 @@ enum SystemNotes {
         var limit: Int?
         var confirmKind: DGKind?
         var confirmAgo: String?         // "Reported 4 min ago, 0.1 mi behind you"
+        var watch: SystemNote?          // a watch alert tapped during this trip
     }
 
     /// Seconds without a location before the signal counts as lost.
@@ -74,7 +76,16 @@ enum SystemNotes {
             return SystemNote(id: .confirm, icon: "confirm", title: confirmTitle(k),
                               detail: i.confirmAgo ?? "Reported just behind you", primary: "Still there", secondary: "Gone")
         }
-        return nil
+        return i.watch
+    }
+
+    /// A watch alert tapped on a trip: what it was about, and that it
+    /// waits until the trip ends.
+    static func watch(_ ref: AlertRef, now: Date = Date()) -> SystemNote {
+        let what = ref.title ?? "Watch alert"
+        let title = ref.watch.map { $0 + ": " + what.prefix(1).lowercased() + what.dropFirst() } ?? what
+        let cleared = ref.isCleared ? (ref.sentAt.map { "Cleared " + EventContent.ago($0, now: now) } ?? "Cleared") + ". " : ""
+        return SystemNote(id: .watch, icon: "watch", title: title, detail: cleared + "Opens when this trip ends.", primary: "Show on map")
     }
 
     /// The word for one event of a kind, in a sentence.
@@ -119,8 +130,6 @@ enum SystemNotes {
 
     /// Every message with the mockups' sample words, for the catalog.
     static let samples: [SystemNote] = [
-        SystemNote(id: .faster, icon: "reroute", title: "Faster route found", detail: "Saves 6 min via I-280 S",
-                   primary: "Take it", secondary: "Keep route"),
         SystemNote(id: .confirm, icon: "confirm", title: "Is the object still there?",
                    detail: "Reported 4 min ago, 0.1 mi behind you", primary: "Still there", secondary: "Gone"),
         SystemNote(id: .speeding, icon: "speed", title: "Over the limit", detail: "72 in a 65"),
