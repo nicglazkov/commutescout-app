@@ -86,9 +86,9 @@ private struct SettingsHome: View {
                     DGDivider()
                     row("map-layers", "Map layers", "square.3.layers.3d", 0xee8b0c, value: layersSummary) { LayersPage() }
                     DGDivider()
-                    row("plugins", "Plugins", "puzzlepiece.extension.fill", 0x7c5cf0, value: pluginsSummary) { PluginSettings() }
+                    row("plugins", "Plugins", "puzzlepiece.extension.fill", 0x7c5cf0, value: pluginsSummary) { MarketplaceView() }
                     DGDivider()
-                    row("offline-maps", "Offline maps", "arrow.down.to.line", 0x0f9a8c, value: offlineSummary) { OfflineMapSettings() }
+                    row("offline-maps", "Offline maps", "arrow.down.to.line", 0x0f9a8c, value: offlineSummary) { OfflineMapsView() }
                     DGDivider()
                     row("saved-places", "Saved places", "star.fill", 0xd9a300, value: placesSummary) { PlaceSettings() }
                 }
@@ -400,74 +400,6 @@ private struct TestingSettings: View {
     }
 }
 #endif
-
-private struct PluginSettings: View {
-    @EnvironmentObject var model: AppModel
-    @State private var showMarketplace = false
-
-    var body: some View {
-        Form {
-            Section {
-                ForEach(model.sources.catalog) { p in
-                    NavigationLink { PluginStatusView(sourceId: p.id) } label: {
-                        HStack(spacing: 10) {
-                            PluginBadge(sourceId: p.id, category: p.oneCategory, size: 22)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(p.name).lineLimit(2)
-                                HStack(spacing: 6) {
-                                    Image(systemName: p.ok == false ? "xmark.circle.fill" : "checkmark.circle.fill")
-                                        .foregroundStyle(p.ok == false ? Color.red : Color.green).font(.caption)
-                                    Text(p.ok == false ? "Not answering" : "\(p.count) alerts")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                    if p.trust == "official" { Text("Official").font(.caption2.weight(.bold)).foregroundStyle(.green) }
-                                }
-                            }
-                            Spacer()
-                            Text(model.sources.isOn(p.id) ? "Installed" : "Off").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                if model.sources.catalog.isEmpty {
-                    Text("No plugin is listed right now.").foregroundStyle(.secondary)
-                }
-            } header: { Text("Plugins") } footer: {
-                Text("Open one to see whether it is answering, what it loads, and to install or uninstall it. A plugin's alerts are badges in its own color.")
-            }
-            Section {
-                Button { showMarketplace = true } label: { Label("Browse the marketplace", systemImage: "square.grid.2x2") }
-                NavigationLink { SourcesView() } label: { Label("My plugins and private sources", systemImage: "antenna.radiowaves.left.and.right") }
-            }
-        }
-        .navigationTitle("Plugins")
-        .navigationBarTitleDisplayMode(.inline)
-        .dgFormPage()
-        .task { await model.sources.loadCatalog() }
-        .sheet(isPresented: $showMarketplace) { MarketplaceView() }
-    }
-}
-
-private struct OfflineMapSettings: View {
-    @EnvironmentObject var model: AppModel
-    private var prefs: Prefs { model.prefs }
-
-    var body: some View {
-        Form {
-            Section {
-                Toggle("Save the map for each trip on Wi-Fi", isOn: Binding(get: { prefs.mapAutoSave }, set: { prefs.mapAutoSave = $0; prefs.objectWillChange.send() }))
-            } footer: { Text("When a trip starts on Wi-Fi, the map along the route is saved, so it draws with no signal.") }
-            Section {
-                NavigationLink { OfflineMapsView() } label: {
-                    LabeledContent("Maps saved on this phone",
-                                   value: model.mapFiles.files.isEmpty ? "None yet"
-                                   : "\(model.mapFiles.files.count), \(ByteCountFormatter.string(fromByteCount: model.mapFiles.bytesOnDisk, countStyle: .file))")
-                }
-            } footer: { Text("Trip maps the app saved, and whole states you choose to download. Each one can be opened to see where it covers and whether the file is really there.") }
-        }
-        .navigationTitle("Offline maps")
-        .navigationBarTitleDisplayMode(.inline)
-        .dgFormPage()
-    }
-}
 
 private struct PlaceSettings: View {
     @EnvironmentObject var model: AppModel

@@ -48,7 +48,7 @@ struct WatchClearedPanel: View {
             DGDisc(kind: kind, tone: kind.tone, size: 44, ghost: true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(focus.ref.title ?? kind.short).font(DG.T.sheetTitle).foregroundStyle(DG.ink).lineLimit(2)
-                if let w = focus.ref.watch { Text(w).font(DG.font(15, .medium)).foregroundStyle(DG.sub) }
+                if let p = text.place { Text(p).font(DG.font(15, .medium)).foregroundStyle(DG.sub).lineLimit(2) }
             }
             Spacer(minLength: 8)
             Button { model.clearMarker() } label: {
@@ -104,7 +104,7 @@ struct WatchClearedPanel: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(focus.ref.title ?? kind.short).font(DG.font(16, .semibold)).foregroundStyle(DG.sub)
                         .strikethrough(true, color: DG.ink.opacity(0.35))
-                    if let b = focus.ref.body, !b.isEmpty {
+                    if let b = text.from {
                         Text(b).font(DG.font(14)).foregroundStyle(DG.faint).fixedSize(horizontal: false, vertical: true)
                     }
                 }

@@ -64,7 +64,7 @@ final class CoverageUITests: XCTestCase {
         let bar = app.navigationBars.buttons.element(boundBy: 0)
         if bar.exists && bar.isHittable { bar.tap() } else {
             let round = app.buttons["page-back"].firstMatch
-            _ = round.waitForExistence(timeout: 3)
+            if !round.waitForExistence(timeout: 3) { print("CS-BACK-MISS", app.debugDescription) }
             round.tap()
         }
         sleep(1)   // let the pop finish
@@ -317,13 +317,14 @@ final class CoverageUITests: XCTestCase {
     func testPluginsScreenTiersAndAddByURL() {
         openSettings()
         openPage("plugins")
-        let mine = app.buttons["My plugins and private sources"].firstMatch
-        XCTAssertTrue(reveal(mine))
-        mine.tap()
-        XCTAssertTrue(app.staticTexts["Approved plugins"].waitForExistence(timeout: 8))
-        XCTAssertTrue(reveal(app.staticTexts["Public plugins, not reviewed"]))
-        XCTAssertTrue(reveal(app.buttons["add-source"]))
-        app.buttons["add-source"].tap()
+        XCTAssertTrue(app.staticTexts["Marketplace"].firstMatch.waitForExistence(timeout: 8))
+        // The filter splits official data from plugin data.
+        XCTAssertTrue(app.buttons["Official data"].firstMatch.exists)
+        XCTAssertTrue(app.buttons["Plugin data"].firstMatch.exists)
+        let add = app.buttons["add-source"]
+        for _ in 0 ..< 6 where !(add.exists && add.isHittable) { app.swipeUp() }
+        XCTAssertTrue(add.isHittable, "add a plugin by its address")
+        add.tap()
         let url = app.textFields["source-url"]
         XCTAssertTrue(url.waitForExistence(timeout: 5))
         url.tap()
@@ -331,6 +332,7 @@ final class CoverageUITests: XCTestCase {
         app.buttons["Add"].tap()
         XCTAssertTrue(app.staticTexts["The address must start with https://"].waitForExistence(timeout: 5), "plain http refused")
         app.buttons["Cancel"].firstMatch.tap()
+        app.buttons["page-back"].firstMatch.tap()
         closeSettings()
     }
 
@@ -347,7 +349,7 @@ final class CoverageUITests: XCTestCase {
         flip("3D perspective"); flip("3D perspective")
         // A medium sheet: the row is below the fold; pull the sheet up, then look.
         app.swipeUp()
-        let plugins = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'My plugins and private sources'")).firstMatch
+        let plugins = app.descendants(matching: .any)["layers-plugins"].firstMatch
         XCTAssertTrue(reveal(plugins) || plugins.waitForExistence(timeout: 3), "plugins link in the layers sheet")
         app.buttons["Done"].tap()
     }
@@ -440,7 +442,7 @@ final class CoverageUITests: XCTestCase {
         app.buttons["tools"].tap()
         XCTAssertTrue(app.buttons["tool-marketplace"].waitForExistence(timeout: 5))
         app.buttons["tool-marketplace"].tap()
-        XCTAssertTrue(app.navigationBars["Marketplace"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Marketplace"].firstMatch.waitForExistence(timeout: 8))
         let cards = app.descendants(matching: .any).matching(identifier: "plugin-card")
         if cards.firstMatch.waitForExistence(timeout: 10) {
             // A tile has an Install or Installed button that toggles.
@@ -459,8 +461,10 @@ final class CoverageUITests: XCTestCase {
         } else {
             XCTAssertTrue(app.staticTexts["No plugin is listed yet."].exists)
         }
-        XCTAssertTrue(app.buttons["market-mine"].exists, "link to my plugins")
-        app.buttons["Done"].firstMatch.tap()
+        let add = app.buttons["add-source"]
+        for _ in 0 ..< 6 where !add.exists { app.swipeUp() }
+        XCTAssertTrue(add.exists, "add a private plugin by its address")
+        app.buttons["page-back"].firstMatch.tap()
     }
 
     func testToolsSheetWebLinkAndLayersShortcut() {

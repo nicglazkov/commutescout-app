@@ -15,6 +15,8 @@ struct ContentView: View {
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-csOpenSettings")
     /// The first run, once ("-csWelcome" shows it for screenshots).
     @State private var showWelcome = Prefs.welcomeIsDue
+    // "-csOpenMore market|plugin|offline|picker|savedmap" opens that page at launch (debug builds).
+    @State private var moreScreen: String? = OfflineLaunch.wanted
     @State private var showLayers = false
     @State private var showReport = false
     @State private var showTools = false
@@ -174,6 +176,9 @@ struct ContentView: View {
         .onAppear { model.isDark = colorScheme == .dark }
         .onChange(of: colorScheme) { s in model.isDark = s == .dark }
         .sheet(isPresented: $showSettings) { SettingsSheet() }
+        .fullScreenCover(isPresented: Binding(get: { moreScreen != nil }, set: { if !$0 { moreScreen = nil } })) {
+            MorePagesLauncher(screen: moreScreen ?? "offline")
+        }
         .sheet(isPresented: $model.showWatches) { WatchesView() }
         .sheet(isPresented: $showLayers) { LayersSheet().presentationDetents([.medium, .large]) }
         .sheet(isPresented: $showTools) { ToolsSheet(showLayers: $showLayers).presentationDetents([.medium, .large]) }
@@ -408,19 +413,14 @@ struct LayersSheet: View {
                     Text("Cameras and toll prices start off, the same as the website. Cameras are the densest layer.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                Section("Plugins") {
-                    ForEach(model.sources.catalog) { p in
-                        Toggle(isOn: Binding(get: { model.sources.isOn(p.id) },
-                                             set: { model.sources.setOn(p.id, $0); model.markers.refresh(force: true) })) {
-                            Label { Text(p.name).lineLimit(2) } icon: {
-                                PluginBadge(sourceId: p.id, category: p.oneCategory, size: 22)
-                            }
-                        }
-                        .accessibilityIdentifier("plugin-switch-\(p.id)")
+                Section {
+                    // One place for plugins: add, remove and show each on
+                    // the map from its own page in the marketplace.
+                    NavigationLink { MarketplaceView() } label: {
+                        Label("Plugins", systemImage: "puzzlepiece.extension")
                     }
-                    NavigationLink("My plugins and private sources") { SourcesView() }
+                    .accessibilityIdentifier("layers-plugins")
                 }
-                .task { await model.sources.loadCatalog() }
                 Section {
                     Link(destination: URL(string: "https://commutescout.com/data-sources")!) {
                         Label("Where this data comes from", systemImage: "safari")
