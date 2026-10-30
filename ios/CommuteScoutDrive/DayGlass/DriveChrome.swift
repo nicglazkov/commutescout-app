@@ -12,7 +12,8 @@ struct DriveTop: View {
     @EnvironmentObject var model: AppModel
     let state: NavigationState?
     @Binding var size: CGSize
-    @State private var more = ProcessInfo.processInfo.arguments.contains("-csSeeMore")
+    /// The alert shown last, to ask about once it is passed.
+    @State private var lastShown: AlertsEngine.Upcoming?
 
     var body: some View {
         // Ferrostar asks for this view while browsing too; only a trip has a card.
@@ -25,6 +26,14 @@ struct DriveTop: View {
                 VStack(spacing: 0) {
                     Color.clear.frame(height: cardHeight - DriveAlert.tuck)
                     alert
+                }
+                // The app's own message takes the slot only while no alert
+                // is tucked there.
+                if !alertShown {
+                    VStack(spacing: 0) {
+                        Color.clear.frame(height: cardHeight + 8)
+                        DriveNoteSlot()
+                    }
                 }
                 ManeuverCard(state: state)
                     .background(GeometryReader { g in Color.clear.preference(key: CardHeight.self, value: g.size.height) })
@@ -40,6 +49,25 @@ struct DriveTop: View {
         }
         .animation(DG.slide, value: model.alerts.banner(within: model.prefs.stripAheadMeters)?.id)
         .animation(DG.slide, value: model.alerts.cleared?.id)
+        .onChange(of: model.alerts.banner(within: model.prefs.stripAheadMeters)?.id) { _ in askAboutPassed() }
+    }
+
+    private var alertShown: Bool {
+        model.alerts.cleared != nil || model.alerts.banner(within: model.prefs.stripAheadMeters) != nil
+    }
+
+    /// A report that takes votes went by: ask whether it is still there,
+    /// for 15 seconds. Passing anything else says nothing.
+    private func askAboutPassed() {
+        let next = model.alerts.banner(within: model.prefs.stripAheadMeters)
+        defer { lastShown = next }
+        guard let p = lastShown, p.id != next?.id, !model.alerts.dismissed.contains(p.id),
+              model.canConfirm(p.marker), model.alerts.hereAlong >= p.alongMeters - 80 else { return }
+        model.confirmAsk = p
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            if model.confirmAsk?.id == p.id { model.confirmAsk = nil }
+        }
     }
 
     @State private var cardHeight: CGFloat = 158
@@ -49,7 +77,7 @@ struct DriveTop: View {
             DriveAlert(item: c, along: model.alerts.hereAlong, more: .constant(false), cleared: true)
                 .transition(.move(edge: .top).combined(with: .opacity))
         } else if let next = model.alerts.banner(within: model.prefs.stripAheadMeters) {
-            DriveAlert(item: next, along: model.alerts.hereAlong, more: $more)
+            DriveAlert(item: next, along: model.alerts.hereAlong, more: $model.alertMore)
                 .transition(.move(edge: .top).combined(with: .opacity))
         }
     }

@@ -91,6 +91,13 @@ enum AutoDrive {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-csResetPlaces") { model.places.removeAll() }
+        // "-csSamplePlaces": Home, Work and a recent place, for the tray.
+        if args.contains("-csSamplePlaces") {
+            model.places.removeAll()
+            model.places.set(.home, name: "Palo Alto", coordinate: .init(latitude: 37.442, longitude: -122.143))
+            model.places.set(.work, name: "Mountain View", coordinate: .init(latitude: 37.3894, longitude: -122.0819))
+            model.places.noteRecent(name: "San Jose Airport, Terminal B", coordinate: .init(latitude: 37.3626, longitude: -121.9291))
+        }
         if args.contains("-csResetPrefs") {
             let d = UserDefaults.standard
             for k in d.dictionaryRepresentation().keys where k.hasPrefix("cs.") && k != "cs.places.v1" { d.removeObject(forKey: k) }

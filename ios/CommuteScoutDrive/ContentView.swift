@@ -19,6 +19,8 @@ struct ContentView: View {
     /// The event panel's height as laid out, so the map buttons sit above it.
     @State private var panelHeight: CGFloat = 0
     @State private var browseAlertMore = false
+    /// The room the map makes under a tucked alert, eased in and out.
+    @StateObject private var room = CameraRoomAnimator()
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -37,7 +39,12 @@ struct ContentView: View {
             // On a trip the side buttons and the speed disc live in the
             // navigation view's own grid, so they never sit on its zoom
             // and recenter buttons or under the maneuver card.
-            .navigationViewInnerGrid(topCenter: { reroutingBanner }, bottomLeading: {
+            // The puck sits lower while an alert is tucked under the
+            // card, so the road ahead shows below both (2D and 3D).
+            .navigationMapViewContentInset(NavigationMapViewContentInsetBundle(
+                portrait: { [room = room.value] g in .portrait(within: g, minHeight: CameraRoom.minHeight(room: room)) }))
+            // App messages ride under the maneuver card (DriveTop).
+            .navigationViewInnerGrid(topCenter: { EmptyView() }, bottomLeading: {
                 if isNavigating, model.prefs.showSpeedLimit { SpeedDisc(speedMps: model.speedMps, limitKmh: model.limitKmh) }
             }, bottomTrailing: {
                 // Ferrostar draws this grid while browsing too; the browse
@@ -149,6 +156,14 @@ struct ContentView: View {
                 }
             }
         }
+        .overlay(alignment: .top) {
+            // Arrived: the trip's card is gone, the capsule says so.
+            if model.arrived || DriveNoteSlot.forced == .arrive && isNavigating {
+                DriveNoteSlot(arrival: true).padding(.horizontal, 14).padding(.top, 6)
+            }
+        }
+        .onChange(of: roomTarget) { room.go(to: $0) }
+        .onAppear { room.go(to: roomTarget) }
         .onAppear { model.isDark = colorScheme == .dark }
         .onChange(of: colorScheme) { s in model.isDark = s == .dark }
         .sheet(isPresented: $showSettings) { SettingsSheet() }
@@ -173,6 +188,12 @@ struct ContentView: View {
 
     private var isNavigating: Bool { model.state.isNavigating }
 
+    private var roomTarget: CGFloat {
+        CameraRoom.target(navigating: isNavigating && !model.arrived,
+                          alertShown: model.alerts.cleared != nil || model.alerts.banner(within: model.prefs.stripAheadMeters) != nil,
+                          opened: model.alertMore && model.alerts.cleared == nil)
+    }
+
     private var showsEvent: Bool { model.selectedMarker != nil || model.alertFocus != nil }
 
     /// How tall the bottom card is, so the map buttons sit above it. The
@@ -180,7 +201,7 @@ struct ContentView: View {
     private var bottomCardHeight: CGFloat {
         if showsEvent { return min(panelHeight, 380) }
         switch model.state {
-        case .browsing: return model.resumable == nil ? 0 : 140
+        case .browsing: return model.resumable == nil ? PlacesTray.height(rows: PlacesTray.rows(model.places).count) : 140
         case .found: return 150
         case .routing: return 80
         case .choosing: return 330
@@ -238,20 +259,6 @@ struct ContentView: View {
         }
     }
 
-    /// Under the instruction card while navigating: the offline notice
-    /// when there is no signal (a reroute cannot happen then, and saying
-    /// "Rerouting" would be a promise the app cannot keep), otherwise
-    /// the reroute in progress.
-    @ViewBuilder private var reroutingBanner: some View {
-        if let n = model.offlineNotice {
-            OfflineBanner(title: n.title, detail: n.detail).padding(.horizontal, 12)
-        } else if model.coreState?.isCalculatingNewRoute == true {
-            DGNote(systemImage: DGIcon.reroute, tone: .low, title: "Rerouting", detail: "Finding the way from here.",
-                   identifier: "rerouting")
-                .padding(.horizontal, 12)
-        }
-    }
-
     @ViewBuilder private func bottomCard(available: CGFloat) -> some View {
         if showsEvent, !isNavigating {
             EventPanel(available: available)
@@ -261,7 +268,10 @@ struct ContentView: View {
         } else {
             switch model.state {
             case .browsing:
-                if let trip = model.resumable { ResumeCard(trip: trip) }
+                if let trip = model.resumable { ResumeCard(trip: trip) } else {
+                    // The keyboard covers the tray rather than lifting it.
+                    PlacesTray().ignoresSafeArea(.keyboard)
+                }
             case let .found(place):
                 PlaceCard(place: place)
             case .routing:

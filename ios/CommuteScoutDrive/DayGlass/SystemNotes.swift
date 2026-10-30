@@ -38,11 +38,12 @@ enum SystemNotes {
         var arrivedAt: String?          // the destination's name once arrived
         var online = true
         var offlineSince: String?       // "8:14 AM"
+        var offlineWords: (title: String, detail: String)?   // the app's own wording, when it has it
         var rerouting = false
         var fixAge: TimeInterval = 0    // seconds since the last location
         var speed: Int?                 // in the display unit
         var limit: Int?
-        var confirmKind: String?        // "object", "crash"
+        var confirmKind: DGKind?
         var confirmAgo: String?         // "Reported 4 min ago, 0.1 mi behind you"
     }
 
@@ -56,7 +57,10 @@ enum SystemNotes {
         if let place = i.arrivedAt {
             return SystemNote(id: .arrive, icon: "arrive", title: "You have arrived", detail: place, primary: "Done")
         }
-        if !i.online { return offline(since: i.offlineSince) }
+        if !i.online {
+            if let w = i.offlineWords { return SystemNote(id: .offline, icon: "offline", title: w.title, detail: w.detail) }
+            return offline(since: i.offlineSince)
+        }
         if i.rerouting {
             return SystemNote(id: .reroute, icon: "reroute", title: "Rerouting", detail: "Finding a new route from here.")
         }
@@ -67,10 +71,27 @@ enum SystemNotes {
             return SystemNote(id: .speeding, icon: "speed", title: "Over the limit", detail: "\(s) in a \(l)")
         }
         if let k = i.confirmKind {
-            return SystemNote(id: .confirm, icon: "confirm", title: "Is the \(k) still there?",
+            return SystemNote(id: .confirm, icon: "confirm", title: confirmTitle(k),
                               detail: i.confirmAgo ?? "Reported just behind you", primary: "Still there", secondary: "Gone")
         }
         return nil
+    }
+
+    /// "Is the crash still there?", in words that fit the kind.
+    static func confirmTitle(_ k: DGKind) -> String {
+        switch k {
+        case .police: return "Are the police still there?"
+        case .hazard: return "Is the object still there?"
+        case .jam: return "Is it still slow?"
+        case .ice: return "Is the road still icy?"
+        case .closure: return "Is it still closed?"
+        case .chain: return "Are chains still required?"
+        case .fire: return "Is the fire still there?"
+        case .crash: return "Is the crash still there?"
+        case .sign: return "Is the sign still there?"
+        case .camera: return "Is the camera still there?"
+        case .toll: return "Is the toll still there?"
+        }
     }
 
     static func offline(since: String?) -> SystemNote {
