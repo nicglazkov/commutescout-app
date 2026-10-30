@@ -138,7 +138,7 @@ final class PagesUITests: XCTestCase {
             let field = app.textFields["place-search"].firstMatch
             if field.waitForExistence(timeout: 4) { field.tap(); field.typeText("San Jose City Hall") }
             shot("places-picker", 3)
-            app.buttons["Cancel"].firstMatch.tap()
+            app.buttons["page-close"].firstMatch.tap()
         }
         back()
         page("plugins")
@@ -252,13 +252,13 @@ final class PagesUITests: XCTestCase {
             let b = app.buttons[tool].firstMatch
             if b.waitForExistence(timeout: 2) {
                 b.tap(); shot(tool, 2)
-                let done = app.buttons["Done"].firstMatch
+                let done = app.buttons["page-close"].firstMatch
                 if done.exists { done.tap() } else { app.swipeDown(velocity: .fast) }
                 sleep(1)
                 if !app.buttons["tool-alerts"].firstMatch.exists { app.buttons["tools"].firstMatch.tap(); sleep(1) }
             }
         }
-        if app.buttons["Done"].firstMatch.exists { app.buttons["Done"].firstMatch.tap() } else { app.swipeDown(velocity: .fast) }
+        if app.buttons["page-close"].firstMatch.exists { app.buttons["page-close"].firstMatch.tap() } else { app.swipeDown(velocity: .fast) }
         app.terminate()
         app.launchArguments = ["-csSimulate", "-csAutoDrive"]
         app.launch()
@@ -329,7 +329,7 @@ final class PagesUITests: XCTestCase {
         app.buttons["tools"].firstMatch.tap()
         let t0 = Date()
         app.buttons["Alerts nearby"].firstMatch.tap()
-        XCTAssertTrue(app.navigationBars["Alerts nearby"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["page-alerts"].firstMatch.waitForExistence(timeout: 5))
         shot("alerts-nearby", 2)
         print("CS alerts nearby opened in \(Int(Date().timeIntervalSince(t0) * 1000)) ms")
     }

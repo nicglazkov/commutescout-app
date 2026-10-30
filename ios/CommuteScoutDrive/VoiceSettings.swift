@@ -384,7 +384,7 @@ struct VoiceQualityBadge: View {
 
     var body: some View {
         Text(quality.label)
-            .font(.caption2.weight(.semibold))
+            .font(DG.font(11, .semibold))
             .foregroundStyle(tint)
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(Capsule().fill(tint.opacity(0.15)))

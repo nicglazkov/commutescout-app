@@ -404,7 +404,7 @@ private struct ChainBox: View {
             }
             ForEach(Array(levels.others.enumerated()), id: \.offset) { _, row in
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(row.0).font(.footnote.weight(.bold).monospaced()).foregroundStyle(accent)
+                    Text(row.0).font(DG.font(13, .bold)).foregroundStyle(accent)
                     Text(row.1).font(DG.T.noteBody).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -426,7 +426,7 @@ private struct DispatchLogView: View {
                 section("Dispatch log (newest first)", key: "Blue text is a rough translation of the CHP shorthand.")
                 ForEach(Array(log.log.enumerated()), id: \.offset) { _, row in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(row.time).font(.caption.monospacedDigit()).foregroundStyle(DG.sub).frame(width: 62, alignment: .leading)
+                        Text(row.time).font(DG.font(12).monospacedDigit()).foregroundStyle(DG.sub).frame(width: 62, alignment: .leading)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(row.text).font(.footnote.monospaced()).fixedSize(horizontal: false, vertical: true)
                             if let plain = row.plain {

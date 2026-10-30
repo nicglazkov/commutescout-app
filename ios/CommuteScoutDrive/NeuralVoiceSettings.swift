@@ -59,13 +59,13 @@ struct VoicePackSection: View {
                 ProgressView(value: Double(done), total: Double(max(total, 1)))
                     .accessibilityIdentifier("voices-progress-\(pack.id)")
                 Text(progressText(done, total, waiting: !connectivity.onWifi && !cellularAllowed(pack)))
-                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    .font(DG.T.rowSub.monospacedDigit()).foregroundStyle(DG.sub)
             case let .paused(done, total):
                 ProgressView(value: Double(done), total: Double(max(total, 1))).tint(.secondary)
                 Text("Paused: \(VoicePackFiles.label(done)) of \(VoicePackFiles.label(total))")
-                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    .font(DG.T.rowSub.monospacedDigit()).foregroundStyle(DG.sub)
             case let .failed(why):
-                Text(why).font(.caption).foregroundStyle(.red)
+                Text(why).font(DG.T.rowSub).foregroundStyle(DG.color(.high))
             case .installed, .none:
                 EmptyView()
             }
@@ -217,47 +217,59 @@ struct VoiceLicensesView: View {
     @ObservedObject private var packs = VoicePacks.shared
 
     var body: some View {
-        Form {
-            Section {
+        DGPage(title: "Voice licenses", identifier: "page-voice-licenses") {
+            VStack(alignment: .leading, spacing: 0) {
                 Text("CommuteScout voices run on the sherpa-onnx speech engine with ONNX Runtime. Each set of voices comes from the project named below, under its own license.")
-                    .font(.subheadline)
-            }
-            ForEach(packs.catalog?.offeredPacks() ?? []) { pack in
-                Section(pack.title) {
-                    Text(pack.attribution).font(.subheadline)
-                    LabeledContent("Model", value: pack.engineVersion)
-                    LabeledContent("License", value: pack.license.name)
-                    if let url = URL(string: pack.license.url) {
-                        Link(destination: url) { Label("License source", systemImage: "arrow.up.right.square") }
-                    }
-                    if pack.isSupertonic {
-                        Text("Use of these voices is subject to the use restrictions in Attachment A of the OpenRAIL-M license.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                    if packs.state(pack.id) == .installed {
-                        ForEach(["NOTICE", "LICENSE"], id: \.self) { name in
-                            NavigationLink(name == "NOTICE" ? "Notice" : "License text") {
-                                LicenseTextView(title: "\(pack.title): \(name == "NOTICE" ? "notice" : "license")",
-                                                text: Self.packText(pack, name))
+                    .font(DG.font(15)).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 6).padding(.top, 8)
+                ForEach(packs.catalog?.offeredPacks() ?? []) { pack in
+                    DGSectionLabel(pack.title)
+                    DGGroup {
+                        Text(pack.attribution).font(DG.font(14)).foregroundStyle(DG.ink).fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(14)
+                        DGDivider(inset: 14)
+                        fact("Model", pack.engineVersion)
+                        DGDivider(inset: 14)
+                        fact("License", pack.license.name)
+                        if let url = URL(string: pack.license.url) {
+                            DGDivider(inset: 14)
+                            Link(destination: url) {
+                                DGRow(title: "License source", chevron: false, leading: { EmptyView() },
+                                      trailing: { Image(systemName: "arrow.up.right").font(.system(size: 13, weight: .bold)).foregroundStyle(DG.faint) })
+                            }
+                            .buttonStyle(DGRowPress())
+                        }
+                        if packs.state(pack.id) == .installed {
+                            ForEach(["NOTICE", "LICENSE"], id: \.self) { name in
+                                DGDivider(inset: 14)
+                                textLink(name == "NOTICE" ? "Notice" : "License text",
+                                         title: "\(pack.title): \(name == "NOTICE" ? "notice" : "license")", text: Self.packText(pack, name))
                             }
                         }
-                    } else {
-                        Text("The full license and notice come with the voices and appear here after you download them.")
-                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if pack.isSupertonic {
+                        DGFootnote("Use of these voices is subject to the use restrictions in Attachment A of the OpenRAIL-M license.")
+                    }
+                    if packs.state(pack.id) != .installed {
+                        DGFootnote("The full license and notice come with the voices and appear here after you download them.")
                     }
                 }
-            }
-            Section("Speech engine") {
-                NavigationLink("sherpa-onnx, Apache License 2.0") {
-                    LicenseTextView(title: "sherpa-onnx", text: Self.bundled("sherpa-onnx-LICENSE"))
-                }
-                NavigationLink("ONNX Runtime, MIT License") {
-                    LicenseTextView(title: "ONNX Runtime", text: Self.bundled("onnxruntime-LICENSE"))
+                DGSectionLabel("Speech engine")
+                DGGroup {
+                    textLink("sherpa-onnx, Apache License 2.0", title: "sherpa-onnx", text: Self.bundled("sherpa-onnx-LICENSE"))
+                    DGDivider(inset: 14)
+                    textLink("ONNX Runtime, MIT License", title: "ONNX Runtime", text: Self.bundled("onnxruntime-LICENSE"))
                 }
             }
         }
-        .navigationTitle("Voice licenses")
-        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func fact(_ title: String, _ value: String) -> some View {
+        DGRow(title: title, value: value, chevron: false) { EmptyView() }
+    }
+
+    private func textLink(_ row: String, title: String, text: String) -> some View {
+        NavigationLink { LicenseTextView(title: title, text: text) } label: { DGRow(title: row) { EmptyView() } }
+            .buttonStyle(DGRowPress())
     }
 
     static func packText(_ pack: VoiceCatalog.Pack, _ name: String) -> String {
@@ -277,14 +289,12 @@ struct LicenseTextView: View {
     let text: String
 
     var body: some View {
-        ScrollView {
+        DGPage(title: title, identifier: "page-license-text") {
             Text(text)
-                .font(.system(.footnote, design: .monospaced))
+                .font(.system(.footnote, design: .monospaced)).foregroundStyle(DG.ink)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
+                .padding(.top, 8)
         }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
     }
 }

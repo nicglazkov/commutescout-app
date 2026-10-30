@@ -434,66 +434,75 @@ private struct PlaceSettings: View {
     @State private var picking: Place.Kind?
 
     var body: some View {
-        Form {
-            Section {
-                slot("Home", "house.fill", model.places.home, kind: .home)
-                slot("Work", "briefcase.fill", model.places.work, kind: .work)
-            } footer: {
-                Text("Home and Work are one each; setting a new one replaces the old.")
-            }
-            Section {
-                ForEach(model.places.saved) { p in row(p.name, "star.fill", p) }
-                Button { picking = .saved } label: { Label("Add a favorite", systemImage: "plus.circle.fill") }
-                    .accessibilityIdentifier("add-favorite")
-            } header: { Text("Favorites") }
-            if !model.places.recents.isEmpty {
-                Section {
-                    ForEach(model.places.recents) { p in row(p.name, "clock", p) }
-                } header: { Text("Recent destinations") } footer: {
-                    Text("The last twenty places you navigated to. Swipe to remove one.")
+        DGPage(title: "Saved places", identifier: "page-saved-places") {
+            VStack(alignment: .leading, spacing: 0) {
+                DGGroup {
+                    slot("Home", "house.fill", model.places.home, kind: .home)
+                    DGDivider()
+                    slot("Work", "briefcase.fill", model.places.work, kind: .work)
                 }
-            }
-            Section {
-                Text(model.account.user == nil
-                     ? "Sign in and these follow your account to the website and your other phone."
-                     : "Signed in: these follow your account to the website and your other phone.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                .padding(.top, 8)
+                DGFootnote("Home and Work are one each; setting a new one replaces the old.")
+                DGSectionLabel("Favorites")
+                DGGroup {
+                    ForEach(model.places.saved) { p in
+                        row(p.name, "star.fill", p)
+                        DGDivider()
+                    }
+                    Button { picking = .saved } label: {
+                        DGRow(title: "Add a favorite", chevron: false) { DGSoftTile(symbol: "plus") }
+                    }
+                    .buttonStyle(DGRowPress())
+                    .accessibilityIdentifier("add-favorite")
+                }
+                if !model.places.recents.isEmpty {
+                    DGSectionLabel("Recent destinations")
+                    DGGroup {
+                        ForEach(Array(model.places.recents.enumerated()), id: \.element.id) { i, p in
+                            if i > 0 { DGDivider() }
+                            row(p.name, "clock", p)
+                        }
+                    }
+                    DGFootnote("The last twenty places you navigated to.")
+                }
+                DGFootnote(model.account.user == nil
+                    ? "Sign in and these follow your account to the website and your other phone."
+                    : "Signed in: these follow your account to the website and your other phone.")
+                    .padding(.top, 8)
             }
         }
-        .navigationTitle("Saved places")
-        .navigationBarTitleDisplayMode(.inline)
-        .dgFormPage()
         .sheet(item: $picking) { kind in PlacePickerSheet(kind: kind) }
     }
 
     /// Home or Work: the place, or the way to set it.
     @ViewBuilder private func slot(_ label: String, _ symbol: String, _ p: Place?, kind: Place.Kind) -> some View {
         if let p {
-            HStack {
-                Image(systemName: symbol).foregroundStyle(.secondary).frame(width: 24)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(label)
-                    Text(p.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer()
-                Button("Change") { picking = kind }.font(.subheadline).buttonStyle(.borderless)
-            }
-            .swipeActions { Button(role: .destructive) { model.places.remove(p) } label: { Label("Remove", systemImage: "trash") } }
+            DGRow(title: label, sub: p.name, chevron: false, leading: { DGSoftTile(symbol: symbol) }, trailing: {
+                Button("Change") { picking = kind }.font(DG.font(14, .semibold)).foregroundStyle(DG.inkColor(.low))
+                    .buttonStyle(.plain).accessibilityIdentifier("change-\(label.lowercased())")
+                remove(label, p)
+            })
         } else {
             Button { picking = kind } label: {
-                Label("Set \(label)", systemImage: symbol)
+                DGRow(title: "Set \(label)", chevron: false) { DGSoftTile(symbol: symbol) }
             }
+            .buttonStyle(DGRowPress())
             .accessibilityIdentifier("set-\(label.lowercased())")
         }
     }
 
     private func row(_ title: String, _ symbol: String, _ p: Place) -> some View {
-        HStack {
-            Image(systemName: symbol).foregroundStyle(.secondary).frame(width: 24)
-            Text(title).lineLimit(2)
-            Spacer()
+        DGRow(title: title, chevron: false, leading: { DGSoftTile(symbol: symbol) }, trailing: { remove(title, p) })
+    }
+
+    private func remove(_ title: String, _ p: Place) -> some View {
+        Button { model.places.remove(p) } label: {
+            Image(systemName: "trash").font(.system(size: 14, weight: .semibold)).foregroundStyle(DG.faint)
+                .frame(width: 34, height: 44).contentShape(Rectangle())
         }
-        .swipeActions { Button(role: .destructive) { model.places.remove(p) } label: { Label("Remove", systemImage: "trash") } }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Remove \(title)")
+        .accessibilityIdentifier("remove-\(title)")
     }
 }
 
@@ -521,50 +530,59 @@ struct PlacePickerSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    TextField("Search a place or address", text: $text)
+            DGPage(title: title, identifier: "page-place-picker", backSymbol: "xmark") {
+                VStack(alignment: .leading, spacing: 12) {
+                    DGField(placeholder: "Search a place or address", text: $text)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .focused($focused).submitLabel(.search)
                         .onChange(of: text) { new in schedule(new) }
                         .accessibilityIdentifier("place-search")
-                }
-                if let here = model.here, kind != .saved {
-                    Section {
-                        Button { pick(Place(name: here.pretty, coordinate: here, kind: kind)) } label: {
-                            Label("Use my current location", systemImage: "location.fill")
+                    if let here = model.here, kind != .saved {
+                        DGGroup {
+                            Button { pick(Place(name: here.pretty, coordinate: here, kind: kind)) } label: {
+                                DGRow(title: "Use my current location", chevron: false) { DGSoftTile(symbol: "location.fill") }
+                            }
+                            .buttonStyle(DGRowPress())
                         }
                     }
-                }
-                if searching { Section { HStack { ProgressView(); Text("Searching").foregroundStyle(.secondary) } } }
-                if !results.isEmpty {
-                    Section("Results") {
-                        ForEach(results) { r in
-                            Button { pick(Place(name: r.name, coordinate: r.coordinate, kind: kind)) } label: {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(r.name.split(separator: ",").first.map(String.init) ?? r.name)
-                                    Text(r.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    if searching {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("Searching").font(DG.font(15)).foregroundStyle(DG.sub)
+                        }
+                    }
+                    if !results.isEmpty {
+                        VStack(alignment: .leading, spacing: 0) {
+                            DGSectionLabel("Results")
+                            DGGroup {
+                                ForEach(Array(results.enumerated()), id: \.element.id) { i, r in
+                                    if i > 0 { DGDivider(inset: 14) }
+                                    Button { pick(Place(name: r.name, coordinate: r.coordinate, kind: kind)) } label: {
+                                        DGRow(title: r.name.split(separator: ",").first.map(String.init) ?? r.name, sub: r.name, chevron: false) { EmptyView() }
+                                    }
+                                    .buttonStyle(DGRowPress())
                                 }
                             }
-                            .foregroundStyle(.primary)
                         }
                     }
-                }
-                let recents = model.places.recents.filter { text.isEmpty || $0.name.lowercased().contains(text.lowercased()) }
-                if !recents.isEmpty, results.isEmpty {
-                    Section("Recent destinations") {
-                        ForEach(recents) { p in
-                            Button { pick(Place(name: p.name, coordinate: p.coordinate, kind: kind)) } label: {
-                                Label(p.name, systemImage: "clock").lineLimit(2)
+                    let recents = model.places.recents.filter { text.isEmpty || $0.name.lowercased().contains(text.lowercased()) }
+                    if !recents.isEmpty, results.isEmpty {
+                        VStack(alignment: .leading, spacing: 0) {
+                            DGSectionLabel("Recent destinations")
+                            DGGroup {
+                                ForEach(Array(recents.enumerated()), id: \.element.id) { i, p in
+                                    if i > 0 { DGDivider() }
+                                    Button { pick(Place(name: p.name, coordinate: p.coordinate, kind: kind)) } label: {
+                                        DGRow(title: p.name, chevron: false) { DGSoftTile(symbol: "clock") }
+                                    }
+                                    .buttonStyle(DGRowPress())
+                                }
                             }
-                            .foregroundStyle(.primary)
                         }
                     }
                 }
+                .padding(.top, 8)
             }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .onAppear { focused = true }
         }
     }
@@ -606,60 +624,78 @@ struct AdvancedAlertsView: View {
         Units.useMiles ? [402, 805, 1609, 2414, 3219, 4828, 8047] : [300, 500, 1000, 1500, 2000, 3000, 5000, 8000]
     }
 
+    private var stripWord: String {
+        switch prefs.stripAheadMeters {
+        case 8047: return Units.useMiles ? "5 mi" : "8 km"
+        case 16093: return Units.useMiles ? "10 mi" : "16 km"
+        case 40234: return Units.useMiles ? "25 mi" : "40 km"
+        default: return "Whole route"
+        }
+    }
+
     var body: some View {
-        Form {
-            Section {
-                Toggle("Set alerts per kind", isOn: Binding(get: { prefs.advancedAlerts }, set: { prefs.advancedAlerts = $0; prefs.objectWillChange.send() }))
-                    .accessibilityIdentifier("advanced-toggle")
-                Text("Off: every alert uses the one distance on the Alerts page. On: each kind below has its own first warning, an optional second warning closer in, and its own voice.")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
-            Section {
-                Picker("Show the next alert within", selection: Binding(get: { prefs.stripAheadMeters }, set: { prefs.stripAheadMeters = $0; prefs.objectWillChange.send() })) {
-                    Text(Units.useMiles ? "5 mi" : "8 km").tag(8047.0)
-                    Text(Units.useMiles ? "10 mi" : "16 km").tag(16093.0)
-                    Text(Units.useMiles ? "25 mi" : "40 km").tag(40234.0)
-                    Text("Whole route").tag(1e9)
+        DGPage(title: "Warnings for each kind", identifier: "page-advanced-alerts") {
+            VStack(alignment: .leading, spacing: 0) {
+                DGGroup {
+                    DGSwitchRow(title: "Set alerts per kind",
+                                isOn: Binding(get: { prefs.advancedAlerts }, set: { prefs.advancedAlerts = $0; prefs.objectWillChange.send() }),
+                                identifier: "advanced-toggle")
                 }
-            } footer: { Text("The card under the next turn shows the nearest alert inside this distance.") }
-            if prefs.advancedAlerts {
-                ForEach(Prefs.alertKinds, id: \.key) { k in
-                    Section(k.label) {
-                        let rule = prefs.alertRules[k.key] ?? Prefs.AlertRule()
-                        Toggle("Warn", isOn: Binding(get: { rule.enabled }, set: { var r = rule; r.enabled = $0; prefs.setRule(r, for: k.key) }))
-                        if rule.enabled {
-                            Picker("First warning", selection: Binding(get: { nearest(rule.firstMeters) }, set: { var r = rule; r.firstMeters = $0; if r.repeatMeters >= $0 { r.repeatMeters = 0 }; prefs.setRule(r, for: k.key) })) {
-                                ForEach(steps, id: \.self) { m in Text(Units.distance(m) + " ahead").tag(m) }
-                            }
-                            Picker("Second warning", selection: Binding(get: { rule.repeatMeters == 0 ? 0 : nearest(rule.repeatMeters) }, set: { var r = rule; r.repeatMeters = $0; prefs.setRule(r, for: k.key) })) {
-                                Text("None").tag(0.0)
-                                ForEach(steps.filter { $0 < nearest(rule.firstMeters) }, id: \.self) { m in Text(Units.distance(m) + " ahead").tag(m) }
-                            }
-                            Toggle("Speak it", isOn: Binding(get: { rule.speak }, set: { var r = rule; r.speak = $0; prefs.setRule(r, for: k.key) }))
-                        }
+                .padding(.top, 8)
+                DGFootnote("Off: every alert uses the one distance on the Alerts page. On: each kind below has its own first warning, an optional second warning closer in, and its own voice.")
+                DGGroup {
+                    DGChoiceRow(title: "Show the next alert within", value: stripWord,
+                                selection: Binding(get: { prefs.stripAheadMeters }, set: { prefs.stripAheadMeters = $0; prefs.objectWillChange.send() })) {
+                        Text(Units.useMiles ? "5 mi" : "8 km").tag(8047.0)
+                        Text(Units.useMiles ? "10 mi" : "16 km").tag(16093.0)
+                        Text(Units.useMiles ? "25 mi" : "40 km").tag(40234.0)
+                        Text("Whole route").tag(1e9)
                     }
                 }
-                Section {
-                    Button("Reset to defaults") { prefs.alertRules = [:] }
+                .padding(.top, 14)
+                DGFootnote("The card under the next turn shows the nearest alert inside this distance.")
+                if prefs.advancedAlerts {
+                    ForEach(Prefs.alertKinds, id: \.key) { k in
+                        DGSectionLabel(k.label)
+                        kindRules(k.key)
+                    }
+                    DGGroup {
+                        Button { prefs.alertRules = [:] } label: {
+                            DGRow(title: "Reset to defaults", chevron: false) { EmptyView() }
+                        }
+                        .buttonStyle(DGRowPress())
+                    }
+                    .padding(.top, 20)
                 }
             }
         }
-        .navigationTitle("Warnings for each kind")
-        .navigationBarTitleDisplayMode(.inline)
-        .dgFormPage()
+    }
+
+    private func kindRules(_ key: String) -> some View {
+        let rule = prefs.alertRules[key] ?? Prefs.AlertRule()
+        return DGGroup {
+            DGSwitchRow(title: "Warn", isOn: Binding(get: { rule.enabled }, set: { var r = rule; r.enabled = $0; prefs.setRule(r, for: key) }),
+                        identifier: "warn-\(key)")
+            if rule.enabled {
+                DGDivider(inset: 14)
+                DGChoiceRow(title: "First warning", value: Units.distance(nearest(rule.firstMeters)) + " ahead",
+                            selection: Binding(get: { nearest(rule.firstMeters) }, set: { var r = rule; r.firstMeters = $0; if r.repeatMeters >= $0 { r.repeatMeters = 0 }; prefs.setRule(r, for: key) })) {
+                    ForEach(steps, id: \.self) { m in Text(Units.distance(m) + " ahead").tag(m) }
+                }
+                DGDivider(inset: 14)
+                DGChoiceRow(title: "Second warning", value: rule.repeatMeters == 0 ? "None" : Units.distance(nearest(rule.repeatMeters)) + " ahead",
+                            selection: Binding(get: { rule.repeatMeters == 0 ? 0 : nearest(rule.repeatMeters) }, set: { var r = rule; r.repeatMeters = $0; prefs.setRule(r, for: key) })) {
+                    Text("None").tag(0.0)
+                    ForEach(steps.filter { $0 < nearest(rule.firstMeters) }, id: \.self) { m in Text(Units.distance(m) + " ahead").tag(m) }
+                }
+                DGDivider(inset: 14)
+                DGSwitchRow(title: "Speak it", isOn: Binding(get: { rule.speak }, set: { var r = rule; r.speak = $0; prefs.setRule(r, for: key) }),
+                            identifier: "speak-\(key)")
+            }
+        }
     }
 
     private func nearest(_ m: Double) -> Double {
         steps.min { abs($0 - m) < abs($1 - m) } ?? m
-    }
-}
-
-extension View {
-    /// A system form page that sits with the Day Glass+ pages: the same
-    /// soft background, with the system navigation bar.
-    func dgFormPage() -> some View {
-        scrollContentBackground(.hidden)
-            .background(DGPageBackground())
-            .toolbar(.visible, for: .navigationBar)
     }
 }

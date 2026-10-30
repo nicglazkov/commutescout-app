@@ -26,21 +26,28 @@ struct ToolsSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Button { page = .alerts } label: { Label("Alerts nearby", systemImage: "exclamationmark.triangle") }
-                    .accessibilityIdentifier("tool-alerts")
-                Button { page = .directions } label: { Label("Directions from another place", systemImage: "arrow.triangle.swap") }
-                    .accessibilityIdentifier("tool-directions")
-                Button { page = .watches } label: { Label("Watch areas", systemImage: "eye") }
-                    .accessibilityIdentifier("tool-watches")
-                Button { page = .ask } label: { Label("Ask about the roads", systemImage: "bubble.left.and.text.bubble.right") }
-                    .accessibilityIdentifier("tool-ask")
-                Section {
-                    Link(destination: URL(string: "https://commutescout.com/map")!) { Label("Open the full map on the web", systemImage: "safari") }
+            DGPage(title: "Tools", identifier: "page-tools", backSymbol: "xmark") {
+                VStack(spacing: 14) {
+                    DGGroup {
+                        row("Alerts nearby", "exclamationmark.triangle", .alerts, id: "tool-alerts")
+                        DGDivider()
+                        row("Directions from another place", "arrow.triangle.swap", .directions, id: "tool-directions")
+                        DGDivider()
+                        row("Watch areas", "eye", .watches, id: "tool-watches")
+                        DGDivider()
+                        row("Ask about the roads", "bubble.left.and.text.bubble.right", .ask, id: "tool-ask")
+                    }
+                    DGGroup {
+                        Link(destination: URL(string: "https://commutescout.com/map")!) {
+                            DGRow(title: "Open the full map on the web", chevron: false, leading: { DGSoftTile(symbol: "safari") },
+                                  trailing: { Image(systemName: "arrow.up.right").font(.system(size: 13, weight: .bold)).foregroundStyle(DG.faint) })
+                        }
+                        .buttonStyle(DGRowPress())
+                        .accessibilityIdentifier("tool-web")
+                    }
                 }
+                .padding(.top, 8)
             }
-            .navigationTitle("Tools")
-            .toolbar { Button("Done") { dismiss() } }
             .sheet(item: $page) { p in
                 Group {
                     switch p {
@@ -53,6 +60,12 @@ struct ToolsSheet: View {
                 .environment(\.dismissTools, { page = nil; dismiss() })
             }
         }
+    }
+
+    private func row(_ title: String, _ symbol: String, _ p: Page, id: String) -> some View {
+        Button { page = p } label: { DGRow(title: title) { DGSoftTile(symbol: symbol) } }
+            .buttonStyle(DGRowPress())
+            .accessibilityIdentifier(id)
     }
 }
 
@@ -91,36 +104,53 @@ struct AlertsListView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                if !ready {
-                    HStack { ProgressView(); Text("Looking around you").foregroundStyle(.secondary) }
-                } else if sorted.isEmpty {
-                    Text("Nothing reported within 100 miles of you.").foregroundStyle(.secondary)
-                }
-                ForEach(sorted) { m in
-                    Button {
-                        model.select(m)
-                        model.focusEvent(m.coordinate)
-                        dismissTools()
-                    } label: {
+            DGPage(title: "Alerts nearby", identifier: "page-alerts", backSymbol: "xmark") {
+                VStack(alignment: .leading, spacing: 0) {
+                    if !ready {
                         HStack(spacing: 10) {
-                            MarkerGlyph(marker: m, size: 22).frame(width: 24)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(m.displayTitle).font(.subheadline).foregroundStyle(.primary).lineLimit(2)
-                                if let l = m.detailLines.first { Text(l).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-                            }
-                            Spacer()
-                            if let here = model.here {
-                                Text(Units.distance(AlertsEngine.meters(here, m.coordinate))).font(.caption).foregroundStyle(.secondary)
+                            ProgressView()
+                            Text("Looking around you").font(DG.font(15)).foregroundStyle(DG.sub)
+                        }
+                        .padding(.vertical, 12)
+                    } else if sorted.isEmpty {
+                        Text("Nothing reported within 100 miles of you.").font(DG.font(15)).foregroundStyle(DG.sub).padding(.vertical, 12)
+                    } else {
+                        DGGroup {
+                            ForEach(Array(sorted.enumerated()), id: \.element.id) { i, m in
+                                if i > 0 { DGDivider(inset: 50) }
+                                row(m)
                             }
                         }
                     }
                 }
+                .padding(.top, 8)
             }
-            .navigationTitle("Alerts nearby")
-            .toolbar { Button("Done") { dismiss() } }
             .task(id: model.markers.stamp) { await rank() }
         }
+    }
+
+    private func row(_ m: RoadMarker) -> some View {
+        Button {
+            model.select(m)
+            model.focusEvent(m.coordinate)
+            dismissTools()
+        } label: {
+            HStack(spacing: 12) {
+                MarkerGlyph(marker: m, size: 22).frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(m.displayTitle).font(DG.T.rowTitle).foregroundStyle(DG.ink).lineLimit(2).multilineTextAlignment(.leading)
+                    if let l = m.detailLines.first { Text(l).font(DG.T.rowSub).foregroundStyle(DG.sub).lineLimit(1) }
+                }
+                Spacer(minLength: 6)
+                if let here = model.here {
+                    Text(Units.distance(AlertsEngine.meters(here, m.coordinate))).font(DG.font(13, .medium)).foregroundStyle(DG.sub)
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10).frame(minHeight: 54)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(DGRowPress())
+        .accessibilityIdentifier("alert-row")
     }
 }
 
@@ -142,39 +172,48 @@ struct DirectionsView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("From") {
+            DGPage(title: "Directions", identifier: "page-directions", backSymbol: "xmark") {
+                VStack(alignment: .leading, spacing: 0) {
+                    DGSectionLabel("From")
                     Button { from = nil; fromText = "" } label: {
-                        Label(from == nil ? "My location" : from!.shortName, systemImage: from == nil ? "location.fill" : "mappin")
+                        DGGroup {
+                            DGRow(title: from?.shortName ?? "My location", chevron: false) {
+                                DGSoftTile(symbol: from == nil ? "location.fill" : "mappin")
+                            }
+                        }
                     }
+                    .buttonStyle(DGPressStyle())
                     field("Or search a start", text: $fromText, results: $fromResults) { from = $0; fromText = $0.shortName; fromResults = []; focus = nil }
                         .focused($focus, equals: .from)
-                }
-                Section("To") {
-                    if let to { Label(to.shortName, systemImage: "mappin.and.ellipse") }
+                        .padding(.top, 10)
+                    DGSectionLabel("To")
+                    if let to {
+                        DGGroup {
+                            DGRow(title: to.shortName, chevron: false) { DGSoftTile(symbol: "mappin.and.ellipse") }
+                        }
+                        .padding(.bottom, 10)
+                    }
                     field("Search a destination", text: $toText, results: $toResults) { to = $0; toText = $0.shortName; toResults = []; focus = nil }
                         .focused($focus, equals: .to)
-                }
-                Section {
                     Button {
                         guard let to else { return }
                         model.origin = from
                         dismissTools()
                         Task { await model.routes(to: to) }
-                    } label: { Label("Show routes", systemImage: "arrow.triangle.turn.up.right.diamond.fill").frame(maxWidth: .infinity) }
+                    } label: { Label("Show routes", systemImage: "arrow.triangle.turn.up.right.diamond.fill") }
+                    .buttonStyle(.dgBlue)
                     .disabled(to == nil)
-                    Text("Route options (tolls, highways, ferries) are in Settings. Full closures are always avoided.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                    .opacity(to == nil ? 0.5 : 1)
+                    .padding(.top, 20)
+                    DGFootnote("Route options (tolls, highways, ferries) are in Settings. Full closures are always avoided.")
                 }
             }
-            .navigationTitle("Directions")
-            .toolbar { Button("Cancel") { dismiss() } }
         }
     }
 
     @ViewBuilder
     private func field(_ placeholder: String, text: Binding<String>, results: Binding<[Suggestion]>, pick: @escaping (Place) -> Void) -> some View {
-        TextField(placeholder, text: text)
+        DGField(placeholder: placeholder, text: text)
             .autocorrectionDisabled()
             .onChange(of: text.wrappedValue) { q in
                 let t = q.trimmingCharacters(in: .whitespaces)
@@ -187,8 +226,19 @@ struct DirectionsView: View {
                     }
                 }
             }
-        ForEach(results.wrappedValue) { s in
-            Button(s.name) { pick(Place(name: s.name, coordinate: s.coordinate, kind: .recent)) }.font(.subheadline)
+        if !results.wrappedValue.isEmpty {
+            DGGroup {
+                ForEach(Array(results.wrappedValue.enumerated()), id: \.element.id) { i, s in
+                    if i > 0 { DGDivider(inset: 14) }
+                    Button { pick(Place(name: s.name, coordinate: s.coordinate, kind: .recent)) } label: {
+                        Text(s.name).font(DG.font(15, .medium)).foregroundStyle(DG.ink).multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 14).padding(.vertical, 12).contentShape(Rectangle())
+                    }
+                    .buttonStyle(DGRowPress())
+                }
+            }
+            .padding(.top, 8)
         }
     }
 }
@@ -208,30 +258,38 @@ struct AskView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 12) {
-                ScrollView {
+            ZStack(alignment: .bottom) {
+                DGPage(title: "Ask", identifier: "page-ask", backSymbol: "xmark") {
                     VStack(alignment: .leading, spacing: 10) {
                         if answer.isEmpty, !running {
                             Text("Ask about closures, chain controls, fires or traffic anywhere in the country, for example \"Is I-70 open through the Eisenhower Tunnel?\", \"Any crashes on I-95 near Richmond?\" or \"Chains on US-2 over Stevens Pass?\"")
-                                .foregroundStyle(.secondary)
+                                .font(DG.font(15)).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
                         }
-                        if !status.isEmpty { Text(status).font(.caption).foregroundStyle(.secondary) }
-                        if !answer.isEmpty { Text(LocalizedStringKey(answer)).textSelection(.enabled) }
+                        if !status.isEmpty { Text(status).font(DG.T.rowSub).foregroundStyle(DG.sub) }
+                        if !answer.isEmpty {
+                            Text(LocalizedStringKey(answer)).font(DG.font(16)).foregroundStyle(DG.ink).textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         if running { ProgressView() }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
                 }
-                HStack {
-                    TextField("Ask about the roads", text: $question, axis: .vertical).lineLimit(1 ... 3)
-                        .textFieldStyle(.roundedBorder).onSubmit { Task { await ask() } }
-                        .accessibilityIdentifier("ask-field")
-                    Button { Task { await ask() } } label: { Image(systemName: "paperplane.fill") }
-                        .buttonStyle(.borderedProminent).disabled(question.trimmingCharacters(in: .whitespaces).isEmpty || running)
+                DGDock {
+                    HStack(spacing: 10) {
+                        DGField(placeholder: "Ask about the roads", text: $question, axis: .vertical)
+                            .lineLimit(1 ... 3).onSubmit { Task { await ask() } }
+                            .accessibilityIdentifier("ask-field")
+                        Button { Task { await ask() } } label: {
+                            Image(systemName: "paperplane.fill").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                                .frame(width: 48, height: 48).background(DG.path, in: Circle())
+                        }
+                        .buttonStyle(DGPressStyle())
+                        .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty || running)
+                        .opacity(question.trimmingCharacters(in: .whitespaces).isEmpty || running ? 0.5 : 1)
+                        .accessibilityLabel("Send")
+                    }
                 }
-                .padding(.horizontal, 16).padding(.bottom, 12)
             }
-            .navigationTitle("Ask")
-            .toolbar { Button("Done") { dismiss() } }
         }
     }
 

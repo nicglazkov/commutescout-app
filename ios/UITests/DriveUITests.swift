@@ -98,7 +98,7 @@ final class DriveUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["settings-map-style"].firstMatch.waitForExistence(timeout: 5))
         openPage("saved-places")
         // In the list itself: the places tray under the sheet has a "Home" row too.
-        XCTAssertTrue(reveal(app.cells.staticTexts["Home"].firstMatch), "Home listed under Saved places")
+        XCTAssertTrue(reveal(app.buttons["remove-Home"].firstMatch), "Home listed under Saved places")
         back()
         app.buttons["page-close"].firstMatch.tap()
     }
@@ -171,18 +171,18 @@ final class DriveUITests: XCTestCase {
         app.buttons["tools"].tap()
         XCTAssertTrue(app.buttons["tool-alerts"].waitForExistence(timeout: 5))
         app.buttons["tool-alerts"].tap()
-        XCTAssertTrue(app.navigationBars["Alerts nearby"].waitForExistence(timeout: 8))
-        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["page-alerts"].firstMatch.waitForExistence(timeout: 8))
+        app.buttons["page-close"].firstMatch.tap()
         app.buttons["tool-ask"].tap()
-        XCTAssertTrue(app.navigationBars["Ask"].waitForExistence(timeout: 5))
-        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["page-ask"].firstMatch.waitForExistence(timeout: 5))
+        app.buttons["page-close"].firstMatch.tap()
         app.buttons["tool-watches"].tap()
         XCTAssertTrue(app.staticTexts["Watch areas"].firstMatch.waitForExistence(timeout: 5))
         app.buttons["page-close"].firstMatch.tap()
         app.buttons["tool-directions"].tap()
-        XCTAssertTrue(app.navigationBars["Directions"].waitForExistence(timeout: 5))
-        app.buttons["Cancel"].firstMatch.tap()
-        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["page-directions"].firstMatch.waitForExistence(timeout: 5))
+        app.buttons["page-close"].firstMatch.tap()
+        app.buttons["page-close"].firstMatch.tap()
     }
 
     func testReportSheetAsksForSignIn() {
@@ -192,7 +192,7 @@ final class DriveUITests: XCTestCase {
         app.buttons["report-POLICE_VISIBLE"].tap()
         // Signed out, a kind leads to sign-in rather than a report.
         XCTAssertTrue(app.buttons["Continue with Google"].waitForExistence(timeout: 5))
-        app.buttons["Cancel"].firstMatch.tap()
+        app.buttons["page-close"].firstMatch.tap()
         app.buttons["report-close"].tap()
     }
 
