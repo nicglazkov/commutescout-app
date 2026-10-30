@@ -93,10 +93,13 @@ struct MapHook: UIViewRepresentable {
             for g in mv.gestureRecognizers ?? [] {
                 if let t = g as? UITapGestureRecognizer, t.numberOfTapsRequired == 2 { tap.require(toFail: t) }
             }
-            mv.addGestureRecognizer(tap)
             let press = UILongPressGestureRecognizer(target: self, action: #selector(pressed(_:)))
             press.minimumPressDuration = 0.6
             press.delegate = self
+            // Lifting the finger after a long press must not also count as
+            // a tap: on a marker, the tap would swap the pin for the marker.
+            tap.require(toFail: press)
+            mv.addGestureRecognizer(tap)
             mv.addGestureRecognizer(press)
             // UI tests wait on this: from here on a press drops a pin.
             mv.accessibilityIdentifier = "cs-map"
