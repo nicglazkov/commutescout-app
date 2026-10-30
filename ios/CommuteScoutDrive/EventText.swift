@@ -48,12 +48,12 @@ struct EventContent: Equatable {
         case "camera":
             return EventContent(chip: "Camera", title: m.name ?? "Roadside camera",
                                 subtitle: m.whereLine.isEmpty ? nil : m.whereLine,
-                                foot: ["Source: " + (m.src.map { $0 + " camera network" } ?? "Caltrans CCTV")])
+                                foot: ["Source: " + (m.src.map { $0 + " camera network" } ?? "state transportation agency cameras")])
         case "sign":
             let road = [m.route, m.direction].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
             var c = EventContent(chip: "Message sign", title: road.isEmpty ? "Changeable sign" : road,
                                  subtitle: (m.near ?? "").isEmpty ? nil : m.near,
-                                 foot: ["Source: " + (m.src.map { $0 + " message signs" } ?? "Caltrans CMS")])
+                                 foot: ["Source: " + (m.src.map { $0 + " message signs" } ?? "state transportation agency message signs")])
             if m.blank == true || m.signLines.isEmpty { c.body = [Line(text: "This sign is blank right now.", gloss: true)] }
             return c
         case "rwis": return weather(m)
@@ -119,7 +119,7 @@ struct EventContent: Equatable {
             m.windows.flatMap { $0 > 1 ? Fact(label: "Windows", value: "\($0 - 1) more scheduled at this spot") : nil },
         ].compactMap { $0 }
         c.schedule = schedule(m, now: now, viewerZone: viewerZone)
-        c.foot = ["Source: " + (nonEmpty(m.src).map { $0 + " data feed" } ?? "Caltrans lane closure system")]
+        c.foot = ["Source: " + (nonEmpty(m.src).map { $0 + " data feed" } ?? "state transportation agency lane closures")]
         return c
     }
 
@@ -198,7 +198,7 @@ struct EventContent: Equatable {
             m.visM.flatMap { $0 < 5000 ? Fact(label: "Visibility", value: "\(Int($0.rounded())) m") : nil },
         ].compactMap { $0 }
         if c.facts.isEmpty { c.body = [Line(text: "This station is online. It has no readings right now.", gloss: true)] }
-        c.foot = ["Source: " + (nonEmpty(m.src).map { $0 + " weather station" } ?? "Caltrans roadside weather station")]
+        c.foot = ["Source: " + (nonEmpty(m.src).map { $0 + " weather station" } ?? "state transportation agency weather station")]
         return c
     }
 
@@ -233,7 +233,7 @@ struct EventContent: Equatable {
     // MARK: closure schedule
 
     /// Times are told in the road's zone. Every source maps to its
-    /// state's zone; no source means California.
+    /// state's zone; with no source they read as Pacific time.
     static let zoneBySource: [String: String] = [
         "WSDOT": "America/Los_Angeles", "Oregon DOT (TripCheck)": "America/Los_Angeles",
         "NDOT": "America/Los_Angeles", "511.org": "America/Los_Angeles", "BATA": "America/Los_Angeles",
@@ -297,7 +297,9 @@ struct EventContent: Equatable {
     /// survives every state, and a past end says the agency has not
     /// reported it clear.
     static func schedule(_ m: RoadMarker, now: Date, viewerZone: TimeZone) -> Schedule {
-        let agency = nonEmpty(m.src) ?? "Caltrans"
+        // "the state transportation agency" until a sentence starts with it.
+        let agency = nonEmpty(m.src) ?? "the state transportation agency"
+        let opening = agency.prefix(1).uppercased() + agency.dropFirst()
         let zone = roadZone(m)
         let full = m.cls == "full-roadway"
         let started = m.since.map { " It started " + whenPhrase($0, zone: zone, zoneMode: 0, now: now, viewerZone: viewerZone) + "." } ?? ""
@@ -305,8 +307,8 @@ struct EventContent: Equatable {
         if let until = m.until, until < now.timeIntervalSince1970 {
             head = "Was scheduled to end " + whenPhrase(until, zone: zone, zoneMode: 2, now: now, viewerZone: viewerZone)
             tail = "That was " + spanPhrase(until, now: now) + " ago. "
-                + (full ? agency + " has not reported it open. Assume the road is still closed."
-                        : agency + " has not reported it clear. Assume the restriction is still there.")
+                + (full ? opening + " has not reported it open. Assume the road is still closed."
+                        : opening + " has not reported it clear. Assume the restriction is still there.")
         } else if let until = m.until {
             head = "Scheduled to end " + whenPhrase(until, zone: zone, zoneMode: 2, now: now, viewerZone: viewerZone)
             tail = "That is " + spanPhrase(until, now: now) + " from now." + started

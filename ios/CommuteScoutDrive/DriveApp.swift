@@ -17,12 +17,16 @@ struct DriveApp: App {
     /// The app, or with "-csCatalog [system]" the catalog of every alert
     /// or every message, for comparing against the design.
     @ViewBuilder private var root: some View {
+        #if DEBUG || CS_TEST_HOOKS
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-csCatalog") {
             AlertCatalog(page: args.dropFirst(i + 1).first == "system" ? .system : .alerts)
         } else {
             ContentView()
         }
+        #else
+        ContentView()
+        #endif
     }
 
     var body: some Scene {

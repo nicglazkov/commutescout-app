@@ -251,7 +251,7 @@ private struct AlertsContent: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            DGFootnote("From state DOTs, 511 feeds, CHP, the National Weather Service and fire agencies. A kind you turn off still shows on the map.")
+            DGFootnote("From state transportation agencies, 511 feeds, the National Weather Service and fire agencies. A kind you turn off still shows on the map.")
 
             DGSectionLabel("Plugin alerts", trailing: AnyView(DGTag(text: "Not official", systemImage: "puzzlepiece.extension.fill", color: Self.plug)))
             DGGroup(tint: Self.plug.opacity(0.05)) {

@@ -901,7 +901,7 @@ struct SavedMapDetail: View {
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             case .deleted:
                 Button {} label: { Label { Text("Deleted") } icon: { DGMoreIcon(name: "check", size: 19, stroke: 2.6) } }
-                    .buttonStyle(.dgDone).allowsHitTesting(false)
+                    .buttonStyle(.dgDone).disabled(true)
             default:
                 Button { update() } label: {
                     Label {

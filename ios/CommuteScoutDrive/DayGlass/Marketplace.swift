@@ -538,7 +538,7 @@ struct PluginDetailView: View {
             switch step {
             case .removed:
                 Button {} label: { Label { Text("Removed") } icon: { DGMoreIcon(name: "check", size: 19, stroke: 2.6) } }
-                    .buttonStyle(.dgDone).allowsHitTesting(false)
+                    .buttonStyle(.dgDone).disabled(true)
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
             case .confirm:
                 Button("Keep it") { withAnimation(DG.snap) { step = .idle } }
