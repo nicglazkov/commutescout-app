@@ -1,6 +1,8 @@
 package com.commutescout.drive
 
 import android.Manifest
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -45,7 +47,9 @@ class MainActivity : ComponentActivity() {
             val state by model.state.collectAsStateWithLifecycle()
             BackHandler(enabled = state is DriveState.Navigating) { moveTaskToBack(true) }
             com.commutescout.drive.design.DayGlassTheme(scheme) {
-                Surface { DriveScreen(model) }
+                // Debug builds name each test tag for UiAutomator too: the
+                // instrumented tests reach for it while a trip keeps the map busy.
+                Surface(if (BuildConfig.DEBUG) androidx.compose.ui.Modifier.semantics { testTagsAsResourceId = true } else androidx.compose.ui.Modifier) { DriveScreen(model) }
             }
         }
         // A rotation brings the same intent back: the alert was opened already.

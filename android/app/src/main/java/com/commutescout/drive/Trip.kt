@@ -222,8 +222,9 @@ private fun SearchPanel(model: DriveViewModel, onSettings: () -> Unit, focusedSt
                 QuickTiles(model, here) { p -> pick(p.name, p.lat, p.lon) }
                 if (text.isEmpty()) {
                     // Up to 5 favorites, then the last 10 destinations, as on the web map. Any can be removed.
-                    val rows = model.places.saved.take(5).map { Hit("star", Tone.MID, it.shortName, it.name.substringAfter(",", "").trim().ifEmpty { null }, it.lat, it.lon, it.name, it) } +
-                        model.places.recents.take(10).map { Hit("recent", Tone.CLEAR, it.shortName, it.name.substringAfter(",", "").trim().ifEmpty { null }, it.lat, it.lon, it.name, it) }
+                    // Read from the observed list, so a removal redraws the tray at once.
+                    val rows = places.filter { it.kind == PlaceKind.saved }.take(5).map { Hit("star", Tone.MID, it.shortName, it.name.substringAfter(",", "").trim().ifEmpty { null }, it.lat, it.lon, it.name, it) } +
+                        places.filter { it.kind == PlaceKind.recent }.sortedByDescending { it.savedAt }.take(10).map { Hit("recent", Tone.CLEAR, it.shortName, it.name.substringAfter(",", "").trim().ifEmpty { null }, it.lat, it.lon, it.name, it) }
                     if (rows.isNotEmpty()) ResultList(rows, "", here, onRemove = { model.places.remove(it) }) { pick(it.full, it.lat, it.lon) }
                 } else {
                     val rows = local.map { p ->
@@ -244,7 +245,9 @@ private fun SearchPanel(model: DriveViewModel, onSettings: () -> Unit, focusedSt
 /** Home and Work, side by side, one tap each. Each has a small remove. */
 @Composable
 private fun QuickTiles(model: DriveViewModel, here: LatLon?, onPick: (Place) -> Unit) {
-    val tiles = listOfNotNull(model.places.home?.let { Triple("home", "Home", it) }, model.places.work?.let { Triple("work", "Work", it) })
+    val all by model.places.places.collectAsStateWithLifecycle()
+    val tiles = listOfNotNull(all.firstOrNull { it.kind == PlaceKind.home }?.let { Triple("home", "Home", it) },
+        all.firstOrNull { it.kind == PlaceKind.work }?.let { Triple("work", "Work", it) })
     if (tiles.isEmpty()) return
     Row(Modifier.padding(top = 10.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         tiles.forEach { (icon, label, p) ->

@@ -492,7 +492,7 @@ private fun SavedMapPage(model: DriveViewModel, f: MapFiles.LocalFile, fixtures:
                             if (!fixtures) MapFiles.delete(current)
                             phase = "deleted"
                             scope.launch { delay(900); onClose() }
-                        }, Modifier.weight(1f).tag("saved-delete-yes"), style = BtnStyle.DANGER)
+                        }, Modifier.weight(1f).tag("saved-delete-yes"), style = BtnStyle.DANGER_SOLID)
                     }
                     "deleted" -> DGButton("Deleted", {}, Modifier.weight(1f), style = BtnStyle.DONE, icon = "check")
                     else -> {

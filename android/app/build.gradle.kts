@@ -183,6 +183,8 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:rules:1.6.1")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+    // IdlingPolicies: the drive tests shorten the idle wait while a trip keeps the map busy.
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")
     androidTestUtil("androidx.test:orchestrator:1.5.1")
     testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

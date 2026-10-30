@@ -397,7 +397,7 @@ fun SourcesSheet(model: DriveViewModel, onClose: () -> Unit) {
                         DGButton("Cancel", { adding = false; model.sources.clearError() }, Modifier.weight(1f))
                         DGButton(if (busy) "Checking" else "Add", {
                             scope.launch { busy = true; model.sources.clearError(); if (model.sources.add(base, token)) { adding = false; base = ""; token = "" }; busy = false }
-                        }, Modifier.weight(1f), style = BtnStyle.BLUE, enabled = base.isNotBlank() && !busy)
+                        }, Modifier.weight(1f).tag("source-add"), style = BtnStyle.BLUE, enabled = base.isNotBlank() && !busy)
                     }
                 }
             }

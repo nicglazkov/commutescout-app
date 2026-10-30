@@ -502,7 +502,7 @@ fun AccountPage(model: DriveViewModel) {
         Spacer(Modifier.height(18.dp))
         DGButton("Delete account", {
             nav?.confirm(ConfirmRequest("Delete your account?", "This removes your watch areas, API keys and reports for good. It cannot be undone.",
-                listOf(ConfirmAction("Cancel"), ConfirmAction("Delete", BtnStyle.DANGER, "delete-yes") { scope.launch { model.account.deleteAccount() } })))
+                listOf(ConfirmAction("Cancel"), ConfirmAction("Delete", BtnStyle.DANGER_SOLID, "delete-yes") { scope.launch { model.account.deleteAccount() } })))
         }, Modifier.padding(horizontal = 14.dp).fillMaxWidth().tag("delete-account"), style = BtnStyle.WARN, icon = "trash")
         GroupFoot("Deleting removes your watch areas, API keys and reports for good.")
     }
