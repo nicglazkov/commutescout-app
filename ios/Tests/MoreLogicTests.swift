@@ -98,14 +98,118 @@ final class MoreLogicTests: XCTestCase {
         XCTAssertLessThanOrEqual((n - lats.last! / 1e6) * 110_540, AreaMath.bufferM + 1)
     }
 
-    func testEstimateUsesTheStateDensity() {
-        let d = AreaMath.density(stateBytes: 1_000_000_000, south: 0, west: 0, north: 1, east: 1)
-        XCTAssertNotNil(d)
-        XCTAssertNil(AreaMath.density(stateBytes: nil, south: 0, west: 0, north: 1, east: 1))
-        XCTAssertEqual(AreaMath.estimateBytes(widthKm: 10, heightKm: 10, bytesPerSqKm: nil), 25_000_000)
-        XCTAssertEqual(AreaMath.estimateBytes(widthKm: 10, heightKm: 10, bytesPerSqKm: 1000), 100_000)
-        XCTAssertEqual(AreaMath.estimateBytes(widthKm: .nan, heightKm: 10, bytesPerSqKm: nil), 0)
-        XCTAssertEqual(AreaMath.estimateBytes(widthKm: .infinity, heightKm: 10, bytesPerSqKm: nil), 0)
+    // The US map file's index entries for three 10 km boxes, cut on
+    // 2026-10-29 from build 20261001 (one entry per tile that holds data).
+    // The same file put a 40 by 48 km Bay Area box at 48.1 MB, a 40 km
+    // box of Nevada desert at 1.2 MB and 40 km of rural Iowa at 8.8 MB.
+    static let paloAltoIndex = "vQEAAQcZZpkD4QyHM5nMAeawBpfDGQHcjGYBAQHyspgDAQcBysvhDAEBAQEBGQEBAQEBp66GMwMBAQEBAQEBAQEBAQEBAQQB" +
+            "YwEEAQEBAQEBAQEBAQEBAQEDmrmZzAENAQEBAQEBAwEDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQMB" +
+            "ARABAwGKAwEBAQEBAQENAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEDAQMBAQEBAQEBAQoB" +
+            "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB" +
+            "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB" +
+            "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB64kEybwE8IIExfgDzrkC9oQF9MUDnrUGntII" +
+            "y6UKktQGvNQE+KIE9PAEsaoCq+kDk8UDnZkEpf4BzI0DwJwCupoFiaoE/cIEu/oE9oIDnp4B7B3mrwG4pwTPnASP9QHP5QG9" +
+            "JuSIAc/GAebEBduvA6ezA7y6As+3A8DgA7OZA8+/Aa7GA7eaBPq6A/7+A5fnAtGLAf71Aax9uQHyEKZMuAmKMtzFAcPnA4Hc" +
+            "AouaBLKKBNHXBKPcAoyIA6bUAtmmApm/Aqm7AZsSkw3eHraAAfWNAeIR30uyswGYhgSXngS32wPHxwGGoAK00gGhuQG49QLz" +
+            "qwOrggK71wGQXYmqAbemAtLxAbHhAcOYA+DSA8qpA87CA52gA5qrA/b8AsOAA829AvWZAaBGiD71hwGqsgHGjALG4AGVkAPu" +
+            "pQPw8wLo3QKl4AKZlgOihQLaxwL70AKvnwPj0gGlnwHQOoYpoA702wKTrALZPbwdvssB3FP3GKoBrAG6AV+4AawBxQTVFfoM" +
+            "sE/bLLgBrQGsAbkB/gqyF5gM1g/dHZMg4UaOkAGrugHtowP+9wKN2gLTyQK+jwLqmwHplALO8wHtmAPz6ALu6QL3+gK31wPJ" +
+            "lgP44wPtigS/7gOdpQTDswX7ugXx/gK06gGhjgLs7QHnoQHKowKl8gGxnwG/kQL/xwLgkwGRWq7pAfT3AgEAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+    static let nevadaIndex = "xwEAAQcZZpkD5AyPM7vMAeuxBqzHGbKdZgHF9ZgDAQEBAQGU1uMMAQUBAwEBAQEBAwHQ2I4zAQEBAQEBARMBAQENAQEBAQEB" +
+            "AQEBAQEBAQEBAQEBAQ0BAQO94rrMAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQFJAQEBAQEBAQEBAQEBAQEBMQEB" +
+            "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQMB" +
+            "ATUBAQMBAQ0BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB" +
+            "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB" +
+            "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAeuJBMm8BPCC" +
+            "BMX4A865AvaEBfTxAsfqAe+BAdIxrQjaAqsHgwf4BZMFmQeVBuoQwwO9BocD1wLPAsMD6AO1A4MF8gOBA8MDoAO0AbECtAOz" +
+            "Av4EtAXIA74CsgPsAt8B0wH0AewBqQPOAfABngKZA/4B8QGBApABkAH+AqwDpQPiAowDpgSvAqcDvAG7AfEC6QL1ApABvQG4" +
+            "AbQBkAGQAZABkAGQAa8C7QLqAs0CkAGQAZABkAHEAqADkAHLA/UD0wL9AsAC9gOaA5kBkAGkAuwB8AG8AYkClgNISNoCqAJI" +
+            "jQKIAkhISN8BSL0BvQGvAd8BSEjSAckBSEjeAcwBSPACxQJI1AFISEhItgHqAf0BzgHwAUjbAfsBxwKAAkj3AZgBlQGWAUi1" +
+            "AUiUAZABkAGBApABkAGQAZABkAGQAZABkAH1AZABkAGoA4oCjwKvAsQCrwKIArUCqwKmAsICSJcBkAGqAvECkAG9AbIEsgK4" +
+            "AbMCgwO+AbgBuwGoAagBqAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    static let iowaIndex = "3gEAAQcaZ5wD8AzBM4POAQOLuAYLrOAZLa+BZ7UBu4WcAwHTBQHqlfAMAQEBAQEBAckWAQEBAQEBAabXwDMBBAEBAQEBAQEB" +
+            "AQEBAQEBAQEBAQEEAaRaBAEBAQEBAQEFAQEBAQEBAQSZ3YLOAQEBAQEBDQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB" +
+            "AQEBAQQBAwEEAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBDQEBAQEBkekCAQ0BAQEBAQEBAQEBAQEBAQEBAQEB" +
+            "AQEBAQEDAQEVAQEDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBDQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB" +
+            "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB" +
+            "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB" +
+            "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQHriQTJvATwggT3oQWm8QPkvgL60QHt3gHczQK1" +
+            "uAH0iQaC0wLKrQSNwAG0kwS7hwKD5wGUtwOI2gKmebkeyjui4gGrc8PcAY6DBPj8AohguHG42QGLzwLaedFfvWnzEosO/hnh" +
+            "CcsZoRScXORPoFy8YqhJrxLkJZ9BhD7PJZO8AZt4tcMB7ckC7+gCst8B3l+ngwOrYcIYljW4rAHD1AGZngKmoAKAkwKIgQGQ" +
+            "TfFCuBbYML0izUytMIsR4wfvDeoGgwz2CJ4FtwamB7MF/AvaDooLgwqYCoMT/wWABdAX4Cj6TNcjmxqHHJkjvyndJqIl3STm" +
+            "J5Ac+yyMK7oszDX/LYUNghCODPwGwwa2Cq8PzwX0GI4bji6CHdwljQzRGbw2w6MB/Gj7HNER/lSYYsdUnVSiYtV6psMB0ewB" +
+            "irwC5tAB1KgBzIsB/+UC4qoCw7wBp4YBolrvVOA10Rq9G+o53uIC3twD44ABn7MB2ijaT+Ej4Qm2CN4X2xaSIoQg402RT9h3" +
+            "+5sB5hz9MLx+kosBy23SnQHfqAHDwQGcWOx7x58BtbcBz7oBzcAByXuXGOF8xzLRGasaqC2KGowd8Qf1BdgKxA/9E+IImA/D" +
+            "DssR1DOrJ+oT4hPOJoIPwg6ZB4MOmgaPCLUEpQXJA9gE8AOSB+oMzQWXBZoCAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+    private func measured(_ index: String, _ s: Double, _ w: Double, _ n: Double, _ e: Double) -> Int64? {
+        guard let data = Data(base64Encoded: index), let root = PMTilesMath.directory(data),
+              let ids = PMTilesMath.tileIds(south: s, west: w, north: n, east: e, maxZoom: 15) else { return nil }
+        let r = PMTilesMath.sum(ids: ids, root: root, leaves: [:])
+        XCTAssertTrue(r.missing.isEmpty)
+        return r.bytes
+    }
+
+    func testAreaSizeComesFromTheMapIndex() throws {
+        // A city and the desert differ more than tenfold for the same box,
+        // so the picker adds up real tiles rather than a state's average.
+        let city = try XCTUnwrap(measured(Self.paloAltoIndex, 37.40, -122.20, 37.49, -122.09))
+        let farm = try XCTUnwrap(measured(Self.iowaIndex, 41.98, -93.66, 42.07, -93.54))
+        let desert = try XCTUnwrap(measured(Self.nevadaIndex, 39.0, -117.0, 39.09, -116.885))
+        XCTAssertEqual(city, 7_147_974)
+        XCTAssertEqual(farm, 3_127_138)
+        XCTAssertEqual(desert, 548_134)
+        XCTAssertEqual(AreaMath.aboutText(city), "About 7 MB")
+        XCTAssertEqual(AreaMath.aboutText(desert), "About 1 MB")
+        XCTAssertGreaterThan(city, desert * 10)
+    }
+
+    func testTileIdsMatchTheSpec() {
+        XCTAssertEqual(PMTilesMath.tileId(z: 0, x: 0, y: 0), 0)
+        XCTAssertEqual([PMTilesMath.tileId(z: 1, x: 0, y: 0), PMTilesMath.tileId(z: 1, x: 0, y: 1),
+                        PMTilesMath.tileId(z: 1, x: 1, y: 1), PMTilesMath.tileId(z: 1, x: 1, y: 0)], [1, 2, 3, 4])
+        XCTAssertEqual(PMTilesMath.tileId(z: 2, x: 0, y: 0), 5)
+        XCTAssertEqual(PMTilesMath.tileId(z: 12, x: 3423, y: 1763), 19_078_479)
+        // The 40 by 48 km Bay Area box touches 2,844 tiles from zoom 0 to 15.
+        XCTAssertEqual(PMTilesMath.tileIds(south: 37.25, west: -122.36, north: 37.68, east: -121.91, maxZoom: 15)?.count, 2844)
+        XCTAssertNil(PMTilesMath.tileIds(south: 30, west: -125, north: 49, east: -66, maxZoom: 15))
+    }
+
+    func testDirectoryReadsRunsLeavesAndGzip() throws {
+        // Three entries: tile 5, tiles 6-7, and a leaf for 300 on.
+        let raw = try XCTUnwrap(Data(base64Encoded: "AwUBpgIBAgBkwLgCiQYBAIkn"))
+        let dir = try XCTUnwrap(PMTilesMath.directory(raw))
+        XCTAssertEqual(dir, [.init(tileId: 5, runLength: 1, length: 100, offset: 0),
+                             .init(tileId: 6, runLength: 2, length: 40_000, offset: 100),
+                             .init(tileId: 300, runLength: 0, length: 777, offset: 5000)])
+        let zipped = try XCTUnwrap(Data(base64Encoded: "H4sIAAAAAAACCmNmZVzGxMjEkHJgB1MnGyNDpzoAl8xvUBIAAAA="))
+        XCTAssertEqual(PMTilesMath.gunzip(zipped), raw)
+        XCTAssertEqual(PMTilesMath.find(7, in: dir)?.length, 40_000)
+        XCTAssertNil(PMTilesMath.find(8, in: dir))
+        XCTAssertNil(PMTilesMath.find(4, in: dir))
+        let r = PMTilesMath.sum(ids: [5, 6, 7, 8, 310], root: dir, leaves: [:])
+        XCTAssertEqual(r.bytes, 80_100)
+        XCTAssertEqual(r.missing.map(\.offset), [5000])
+        let leaf = [PMTilesMath.Entry(tileId: 310, runLength: 1, length: 9, offset: 0)]
+        XCTAssertEqual(PMTilesMath.sum(ids: [310], root: dir, leaves: [5000: leaf]).bytes, 9)
+        XCTAssertNil(PMTilesMath.directory(Data([0x05, 0x01])))
+        XCTAssertNil(PMTilesMath.header(Data(count: 127)))
+    }
+
+    func testExtractBoxReachesABufferPastTheSides() {
+        let b = AreaMath.extractBox(south: 37.4, west: -122.2, north: 37.5, east: -122.1)
+        XCTAssertEqual(b.south, 37.4)
+        XCTAssertEqual(b.north, 37.5)
+        let km = AreaMath.widthKm(south: b.south, west: b.west, north: b.north, east: -122.2)
+        XCTAssertEqual(km, AreaMath.bufferM / 1000, accuracy: 0.05)
     }
 
     func testStorageSplitKeepsASliverVisible() {
