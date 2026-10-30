@@ -235,7 +235,7 @@ private fun SettingsHome(model: DriveViewModel, open: (SettingsPage) -> Unit) {
     }
     GroupHead("Map and display")
     Group {
-        HomeRow("Map style", "map-style", "map", Color(0xFF5B6CF0), MapStyles.name(prefs.mapStyle, model.isDark)) { open(SettingsPage.MAP_STYLE) }
+        HomeRow("Map style", "map-style", "map", Color(0xFF5B6CF0), MapStyles.name(prefs.mapStyle)) { open(SettingsPage.MAP_STYLE) }
         RowDivider()
         HomeRow("Units and region", "units", "ruler", Color(0xFF12A39A), UnitRules.summary(prefs.useMiles, prefs.use24h)) { open(SettingsPage.UNITS) }
     }
