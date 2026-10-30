@@ -76,7 +76,8 @@ class MainActivity : ComponentActivity() {
             if (intent?.getBooleanExtra("csTour", false) == true) model.wantedTour = true
             // "csOpenAlert" = "kind,lat,lon" acts out a tapped watch alert;
             // csAlertId, csAlertTitle, csAlertBody and csAlertWatch fill in
-            // the rest of the push. The kind takes either naming.
+            // the rest of the push. The kind takes either naming. csAlertStatus
+            // "cleared" acts out the follow-up push that says it is over.
             intent?.getStringExtra("csOpenAlert")?.split(",")?.takeIf { it.size >= 3 }?.let { p ->
                 AlertTap.parse(mapOf(
                     "event_kind" to p[0], "event_lat" to p[1], "event_lon" to p[2],
@@ -85,6 +86,8 @@ class MainActivity : ComponentActivity() {
                     "event_body" to (intent.getStringExtra("csAlertBody") ?: "A test alert from a debug build."),
                     "event_watch" to (intent.getStringExtra("csAlertWatch") ?: "Home area"),
                     "event_sent_at" to (System.currentTimeMillis() / 1000 - 25 * 60).toString(),
+                    "event_status" to intent.getStringExtra("csAlertStatus"),
+                    "event_lane_layout" to intent.getStringExtra("csAlertLanes"),
                 ))?.let { model.openAlert(it) }
             }
         }

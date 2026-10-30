@@ -463,6 +463,13 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         if (_state.value is DriveState.Found) _state.value = DriveState.Browsing
         focusOn(alert.lat, alert.lon)
         val now = System.currentTimeMillis()
+        // The follow-up push that says it is over needs no check: the
+        // server sent it because the event left the feed.
+        if (alert.status == "cleared") {
+            statusJob?.cancel()
+            _sheet.value = EventSheet(null, alert, EventStatus(EventState.CLEARED, checkedAt = now, clearedAt = alert.sentAt?.let { it * 1000 }), shownAt = now)
+            return
+        }
         val local = EventResolve.nearest(heldMarkers(), alert)
         _sheet.value = EventSheet(local, alert, EventStatus(EventState.LOADING), shownAt = now)
         checkStatus(alert)

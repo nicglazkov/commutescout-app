@@ -71,6 +71,10 @@ data class AlertTap(
     val watch: String?,
     /** When the server sent it, epoch seconds. */
     val sentAt: Long?,
+    /** "cleared" on the follow-up push that says the event is over. */
+    val status: String? = null,
+    /** How the lanes sat, when the push carried them. */
+    val laneLayout: LaneLayout? = null,
 ) {
     companion object {
         /**
@@ -91,6 +95,10 @@ data class AlertTap(
                 body = data["event_body"]?.takeIf { it.isNotBlank() },
                 watch = data["event_watch"]?.takeIf { it.isNotBlank() },
                 sentAt = data["event_sent_at"]?.toDoubleOrNull()?.toLong(),
+                status = data["event_status"]?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+                // FCM data values are strings: the layout rides as JSON text.
+                laneLayout = data["event_lane_layout"]?.takeIf { it.isNotBlank() }
+                    ?.let { runCatching { kotlinx.serialization.json.Json.parseToJsonElement(it) }.getOrNull() }?.let { LaneLayout.from(it) },
             )
         }
 

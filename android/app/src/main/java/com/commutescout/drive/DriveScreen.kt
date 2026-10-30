@@ -187,6 +187,9 @@ import com.commutescout.drive.design.SpeedDisc
 import com.commutescout.drive.design.Tone
 import com.commutescout.drive.design.glass
 import com.commutescout.drive.design.tint
+import com.commutescout.drive.design.BtnStyle
+import com.commutescout.drive.design.ConfirmCard
+import com.commutescout.drive.design.DGButton
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -560,9 +563,11 @@ fun DriveScreen(model: DriveViewModel) {
         else -> {}
     }
     reportAt?.let { at -> ReportSheet(model, at.lat, at.lon) { reportAt = null } }
-    error?.let {
-        AlertDialog(onDismissRequest = { model.clearError() }, confirmButton = { TextButton({ model.clearError() }) { Text("OK") } },
-            title = { Text("Something went wrong") }, text = { Text(it) })
+    // Errors rise in the design's confirm card; the last words stay while it slides away.
+    val lastError = remember { mutableStateOf<String?>(null) }
+    if (error != null) lastError.value = error
+    ConfirmCard(error != null, "Something went wrong", lastError.value, onDismiss = { model.clearError() }, Modifier.testTag("error-card")) {
+        DGButton("OK", { model.clearError() }, Modifier.weight(1f).testTag("error-ok"), style = BtnStyle.PRIMARY)
     }
 }
 
@@ -767,7 +772,10 @@ private fun RouteLine(route: Route) {
 private fun BrowsingOverlay(modifier: Modifier, model: DriveViewModel, offline: Pair<String, String>?,
                             onSettings: () -> Unit, note: SysNote? = null, banner: (@Composable () -> Unit)? = null) {
     Column(modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = DG.gutter, vertical = 6.dp)) {
-        SearchBar(model, onSettings)
+        // A cleared watch alert says so at the top, where the search sits.
+        val sheet by model.sheet.collectAsStateWithLifecycle()
+        val cleared = sheet?.takeIf { it.isClearedAlert() }
+        if (cleared != null) ClearedCapsule(cleared, System.currentTimeMillis()) else SearchBar(model, onSettings)
         // The app's own messages sit under the capsule, one at a time.
         val n = note ?: offline?.let { (title, detail) -> SysNote("offline", "offline", Tone.CLEAR, title, detail) }
         AnimatedVisibility(n != null, enter = slideInVertically(DG.slide()) { -it / 2 } + fadeIn(), exit = fadeOut()) {

@@ -81,7 +81,7 @@ class PushService : FirebaseMessagingService() {
     companion object {
         /** What a watch alert's push carries beyond its link; MainActivity reads them back. */
         val EVENT_KEYS = listOf("event_id", "event_kind", "event_lat", "event_lon", "event_title",
-            "event_body", "event_watch", "event_sent_at")
+            "event_body", "event_watch", "event_sent_at", "event_status", "event_lane_layout")
     }
 
     override fun onNewToken(token: String) {
