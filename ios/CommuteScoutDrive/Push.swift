@@ -58,8 +58,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse) async {
         let info = response.notification.request.content.userInfo
-        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier,
-              let ref = AlertRef.from(userInfo: info) else { return }
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
+        if AlertRef.isSummary(userInfo: info) {
+            await MainActor.run { AlertInbox.shared.deliverSummary() }
+            return
+        }
+        guard let ref = AlertRef.from(userInfo: info) else { return }
         await MainActor.run { AlertInbox.shared.deliver(ref) }
     }
 }

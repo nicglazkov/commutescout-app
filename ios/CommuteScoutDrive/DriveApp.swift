@@ -91,6 +91,15 @@ enum AutoDrive {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-csResetPlaces") { model.places.removeAll() }
+        // "-csWatchCleared" opens a cleared watch alert as its follow-up
+        // push would; "-csWatchSummary" a tapped summary push.
+        if args.contains("-csWatchCleared") {
+            AlertInbox.shared.deliver(AlertRef(
+                id: "sample-crash", kind: "incident", lat: 37.442, lon: -122.143,
+                title: "Crash on US-101", body: "Two vehicles, right lane blocked. CHP is on the way.",
+                watch: "Home area", sentAt: Date().addingTimeInterval(-25 * 60), status: "cleared"))
+        }
+        if args.contains("-csWatchSummary") { AlertInbox.shared.deliverSummary() }
         // "-csSamplePlaces": Home, Work and a recent place, for the tray.
         if args.contains("-csSamplePlaces") {
             model.places.removeAll()

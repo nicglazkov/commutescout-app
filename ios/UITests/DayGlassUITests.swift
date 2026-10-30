@@ -85,4 +85,24 @@ final class DayGlassUITests: XCTestCase {
         XCTAssertFalse(app.buttons["places-tray-work"].waitForExistence(timeout: 2) && app.buttons["places-tray-work"].isHittable,
                        "the place card replaces the tray")
     }
+
+    /// A cleared watch push: the capsule says it is over, the sheet shows
+    /// the open road and what the alert said; Done closes it.
+    func testClearedWatchPushOpensTheClearedView() {
+        let app = launch(["-csWatchCleared", "-csSimulate"])
+        let capsule = app.descendants(matching: .any)["watch-cleared-capsule"]
+        XCTAssertTrue(capsule.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["The crash on US-101 is over"].exists)
+        XCTAssertTrue(app.staticTexts["This crash has cleared"].exists)
+        attach(app, "watch-cleared")
+        app.buttons["watch-cleared-done"].tap()
+        XCTAssertFalse(capsule.waitForExistence(timeout: 2))
+    }
+
+    /// A summary push opens the watch areas.
+    func testSummaryPushOpensWatchAreas() {
+        let app = launch(["-csWatchSummary", "-csSimulate"])
+        XCTAssertTrue(app.navigationBars["Watch areas"].waitForExistence(timeout: 15) || app.staticTexts["Watch areas"].waitForExistence(timeout: 2))
+        attach(app, "watch-summary")
+    }
 }

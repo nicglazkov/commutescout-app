@@ -149,6 +149,8 @@ final class AppModel: ObservableObject {
     /// A report just passed that takes votes: the capsule asks whether
     /// it is still there, for a few seconds.
     @Published var confirmAsk: AlertsEngine.Upcoming?
+    /// A summary push was tapped: the watch areas open.
+    @Published var showWatches = false
     /// A trip that was running when the app last closed, offered back.
     @Published var resumable: SavedTrip?
     private var flushing = false
@@ -205,6 +207,7 @@ final class AppModel: ObservableObject {
         markers.$stamp.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.checkSelectedStillThere() }
             .store(in: &cancellables)
         AlertInbox.shared.handler = { [weak self] ref in self?.openAlert(ref) }
+        AlertInbox.shared.summaryHandler = { [weak self] in self?.showWatches = true }
         resumable = SavedTrip.load()
         if let trip = resumable { DriveLog.note("a trip was running when the app closed; offering it back") }
         Task { await followOnceAllowed() }
@@ -531,8 +534,10 @@ final class AppModel: ObservableObject {
         if case .found = state { state = .browsing }
         focusEvent(ref.coordinate)
         selectedVanished = false
-        selectedMarker = ref.localMatch(in: allMarkers)
-        alertFocus = AlertFocus(ref: ref)
+        // The follow-up push already says it is over: no marker, and the
+        // cleared view shows at once while the server is asked.
+        selectedMarker = ref.isCleared ? nil : ref.localMatch(in: allMarkers)
+        alertFocus = AlertFocus(ref: ref, status: ref.isCleared ? .cleared(at: ref.sentAt) : .loading)
         Task { await checkAlert(ref) }
     }
 
@@ -557,7 +562,10 @@ final class AppModel: ObservableObject {
         let reply = try? await EventAPI.status(ref)
         // The person may have moved on while the answer was on its way.
         guard alertFocus?.ref == ref else { return }
-        let (status, marker, nearby) = AlertFocus.resolve(reply, local: ref.localMatch(in: allMarkers))
+        var (status, marker, nearby) = AlertFocus.resolve(reply, local: ref.isCleared ? nil : ref.localMatch(in: allMarkers))
+        // The push said cleared; a server that no longer knows the event
+        // (or cannot be reached) does not take that back.
+        if ref.isCleared, status == .gone || status == .unknown { status = .cleared(at: ref.sentAt) }
         alertFocus?.status = status
         alertFocus?.checkedAt = Date()
         alertFocus?.nearby = nearby
@@ -1000,7 +1008,12 @@ final class AppModel: ObservableObject {
     /// Everything drawn over the base map, built once per change and
     /// handed to the overlay, which touches only the parts that changed.
     func overlayScene() -> MapOverlay.Scene {
-        let dataKey = "\(markers.stamp)|\(prefs.layersOff)|\(prefs.sourceFilterRaw)|\(sources.directMarkers.count)|\(sources.hidden.sorted().joined(separator: ","))"
+        // A cleared watch alert leaves a struck-through pin where it was.
+        let gone: AlertRef? = {
+            guard let f = alertFocus, selectedMarker == nil, case .cleared = f.status else { return nil }
+            return f.ref
+        }()
+        let dataKey = "\(markers.stamp)|\(prefs.layersOff)|\(prefs.sourceFilterRaw)|\(sources.directMarkers.count)|\(sources.hidden.sorted().joined(separator: ","))|\(gone.map { "\($0.lat),\($0.lon)" } ?? "")"
         let previewKey: String = {
             guard case .choosing = state, let r = preview else { return "" }
             return "\(r.geometry.count)|\(r.distance)"
@@ -1013,6 +1026,7 @@ final class AppModel: ObservableObject {
         var scene = sceneCache?.scene ?? MapOverlay.Scene()
         if scene.markersVersion != dataKey {
             scene.markers = allMarkers.filter { prefs.isShown($0.kind) && pluginIsOn($0) }.map(MapOverlay.feature(for:))
+                + (gone.map { [MapOverlay.goneFeature(for: $0)] } ?? [])
             scene.markersVersion = dataKey
             let shapes = mapShapes()
             scene.closures = shapes.closures

@@ -13,6 +13,13 @@ struct AlertRef: Equatable {
     var body: String?
     var watch: String?
     var sentAt: Date?
+    /// "cleared" when the push is the follow-up saying the event is over.
+    var status: String?
+    /// The lanes as the alert described them, when the push carried them.
+    var laneLayout: LaneLayout?
+
+    /// The follow-up push: the event the person was alerted to is over.
+    var isCleared: Bool { status == "cleared" }
 
     var coordinate: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
 
@@ -37,7 +44,9 @@ struct AlertRef: Equatable {
             return AlertRef(id: str("event_id"), kind: markerKind(str("event_kind") ?? "incident"),
                             lat: lat, lon: lon, title: str("event_title"), body: str("event_body"),
                             watch: str("event_watch"),
-                            sentAt: str("event_sent_at").flatMap(Double.init).map { Date(timeIntervalSince1970: $0) })
+                            sentAt: str("event_sent_at").flatMap(Double.init).map { Date(timeIntervalSince1970: $0) },
+                            status: str("event_status"),
+                            laneLayout: str("event_lane_layout").flatMap { try? JSONDecoder().decode(LaneLayout.self, from: Data($0.utf8)) })
         }
         guard var ref = str("url").flatMap(URL.init(string:)).flatMap(from(url:)) else { return nil }
         if let aps = userInfo["aps"] as? [String: Any], let alert = aps["alert"] as? [String: Any] {
@@ -45,6 +54,12 @@ struct AlertRef: Equatable {
             ref.body = alert["body"] as? String
         }
         return ref
+    }
+
+    /// The daily summary push: no one event, a count for a watch area.
+    /// A tap opens the watch areas instead of the map.
+    static func isSummary(userInfo: [AnyHashable: Any]) -> Bool {
+        (userInfo["event_kind"] as? String) == "summary"
     }
 
     /// From a map link: `?focus=lat,lon&k=kind`.
@@ -144,6 +159,16 @@ final class AlertInbox {
 
     func deliver(_ ref: AlertRef) {
         if let handler { handler(ref) } else { pending = ref }
+    }
+
+    private var pendingSummary = false
+    /// Opens the watch areas, for a tapped summary push.
+    var summaryHandler: (() -> Void)? {
+        didSet { if let summaryHandler, pendingSummary { pendingSummary = false; summaryHandler() } }
+    }
+
+    func deliverSummary() {
+        if let summaryHandler { summaryHandler() } else { pendingSummary = true }
     }
 }
 

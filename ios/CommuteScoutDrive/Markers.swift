@@ -444,6 +444,35 @@ enum MarkerIcons {
         }
     }
 
+    /// Where a watched event was, once it is over: a white disc, a pale
+    /// ring, the kind's icon in gray, struck through.
+    static func gonePin(_ k: DGKind) -> UIImage {
+        let size = CGSize(width: 30, height: 30)
+        return UIGraphicsImageRenderer(size: size).image { ctx in
+            let cg = ctx.cgContext
+            let full = CGRect(origin: .zero, size: size)
+            UIColor(red: 0.89, green: 0.91, blue: 0.94, alpha: 1).setFill()
+            cg.fillEllipse(in: full)
+            UIColor.white.setFill()
+            cg.fillEllipse(in: full.insetBy(dx: 2.5, dy: 2.5))
+            let gray = UIColor(DGTone.clear.color)
+            let side: CGFloat = 15
+            let icon = DGIcons.path(DGIcon.name(k), in: CGRect(x: (size.width - side) / 2, y: (size.height - side) / 2, width: side, height: side))
+            cg.addPath(icon.cgPath)
+            cg.setStrokeColor(gray.cgColor)
+            cg.setLineWidth(2.2 * side / 24)
+            cg.setLineCap(.round); cg.setLineJoin(.round)
+            cg.strokePath()
+            // The strike, at the mockup's -35 degrees.
+            let c = CGPoint(x: size.width / 2, y: size.height / 2), half: CGFloat = 8
+            let a = -35 * CGFloat.pi / 180
+            cg.move(to: CGPoint(x: c.x - half * cos(a), y: c.y - half * sin(a)))
+            cg.addLine(to: CGPoint(x: c.x + half * cos(a), y: c.y + half * sin(a)))
+            cg.setLineWidth(2)
+            cg.strokePath()
+        }
+    }
+
     private static func liveRing(_ base: UIImage) -> UIImage {
         UIGraphicsImageRenderer(size: base.size).image { ctx in
             base.draw(in: CGRect(origin: .zero, size: base.size))
@@ -476,7 +505,10 @@ enum MarkerIcons {
             out[k] = img
         }
         // Day Glass+ pins: each kind's tone, a white ring, the design's icon.
-        for k in DGKind.allCases { out["dg:" + k.rawValue] = dgPin(k) }
+        for k in DGKind.allCases {
+            out["dg:" + k.rawValue] = dgPin(k)
+            out["dg:gone:" + k.rawValue] = gonePin(k)
+        }
         if let cam = out["dg:camera"] { out["dg:camera_live"] = liveRing(cam) }
         // A live camera: the camera disc with a red ring, the map's sign
         // that the picture moves.
