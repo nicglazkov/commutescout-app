@@ -1,4 +1,3 @@
-import CoreLocation
 import SwiftUI
 import UserNotifications
 
@@ -11,7 +10,6 @@ struct WelcomeOverlay: View {
     var finish: () -> Void
     @State private var step: WelcomeStep = .location
     @State private var showSignIn = false
-    @State private var asker = LocationAsker()
 
     var body: some View {
         ZStack {
@@ -147,7 +145,9 @@ struct WelcomeOverlay: View {
     private func primary() {
         switch step {
         case .location:
-            asker.ask()
+            // The system prompt comes from this button: the app holds
+            // off asking until here.
+            model.allowLocation()
             next()
         case .notifications:
             Task {
@@ -174,13 +174,5 @@ struct WelcomeOverlay: View {
     private func done() {
         model.prefs.welcomeDone = true
         finish()
-    }
-}
-
-/// Asks for location while in use, once, if it was never asked.
-private final class LocationAsker {
-    private let manager = CLLocationManager()
-    func ask() {
-        if manager.authorizationStatus == .notDetermined { manager.requestWhenInUseAuthorization() }
     }
 }
