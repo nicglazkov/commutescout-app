@@ -6,7 +6,7 @@ import SwiftUI
 /// alert's thumbnail and the large picture in "see more".
 struct RoadSpec {
     struct Block { var lanes: ClosedRange<Int>; var from: Double; var to: Double; var taper = 0.0; var leftSide = false; var tone: DGTone = .high; var ghost = false }
-    struct Mark { var u: Double; var v: Double; var symbol: String; var tone: DGTone; var r: Double = 11 }
+    struct Mark { var u: Double; var v: Double; var icon: String; var tone: DGTone; var r: Double = 11 }
     struct PathSpec { var from: Double; var to: Double; var m0 = 0.25; var m1 = 0.55; var v0 = 0.07; var v1 = 0.86 }
     struct Tick { var v: Double; var text: String; var strong = false }
 
@@ -36,38 +36,38 @@ extension RoadSpec {
         switch k {
         case .crash:
             s.blocks = [Block(lanes: 3 ... 3, from: 0.5, to: 0.8)]
-            s.marks = [Mark(u: 3.5, v: 0.65, symbol: DGIcon.symbol(.crash), tone: .high)]
+            s.marks = [Mark(u: 3.5, v: 0.65, icon: DGIcon.name(.crash), tone: .high)]
             s.you = 3; s.path = PathSpec(from: 3, to: 2, m0: 0.18, m1: 0.5)
         case .closure:
             s.blocks = [Block(lanes: 2 ... 3, from: 0.55, to: 1.05, taper: 0.16)]
-            s.marks = [Mark(u: 3, v: 0.76, symbol: DGIcon.symbol(.closure), tone: .high)]
+            s.marks = [Mark(u: 3, v: 0.76, icon: DGIcon.name(.closure), tone: .high)]
             s.you = 3; s.path = PathSpec(from: 3, to: 1, m0: 0.12, m1: 0.42)
         case .hazard:
-            s.marks = [Mark(u: 0.5, v: 0.66, symbol: DGIcon.symbol(.hazard), tone: .mid)]
+            s.marks = [Mark(u: 0.5, v: 0.66, icon: DGIcon.name(.hazard), tone: .mid)]
             s.blocks = [Block(lanes: 0 ... 0, from: 0.6, to: 0.72, tone: .mid)]
             s.you = 0; s.path = PathSpec(from: 0, to: 1, m0: 0.16, m1: 0.48)
         case .police:
             s.sh = 0.7
-            s.marks = [Mark(u: 4.35, v: 0.66, symbol: DGIcon.symbol(.police), tone: .low)]
+            s.marks = [Mark(u: 4.35, v: 0.66, icon: DGIcon.name(.police), tone: .low)]
             s.you = 3; s.path = PathSpec(from: 3, to: 2, m0: 0.2, m1: 0.5)
         case .jam:
             s.cars = [(0, 0.5), (0, 0.7), (1, 0.44), (1, 0.64), (1, 0.84), (2, 0.52), (2, 0.72), (3, 0.46), (3, 0.66), (3, 0.86)]
             s.you = 2; s.path = PathSpec(from: 2, to: 2, v1: 0.36)
         case .chain:
             s.across = [(0.6, .high)]
-            s.marks = [Mark(u: 2, v: 0.76, symbol: DGIcon.symbol(.chain), tone: .high)]
+            s.marks = [Mark(u: 2, v: 0.76, icon: DGIcon.name(.chain), tone: .high)]
             s.surface = DG.hex(0xf4f7fa); s.you = 2; s.path = PathSpec(from: 2, to: 2, v1: 0.5)
         case .ice:
             s.frost = [(0.45, 1)]
-            s.marks = [Mark(u: 2, v: 0.7, symbol: DGIcon.symbol(.ice), tone: .mid)]
+            s.marks = [Mark(u: 2, v: 0.7, icon: DGIcon.name(.ice), tone: .mid)]
             s.you = 1; s.path = PathSpec(from: 1, to: 1)
         case .camera:
             s.sh = 0.7
-            s.marks = [Mark(u: 4.35, v: 0.62, symbol: DGIcon.symbol(.camera), tone: .low)]
+            s.marks = [Mark(u: 4.35, v: 0.62, icon: DGIcon.name(.camera), tone: .low)]
             s.you = 2; s.path = PathSpec(from: 2, to: 2)
         case .toll:
             s.tint = [(0, .low)]
-            s.marks = [Mark(u: 0.5, v: 0.66, symbol: DGIcon.symbol(.toll), tone: .low)]
+            s.marks = [Mark(u: 0.5, v: 0.66, icon: DGIcon.name(.toll), tone: .low)]
             s.you = 1; s.path = PathSpec(from: 1, to: 1)
         case .fire, .sign:
             break   // drawn as a map and a board, not lanes
@@ -89,9 +89,9 @@ extension RoadSpec {
         }
         s.blocks = runs.map { Block(lanes: $0, from: 0.5, to: 0.82, tone: tone) }
         if let run = runs.first {
-            s.marks = [Mark(u: Double(run.lowerBound + run.upperBound + 1) / 2, v: 0.65, symbol: DGIcon.symbol(kind), tone: tone)]
+            s.marks = [Mark(u: Double(run.lowerBound + run.upperBound + 1) / 2, v: 0.65, icon: DGIcon.name(kind), tone: tone)]
         } else {
-            s.marks = [Mark(u: p.shoulderLeft ? -0.16 : Double(p.count) + 0.16, v: 0.65, symbol: DGIcon.symbol(kind), tone: tone)]
+            s.marks = [Mark(u: p.shoulderLeft ? -0.16 : Double(p.count) + 0.16, v: 0.65, icon: DGIcon.name(kind), tone: tone)]
         }
         s.you = Double(p.from)
         s.path = PathSpec(from: Double(p.from), to: Double(p.to), m0: 0.18, m1: 0.5)
@@ -103,9 +103,29 @@ extension RoadSpec {
         var s = self
         s.lanesFill = DG.hex(0xdcefe3)
         s.blocks = blocks.map { var b = $0; b.ghost = true; b.taper = 0; return b }
-        s.marks = marks.map { var m = $0; m.symbol = DGIcon.check; m.tone = .good; return m }
+        s.marks = marks.map { var m = $0; m.icon = DGIcon.check; m.tone = .good; return m }
         s.cars = []; s.across = []; s.frost = []
         if let y = you { s.path = PathSpec(from: y, to: y) }
+        return s
+    }
+
+    /// The small drawings: a smaller mark, moved to the far end of the
+    /// block it stands on and the block reaching nearer, so the closed
+    /// lane still shows beside the mark instead of under it.
+    func small(r: Double) -> RoadSpec {
+        var s = self
+        s.marks = marks.map { m in
+            var m = m
+            m.r = r
+            let under = blocks.first { b in !b.ghost && Double(b.lanes.lowerBound) <= m.u && m.u <= Double(b.lanes.upperBound + 1) && b.from <= m.v && m.v <= b.to }
+            if let b = under { m.v = min(0.9, b.to + 0.06) }
+            return m
+        }
+        s.blocks = blocks.map { b in
+            var b = b
+            if !b.ghost { b.from = max(0.3, b.from - 0.1) }
+            return b
+        }
         return s
     }
 
@@ -219,10 +239,10 @@ struct RoadCanvas: View {
             let disc = Path(ellipseIn: CGRect(x: p.x - R, y: p.y - R, width: 2 * R, height: 2 * R))
             ctx.fill(disc, with: .color(.white))
             ctx.stroke(disc, with: .color(m.tone.color), lineWidth: 1.6 * sc)
-            var icon = ctx.resolve(Image(systemName: m.symbol))
-            icon.shading = .color(m.tone.color)
-            let side = R * 1.15
-            ctx.draw(icon, in: CGRect(x: p.x - side / 2, y: p.y - side / 2, width: side, height: side))
+            // The mockups: the icon 1.25 times the radius across, at 2.3 on its grid.
+            let side = R * 1.25
+            DGIcons.draw(m.icon, in: &ctx, rect: CGRect(x: p.x - side / 2, y: p.y - side / 2, width: side, height: side),
+                         color: m.tone.color, stroke: 2.3)
         }
         if let y = o.you {
             let p = P(y + 0.5, 0.02), s = 6.5 * sc
@@ -261,10 +281,9 @@ struct FireMapCanvas: View {
                                                             .init(color: DGTone.high.color.opacity(0.16), location: 0.7),
                                                             .init(color: DGTone.high.color.opacity(0), location: 1)]),
                                            center: c, startRadius: 0, endRadius: r))
-            var icon = ctx.resolve(Image(systemName: DGIcon.symbol(.fire)))
-            icon.shading = .color(DGTone.high.color)
             let s = min(w, h) * 0.24
-            ctx.draw(icon, in: CGRect(x: c.x - s / 2, y: c.y - s / 2, width: s, height: s))
+            DGIcons.draw("fire", in: &ctx, rect: CGRect(x: c.x - s / 2, y: c.y - s / 2, width: s, height: s),
+                         color: DGTone.high.color, stroke: 2.2)
             let you = Path(ellipseIn: CGRect(x: x - 4, y: h * 0.82 - 4, width: 8, height: 8))
             ctx.fill(you, with: .color(DG.path)); ctx.stroke(you, with: .color(.white), lineWidth: 1.8)
         }
@@ -309,7 +328,8 @@ struct BoardCanvas: View {
 /// `lane_layout`, otherwise the kind's own picture. `cleared` turns it
 /// green with a check.
 struct LaneDrawing: View {
-    enum Size { case thumb, large }
+    /// The alert's thumbnail, a catalog row's smaller one, and see more.
+    enum Size { case thumb, row, large }
 
     var kind: DGKind
     var layout: LaneLayout?
@@ -332,14 +352,16 @@ struct LaneDrawing: View {
                 RoadCanvas(spec: spec)
             }
         }
-        .frame(width: size == .thumb ? 76 : nil, height: size == .thumb ? 64 : 150)
+        .frame(width: size == .thumb ? 76 : size == .row ? 60 : nil,
+               height: size == .thumb ? 64 : size == .row ? 42 : 150)
         .frame(maxWidth: size == .large ? 326 : nil)
     }
 
     var spec: RoadSpec {
         var s = LanePlan(layout).map { RoadSpec.plan($0, kind: kind) } ?? RoadSpec.kind(kind)
         if cleared { s = s.cleared() }
-        if size == .thumb { s.marks = s.marks.map { var m = $0; m.r = 9; return m } }
+        if size == .thumb || size == .row { s = s.small(r: size == .thumb ? 9 : 8) }
+        if size == .row { s.padT = 3; s.padB = 4; s.scale = 0.85 }
         if size == .large { s = s.large(vc: 0.28 + 0.46 * (1 - closeness), near: near, half: half) }
         return s
     }
