@@ -33,6 +33,9 @@ object DG {
     val goodInk = Color(0xFF0D7A42)
     val clearInk = Color(0xFF586377)
     val lowTop = Color(0xFF4A8FF8)        // the blue gradient's light end
+    val plug = Color(0xFF7C5CF0)          // plugin data, always purple
+    val plugInk = Color(0xFF5A3CC8)
+    val chev = Color(0xFFB3BCCB)          // row chevrons
 
     // Lanes.
     val laneOff = Color(0xFFB3BCCB)

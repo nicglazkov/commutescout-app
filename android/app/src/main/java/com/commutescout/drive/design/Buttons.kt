@@ -56,7 +56,7 @@ fun Disc(icon: String, tone: Tone, size: Dp = DG.disc, ghost: Boolean = false, m
 
 private fun Color.compositeOverWhite(): Color = Color(1f + (red - 1f) * alpha, 1f + (green - 1f) * alpha, 1f + (blue - 1f) * alpha, 1f)
 
-enum class BtnStyle { PLAIN, PRIMARY, BLUE, DONE }
+enum class BtnStyle { PLAIN, PRIMARY, BLUE, DONE, WARN, DANGER, QUIET }
 
 /** The design's 48-tall capsule button. */
 @Composable
@@ -68,11 +68,14 @@ fun DGButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, 
         BtnStyle.DONE -> DG.good.tint(.14f)
         BtnStyle.PLAIN -> Color.White.copy(alpha = .75f)
     }, label = "btn")
-    val fg = when (style) { BtnStyle.PRIMARY, BtnStyle.BLUE -> Color.White; BtnStyle.DONE -> DG.goodInk; BtnStyle.PLAIN -> DG.ink }
+    val fg = when (style) {
+        BtnStyle.PRIMARY, BtnStyle.BLUE -> Color.White; BtnStyle.DONE -> DG.goodInk; BtnStyle.PLAIN -> DG.ink
+        BtnStyle.WARN, BtnStyle.DANGER -> DG.highInk; BtnStyle.QUIET -> DG.sub
+    }.let { if (enabled) it else it.copy(alpha = .45f) }
     val shape = RoundedCornerShape(24.dp)
     Row(
         modifier.press(src).height(DG.btnH).clip(shape).background(bg)
-            .then(if (style == BtnStyle.PLAIN) Modifier.border(0.5.dp, DG.edge, shape) else Modifier)
+            .then(if (style == BtnStyle.PLAIN || style == BtnStyle.WARN) Modifier.border(0.5.dp, DG.edge, shape) else Modifier)
             .clickable(src, null, enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
     ) {
