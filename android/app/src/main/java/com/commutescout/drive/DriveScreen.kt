@@ -375,6 +375,14 @@ fun DriveScreen(model: DriveViewModel) {
             mapState.cameraMode = if (driving) NavigationCameraMode.FOLLOW_USER_WITH_BEARING else NavigationCameraMode.FOLLOW_USER
         }
     }
+    // Before the first fix the map sits at its world default, centered on
+    // the Atlantic. Start on the country instead; a fix still takes over.
+    LaunchedEffect(Unit) {
+        repeat(50) { if (mapState.cameraState.projection == null) delay(200) }
+        if (mapState.cameraState.position.zoom < 2.5) {
+            mapState.cameraState.position = CameraPosition(target = Position(-98.0, 39.0), zoom = 3.4, tilt = 0.0, bearing = 0.0)
+        }
+    }
     LaunchedEffect(Unit) {
         model.wantedView?.let { v ->
             delay(3000)
