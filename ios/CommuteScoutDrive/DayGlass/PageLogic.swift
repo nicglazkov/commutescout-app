@@ -129,6 +129,27 @@ enum WatchMath {
         }
         return b
     }
+
+    /// The change the server takes for a watch area that exists. A shape
+    /// sends its corners; a drive keeps its line, and a circle is fixed
+    /// once made, so a new radius is `resized` and replaces the circle.
+    static func update(name: String, kinds: [String], quiet: Bool, polygon: [CLLocationCoordinate2D]? = nil) -> [String: Any] {
+        var b: [String: Any] = ["name": label(name), "kinds": kinds, "quiet_hours": quiet]
+        if let polygon { b["points"] = polygon.map { [$0.latitude, $0.longitude] } }
+        return b
+    }
+
+    /// A name for the server: trimmed, at most 60 characters.
+    static func label(_ name: String) -> String {
+        let t = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? "Watch area" : String(t.prefix(60))
+    }
+
+    /// Whether a circle's radius really changed, at the precision saved.
+    static func resized(from old: Double?, to new: Double) -> Bool {
+        guard let old else { return false }
+        return abs(old - new) >= 0.005
+    }
 }
 
 /// Web Mercator in MapLibre's 512-point tiles: where a coordinate falls

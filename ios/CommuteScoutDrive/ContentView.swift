@@ -15,7 +15,7 @@ struct ContentView: View {
     @State private var showSettings = ProcessInfo.processInfo.arguments.contains("-csOpenSettings")
     /// The first run, once ("-csWelcome" shows it for screenshots).
     @State private var showWelcome = Prefs.welcomeIsDue
-    // "-csOpenMore market|plugin|offline|picker|savedmap" opens that page at launch (debug builds).
+    // "-csOpenMore market|plugin|offline|picker|savedmap|watches" opens that page at launch (debug builds).
     @State private var moreScreen: String? = OfflineLaunch.wanted
     @State private var showLayers = false
     @State private var showReport = false

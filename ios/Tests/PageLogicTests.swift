@@ -73,6 +73,30 @@ final class PageLogicTests: XCTestCase {
         XCTAssertFalse(Units.useMiles)
     }
 
+    func testAnUpdateSendsOnlyWhatTheServerChanges() {
+        let b = WatchMath.update(name: "  Home area  ", kinds: ["incident"], quiet: false)
+        XCTAssertEqual(b["name"] as? String, "Home area")
+        XCTAssertEqual(b["kinds"] as? [String], ["incident"])
+        XCTAssertEqual(b["quiet_hours"] as? Bool, false)
+        XCTAssertNil(b["points"], "a drive keeps its line")
+        XCTAssertNil(b["type"], "the kind of shape is fixed")
+        XCTAssertNil(b["channels"], "the channels stay as they are")
+
+        let corners = [CLLocationCoordinate2D(latitude: 37.4, longitude: -122.2), CLLocationCoordinate2D(latitude: 37.5, longitude: -122.2),
+                       CLLocationCoordinate2D(latitude: 37.5, longitude: -122.1)]
+        let shape = WatchMath.update(name: "x", kinds: [], quiet: true, polygon: corners)
+        XCTAssertEqual(shape["points"] as? [[Double]], [[37.4, -122.2], [37.5, -122.2], [37.5, -122.1]])
+
+        XCTAssertEqual(WatchMath.label("   "), "Watch area")
+        XCTAssertEqual(WatchMath.label(String(repeating: "a", count: 80)).count, 60)
+    }
+
+    func testOnlyAChangedRadiusReplacesACircle() {
+        XCTAssertFalse(WatchMath.resized(from: 12.87, to: 12.87))
+        XCTAssertFalse(WatchMath.resized(from: nil, to: 12.87))
+        XCTAssertTrue(WatchMath.resized(from: 12.87, to: 16))
+    }
+
     func testCircleBodyClampsTheRadius() throws {
         let c = CLLocationCoordinate2D(latitude: 37.442, longitude: -122.143)
         let b = WatchMath.body(name: "Home area", kinds: ["incident"], quiet: true, push: true, email: false, circle: (c, 90))

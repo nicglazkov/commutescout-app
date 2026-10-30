@@ -14,6 +14,7 @@ import SwiftUI
 
 struct Watch: Decodable, Identifiable, Equatable {
     struct Point: Decodable, Equatable { let lat: Double; let lon: Double }
+    struct Channels: Decodable, Equatable { let push: Bool?; let email: Bool? }
     struct Live: Decodable, Equatable {
         struct Top: Decodable, Equatable { let kind: String?; let title: String?; let body: String? }
         let count: Int?
@@ -33,6 +34,7 @@ struct Watch: Decodable, Identifiable, Equatable {
     let kinds: [String]?
     let active: Bool?
     let quiet_hours: Bool?
+    let channels: Channels?
     let live: Live?
 }
 
@@ -142,8 +144,16 @@ struct WatchAreasView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var showSignIn = false
-    @State private var editing = false
+    @State private var editing: Editing?
     @State private var confirmDelete: Watch?
+
+    /// The editor's cover: a new area, or one that exists.
+    private struct Editing: Identifiable {
+        var watch: Watch?
+        var id: String { watch?.id ?? "new" }
+    }
+
+    private var signedIn: Bool { model.account.signedIn || OfflineFixtures.on }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -151,7 +161,7 @@ struct WatchAreasView: View {
                    intro: "Get an alert when something happens inside an area or along a drive, anywhere in the US.",
                    identifier: "watch-areas") {
                 VStack(alignment: .leading, spacing: 10) {
-                    if !model.account.signedIn {
+                    if !signedIn {
                         DGGroup {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("Watch areas need an account, the same one as the website.").font(DG.font(15, .medium)).foregroundStyle(DG.ink)
@@ -194,9 +204,9 @@ struct WatchAreasView: View {
                     }
                 }
             }
-            if model.account.signedIn {
+            if signedIn {
                 DGDock {
-                    Button { editing = true } label: { Label("New watch area", systemImage: "plus").frame(maxWidth: .infinity) }
+                    Button { editing = Editing() } label: { Label("New watch area", systemImage: "plus").frame(maxWidth: .infinity) }
                         .buttonStyle(.dgPrimary)
                         .disabled(watches.count >= WatchMath.maxWatches)
                         .accessibilityIdentifier("watch-new")
@@ -208,9 +218,13 @@ struct WatchAreasView: View {
         }
         .task { await load() }
         .sheet(isPresented: $showSignIn) { SignInSheet(reason: "Sign in to keep watch areas.") }
-        .fullScreenCover(isPresented: $editing, onDismiss: { Task { await load() } }) {
-            WatchEditorView(start: .init(name: model.places.home == nil ? "" : "Home area",
-                                         center: model.places.home?.coordinate ?? model.here ?? model.viewCenter ?? AppModel.defaultCenter))
+        .fullScreenCover(item: $editing, onDismiss: { Task { await load() } }) { e in
+            if let w = e.watch {
+                WatchEditorView(start: .init(editing: w, fallback: AppModel.defaultCenter), existing: w)
+            } else {
+                WatchEditorView(start: .init(name: model.places.home == nil ? "" : "Home area",
+                                             center: model.places.home?.coordinate ?? model.here ?? model.viewCenter ?? AppModel.defaultCenter))
+            }
         }
         .confirmationDialog(confirmDelete.map { "Delete \($0.name ?? "this watch area")?" } ?? "",
                             isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
@@ -231,17 +245,28 @@ struct WatchAreasView: View {
     private func card(_ w: Watch) -> some View {
         let s = WatchText.status(w)
         return HStack(spacing: 14) {
-            WatchMini(watch: w).frame(width: 68, height: 68)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(w.name ?? "Watch area").font(DG.font(17, .semibold)).foregroundStyle(DG.ink).lineLimit(1)
-                HStack(spacing: 6) {
-                    LiveDot(tone: s.tone, pulsing: s.live)
-                    Text(s.text).font(DG.font(14, .semibold)).foregroundStyle(s.tone.ink).lineLimit(1)
+            Button { editing = Editing(watch: w) } label: {
+                HStack(spacing: 14) {
+                    WatchMini(watch: w).frame(width: 68, height: 68)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(w.name ?? "Watch area").font(DG.font(17, .semibold)).foregroundStyle(DG.ink).lineLimit(1)
+                        HStack(spacing: 6) {
+                            LiveDot(tone: s.tone, pulsing: s.live)
+                            Text(s.text).font(DG.font(14, .semibold)).foregroundStyle(s.tone.ink).lineLimit(1)
+                        }
+                        Text(WatchText.meta(w)).font(DG.T.rowSub).foregroundStyle(DG.sub).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
                 }
-                Text(WatchText.meta(w)).font(DG.T.rowSub).foregroundStyle(DG.sub).lineLimit(1)
+                .contentShape(Rectangle())
             }
-            Spacer(minLength: 0)
+            .buttonStyle(DGPressStyle())
+            .accessibilityIdentifier("watch-edit-\(w.id)")
             Menu {
+                Button { editing = Editing(watch: w) } label: { Label("Edit", systemImage: "pencil") }
+                Button { Task { await setActive(w, w.active == false) } } label: {
+                    w.active == false ? Label("Resume", systemImage: "play") : Label("Pause", systemImage: "pause")
+                }
                 Button(role: .destructive) { confirmDelete = w } label: { Label("Delete", systemImage: "trash") }
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: 15, weight: .bold)).foregroundStyle(DG.hex(0xb3bccb))
@@ -265,6 +290,9 @@ struct WatchAreasView: View {
     }
 
     private func load() async {
+        #if DEBUG
+        if OfflineFixtures.on { watches = Self.fixtures; return }
+        #endif
         guard let token = await model.account.token() else { return }
         loading = true; defer { loading = false }
         if let (status, data) = try? await Backend.send("GET", "api/watch/me", token: token), status == 200,
@@ -280,6 +308,32 @@ struct WatchAreasView: View {
             error = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String ?? "Could not save that (\(status))."
         }
     }
+
+    private func setActive(_ w: Watch, _ on: Bool) async {
+        guard let token = await model.account.token() else { return }
+        do {
+            let (status, data) = try await Backend.send("PATCH", "api/watch/\(w.id)", token: token, body: ["active": on])
+            if status >= 300 {
+                error = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String ?? "Could not save that (\(status))."
+            }
+        } catch {
+            self.error = Connectivity.isOffline(error) ? OfflineText.retry : error.localizedDescription
+        }
+        await load()
+    }
+
+    #if DEBUG
+    /// One of each shape, for tests and screenshots.
+    private static let fixtures: [Watch] = {
+        let raw = #"""
+        [{"id":"a","name":"Home area","type":"circle","center":{"lat":37.442,"lon":-122.143},"radius_km":12.87,
+          "kinds":["incident","closure"],"active":true,"quiet_hours":true,"channels":{"push":true,"email":false}},
+         {"id":"b","name":"Commute","type":"route","points":[{"lat":37.442,"lon":-122.143},{"lat":37.39,"lon":-122.08}],
+          "buffer_km":3.2,"length_km":9,"kinds":["incident"],"active":false,"quiet_hours":false}]
+        """#
+        return (try? JSONDecoder().decode([Watch].self, from: Data(raw.utf8))) ?? []
+    }()
+    #endif
 
     private func delete(_ w: Watch) async {
         guard let token = await model.account.token() else { return }
@@ -410,10 +464,10 @@ struct QuietHoursPage: View {
 
 // MARK: - The editor
 
-/// A new watch area: a circle with a handle to drag its radius, the
-/// drive from Home to Work with a corridor either side, or a shape with
-/// corners to drag. The map stays still and zooms out when the circle
-/// outgrows it.
+/// A new watch area, or one that exists: a circle with a handle to drag
+/// its radius, the drive from Home to Work with a corridor either side,
+/// or a shape with corners to drag. The map stays still and zooms out
+/// when the circle outgrows it. An existing area keeps its kind of shape.
 struct WatchEditorView: View {
     struct Start { var name: String; var center: CLLocationCoordinate2D }
     enum Shape: String, CaseIterable { case circle = "Circle", route = "Route", shape = "Shape" }
@@ -421,6 +475,7 @@ struct WatchEditorView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
     let start: Start
+    var existing: Watch?
     @State private var name = ""
     @State private var shape: Shape = .circle
     @State private var radiusKm = 12.87         // 8 mi
@@ -488,12 +543,26 @@ struct WatchEditorView: View {
         .onAppear {
             name = start.name
             corners = Self.square(around: center, km: 12)
+            if let existing { seed(existing) }
         }
         .task(id: shape) { if shape == .route, route.isEmpty { await loadRoute() } }
         .sheet(isPresented: $showSignIn) { SignInSheet(reason: "Sign in to keep watch areas.") }
         .alert("Watch areas", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK") { error = nil }
         } message: { Text(error ?? "") }
+    }
+
+    private func seed(_ w: Watch) {
+        let pts = (w.points ?? []).map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
+        switch w.type {
+        case "route": shape = .route; route = pts
+        case "polygon":
+            shape = .shape
+            if pts.count >= 3 { corners = pts }
+        default: radiusKm = w.radius_km ?? radiusKm
+        }
+        if let k = w.kinds, !k.isEmpty { kinds = Set(k) }
+        quiet = w.quiet_hours ?? quiet
     }
 
     static func square(around c: CLLocationCoordinate2D, km: Double) -> [CLLocationCoordinate2D] {
@@ -503,7 +572,7 @@ struct WatchEditorView: View {
 
     private var topBar: some View {
         ZStack {
-            Text("New watch area").font(DG.font(17, .semibold)).foregroundStyle(DG.ink)
+            Text(existing == nil ? "New watch area" : "Edit watch area").font(DG.font(17, .semibold)).foregroundStyle(DG.ink)
             HStack { DGBackButton(symbol: "xmark") { dismiss() }; Spacer() }
         }
         .padding(.horizontal, 8).frame(height: 52)
@@ -583,9 +652,11 @@ struct WatchEditorView: View {
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .background(Color.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
-                DGSegmented(options: [(Shape.circle, "Circle", "circle.circle"), (.route, "Route", "point.topleft.down.curvedto.point.bottomright.up"),
-                                      (.shape, "Shape", "pentagon")], selection: $shape, height: 48, identifier: "watch-shape")
-                    .padding(.top, 10)
+                if existing == nil {
+                    DGSegmented(options: [(Shape.circle, "Circle", "circle.circle"), (.route, "Route", "point.topleft.down.curvedto.point.bottomright.up"),
+                                          (.shape, "Shape", "pentagon")], selection: $shape, height: 48, identifier: "watch-shape")
+                        .padding(.top, 10)
+                }
                 Text(help).font(DG.font(13)).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true).padding(.top, 8)
                     .padding(.horizontal, 4)
                 Text("What to watch").font(DG.font(17, .bold)).foregroundStyle(DG.ink).padding(.top, 16)
@@ -600,7 +671,7 @@ struct WatchEditorView: View {
                 }
                 .padding(.top, 14)
                 Button { Task { await save() } } label: {
-                    Text(saved.map { "Saved. Watching \($0)" } ?? (kinds.isEmpty ? "Pick at least one kind" : saving ? "Saving" : "Save watch area"))
+                    Text(saved.map { "Saved. Watching \($0)" } ?? (kinds.isEmpty ? "Pick at least one kind" : saving ? "Saving" : existing == nil ? "Save watch area" : "Save changes"))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(saved == nil ? DGButtonStyle.dgPrimary : DGButtonStyle.dgDone)
@@ -617,6 +688,7 @@ struct WatchEditorView: View {
         case .circle:
             return "Drag the handle to resize, up to \(Units.distance(WatchMath.maxRadiusKm * 1000)). This circle covers about \(WatchMath.areaText(sqKm: WatchMath.circleSqKm(radiusKm)))."
         case .route:
+            if let existing { return "Follows this drive, \(Units.distance((existing.buffer_km ?? WatchMath.bufferKm) * 1000)) on each side." }
             return routeNote ?? "Follows your usual drive from Home to Work, \(Units.distance(WatchMath.bufferKm * 1000)) on each side."
         case .shape:
             return "Drag the corners to draw your own area, up to \(WatchMath.areaText(sqKm: WatchMath.maxPolygonSqKm)). This one covers about \(WatchMath.areaText(sqKm: WatchMath.polygonSqKm(corners)))."
@@ -663,16 +735,25 @@ struct WatchEditorView: View {
     private func save() async {
         guard let token = await model.account.token() else { showSignIn = true; return }
         saving = true; defer { saving = false }
-        let label = name.trimmingCharacters(in: .whitespaces).isEmpty ? "Watch area" : name
+        let label = WatchMath.label(name)
         let order = WatchText.kinds.map(\.key).filter { kinds.contains($0) }
+        let push = existing?.channels?.push ?? true, email = existing?.channels?.email ?? false
         let body: [String: Any]
         switch shape {
-        case .circle: body = WatchMath.body(name: label, kinds: order, quiet: quiet, push: true, email: false, circle: (center, radiusKm))
-        case .route: body = WatchMath.body(name: label, kinds: order, quiet: quiet, push: true, email: false, route: route)
-        case .shape: body = WatchMath.body(name: label, kinds: order, quiet: quiet, push: true, email: false, polygon: corners)
+        case .circle: body = WatchMath.body(name: label, kinds: order, quiet: quiet, push: push, email: email, circle: (center, radiusKm))
+        case .route: body = WatchMath.body(name: label, kinds: order, quiet: quiet, push: push, email: email, route: route)
+        case .shape: body = WatchMath.body(name: label, kinds: order, quiet: quiet, push: push, email: email, polygon: corners)
         }
         do {
-            let (status, data) = try await Backend.send("POST", "api/watch/create", token: token, body: body)
+            let status: Int, data: Data
+            if let w = existing, shape == .circle, WatchMath.resized(from: w.radius_km, to: radiusKm) {
+                (status, data) = try await replaceCircle(w, with: body, token: token)
+            } else if let w = existing {
+                (status, data) = try await Backend.send("PATCH", "api/watch/\(w.id)", token: token, body: WatchMath.update(
+                    name: label, kinds: order, quiet: quiet, polygon: shape == .shape ? corners : nil))
+            } else {
+                (status, data) = try await Backend.send("POST", "api/watch/create", token: token, body: body)
+            }
             guard status < 300 else {
                 error = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
                     ?? "The server refused the watch area (\(status))."
@@ -684,6 +765,47 @@ struct WatchEditorView: View {
         } catch {
             self.error = Connectivity.isOffline(error) ? OfflineText.retry : error.localizedDescription
         }
+    }
+
+    /// The server keeps a circle's geometry fixed, so a new radius is a
+    /// new watch: the old one goes, the new one is made, and if that
+    /// fails the old one is put back. A paused area stays paused.
+    private func replaceCircle(_ old: Watch, with body: [String: Any], token: String) async throws -> (Int, Data) {
+        let gone = try await Backend.send("DELETE", "api/watch/\(old.id)", token: token)
+        guard gone.0 < 300 || gone.0 == 404 else { return gone }
+        var made: (Int, Data)?
+        var failure: Error?
+        do { made = try await Backend.send("POST", "api/watch/create", token: token, body: body) } catch { failure = error }
+        if let made, made.0 < 300 {
+            await keepPaused(old, reply: made.1, token: token)
+            return made
+        }
+        let back = WatchMath.body(name: old.name ?? "Watch area", kinds: old.kinds ?? [], quiet: old.quiet_hours ?? true,
+                                  push: old.channels?.push ?? true, email: old.channels?.email ?? false,
+                                  circle: (center, old.radius_km ?? radiusKm))
+        if let restored = try? await Backend.send("POST", "api/watch/create", token: token, body: back), restored.0 < 300 {
+            await keepPaused(old, reply: restored.1, token: token)
+        }
+        if let failure { throw failure }
+        return made ?? gone
+    }
+
+    private func keepPaused(_ old: Watch, reply: Data, token: String) async {
+        guard old.active == false,
+              let id = (try? JSONSerialization.jsonObject(with: reply) as? [String: Any])?["id"] as? String else { return }
+        _ = try? await Backend.send("PATCH", "api/watch/\(id)", token: token, body: ["active": false])
+    }
+}
+
+extension WatchEditorView.Start {
+    /// Opens on the area itself: a circle's center, or the middle of a
+    /// shape or a drive.
+    init(editing w: Watch, fallback: CLLocationCoordinate2D) {
+        let pts = w.points ?? []
+        let middle = pts.isEmpty ? fallback : CLLocationCoordinate2D(
+            latitude: pts.map(\.lat).reduce(0, +) / Double(pts.count),
+            longitude: pts.map(\.lon).reduce(0, +) / Double(pts.count))
+        self.init(name: w.name ?? "", center: w.center.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) } ?? middle)
     }
 }
 
