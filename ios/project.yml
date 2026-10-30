@@ -98,6 +98,9 @@ targets:
           - audio
         NSLocationWhenInUseUsageDescription: CommuteScout Drive uses your location to navigate and to warn you about what is ahead on the road.
         ITSAppUsesNonExemptEncryption: false
+        # Onest, the app's typeface (SIL Open Font License, Fonts/Onest-OFL.txt).
+        UIAppFonts:
+          - Onest.ttf
         GIDClientID: 15002631928-mkrc3g1n231pec0k9fvlabuaf2ja7mkh.apps.googleusercontent.com
         CFBundleURLTypes:
           - CFBundleTypeRole: Editor
@@ -142,6 +145,8 @@ targets:
       - path: CommuteScoutDrive/Backend.swift
       - path: CommuteScoutDrive/EventText.swift
       - path: CommuteScoutDrive/EventAlerts.swift
+      - path: CommuteScoutDrive/DayGlass/LaneLayout.swift
+      - path: CommuteScoutDrive/DayGlass/DGKind.swift
       - path: ../shared/voices.json
         buildPhase: resources
     settings:

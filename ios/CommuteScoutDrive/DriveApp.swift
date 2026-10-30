@@ -138,6 +138,51 @@ enum AutoDrive {
         if case let .choosing(routes, p) = model.state, let first = routes.first {
             model.start(first, to: p)
         }
+        await DebugScenes.run(model, args)
         #endif
     }
 }
+
+#if DEBUG
+/// Screenshot scenes for a simulated drive (debug builds only):
+/// "-cs3D" starts in 3D, "-csForceAlert kind[,meters]" puts a made-up
+/// event of that kind on the route ahead, "-csSeeMore" opens it, and
+/// "-csClearing" makes it vanish so the cleared state shows.
+enum DebugScenes {
+    @MainActor static func run(_ model: AppModel, _ args: [String]) async {
+        if args.contains("-cs3D"), !model.prefs.is3D { model.toggle3D() }
+        guard let i = args.firstIndex(of: "-csForceAlert"), i + 1 < args.count else { return }
+        let parts = args[i + 1].split(separator: ",").map(String.init)
+        let meters = parts.count > 1 ? Double(parts[1]) ?? 1300 : 1300
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        guard let m = marker(parts[0]) else { return }
+        model.alerts.debugAdd(m, meters: meters)
+        if args.contains("-csClearing") {
+            model.alerts.clearedHold = 20
+            try? await Task.sleep(nanoseconds: 7_000_000_000)
+            model.alerts.debugVanish()
+        }
+    }
+
+    static func marker(_ kind: String) -> RoadMarker? {
+        let four = #"{"total":4,"lanes":[{"n":1,"type":"general","state":"open"},{"n":2,"type":"general","state":"open"},{"n":3,"type":"general","state":"open"},{"n":4,"type":"general","state":"closed"}],"target":3,"basis":"feed"}"#
+        let base = #""lat":37.442,"lon":-122.143,"id":"debug-\#(kind)""#
+        let json: String
+        switch kind {
+        case "crash": json = #"{"kind":"incident",\#(base),"type":"Traffic Collision","label":"Crash","location":"US-101 S at University Ave","lanes":"right lane blocked","lane_layout":\#(four)}"#
+        case "closure": json = #"{"kind":"lane_closure",\#(base),"label":"Two right lanes closed","lanes":"2 right lanes closed"}"#
+        case "hazard": json = #"{"kind":"incident",\#(base),"type":"Traffic Hazard","label":"Object on road","lanes":"left lane"}"#
+        case "police": json = #"{"kind":"plugin",\#(base),"flare_kind":"police","label":"Police reported","source":"waze","road":"US-101 S"}"#
+        case "jam": json = #"{"kind":"incident",\#(base),"type":"Slow traffic","label":"Slow traffic"}"#
+        case "chain": json = #"{"kind":"chain_control",\#(base),"label":"Chain control R-2","status":"R2"}"#
+        case "fire": json = #"{"kind":"wildfire",\#(base),"name":"Oak Fire","acres":1240,"contained":35}"#
+        case "ice": json = #"{"kind":"rwis",\#(base),"station":"Summit Rd","pave_c":-0.5,"air_c":1.1}"#
+        case "sign": json = #"{"kind":"sign",\#(base),"label":"Message sign","lines":["SAN JOSE 24 MIN","SFO 18 MIN"]}"#
+        case "camera": json = #"{"kind":"incident",\#(base),"type":"Speed camera","label":"Speed camera"}"#
+        case "toll": json = #"{"kind":"toll",\#(base),"label":"Express lanes","min":4.5,"max":4.5}"#
+        default: return nil
+        }
+        return try? JSONDecoder().decode(RoadMarker.self, from: Data(json.utf8))
+    }
+}
+#endif

@@ -20,8 +20,8 @@ struct SearchBar: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Search a place or address", text: $text)
+                Image(systemName: "magnifyingglass").font(.system(size: 17, weight: .semibold)).foregroundStyle(DG.sub)
+                TextField("Where to?", text: $text)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .focused($focused)
@@ -37,9 +37,9 @@ struct SearchBar: View {
                     .accessibilityIdentifier("search-clear")
                 }
             }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+            .font(DG.font(17, .medium))
+            .padding(.horizontal, 18).frame(minHeight: 52)
+            .dgGlass(radius: 26)
 
             if focused, text.isEmpty {
                 shortcuts
@@ -82,7 +82,7 @@ struct SearchBar: View {
             }
         }
         .frame(maxHeight: 380)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .dgGlass(radius: 22)
         .padding(.top, 6)
     }
 
@@ -100,7 +100,7 @@ struct SearchBar: View {
                 Text("Nothing yet. Keep typing, or add a city.").font(.footnote).foregroundStyle(.secondary).padding(12)
             }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .dgGlass(radius: 22)
         .padding(.top, 6)
     }
 

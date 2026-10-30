@@ -88,11 +88,11 @@ final class CoverageUITests: XCTestCase {
     // MARK: search
 
     func testSearchIsLiveWhileTypingAndClears() {
-        search("Los Alt")
+        search("Palo Alt")
         let suggestion = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Palo Alto'")).firstMatch
         XCTAssertTrue(suggestion.waitForExistence(timeout: 8), "suggestions arrive before submit")
         app.buttons["search-clear"].tap()
-        XCTAssertEqual(app.textFields["search"].value as? String ?? "", "Search a place or address", "field cleared")
+        XCTAssertEqual(app.textFields["search"].value as? String ?? "", "Where to?", "field cleared")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Type a place'")).firstMatch.exists,
                       "empty-state hint under the field")
     }
@@ -496,7 +496,7 @@ final class CoverageUITests: XCTestCase {
             app.buttons["alert-pill"].tap()
             XCTAssertTrue(app.buttons["alert-collapse"].waitForExistence(timeout: 5), "strip back")
         }
-        let exit = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'exit' OR label CONTAINS[c] 'stop' OR label CONTAINS[c] 'close'")).firstMatch
+        let exit = app.buttons.matching(NSPredicate(format: "identifier == 'end-trip' OR label CONTAINS[c] 'exit' OR label CONTAINS[c] 'stop' OR label CONTAINS[c] 'close'")).firstMatch
         if exit.waitForExistence(timeout: 5) { exit.tap() } else { app.buttons["xmark"].firstMatch.tap() }
         XCTAssertTrue(app.textFields["search"].waitForExistence(timeout: 10), "back to browsing")
     }

@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var showTools = false
     /// The event panel's height as laid out, so the map buttons sit above it.
     @State private var panelHeight: CGFloat = 0
+    @State private var browseAlertMore = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -33,7 +34,25 @@ struct ContentView: View {
                 onTapExit: { model.stop() },
                 makeMapContent: { mapContent }
             )
-            .navigationViewInnerGrid(topCenter: { reroutingBanner })
+            // On a trip the side buttons and the speed disc live in the
+            // navigation view's own grid, so they never sit on its zoom
+            // and recenter buttons or under the maneuver card.
+            .navigationViewInnerGrid(topCenter: { reroutingBanner }, bottomLeading: {
+                if isNavigating, model.prefs.showSpeedLimit { SpeedDisc(speedMps: model.speedMps, limitKmh: model.limitKmh) }
+            }, bottomTrailing: {
+                // Ferrostar draws this grid while browsing too; the browse
+                // column owns these controls then.
+                if isNavigating { VStack(spacing: 10) {
+                    DGModesPill(is3D: model.prefs.is3D) { withAnimation(DG.tilt) { model.toggle3D() } }
+                    DGReportButton { if model.reportCoordinate != nil { showReport = true } }
+                        .accessibilityIdentifier("report")
+                } }
+            })
+            // Day Glass+: the maneuver card with the alert tucked under
+            // it, the trip bar, and no road-name pill (the card says it).
+            .navigationViewInstructionView { state, _, size in DriveTop(state: state, size: size) }
+            .navigationViewProgressView { state, exit in TripBar(state: state, onExit: exit) }
+            .navigationViewCurrentRoadView { _ in EmptyView() }
 
             MapHook(
                 // A closure stretch and a toll corridor answer a tap the
@@ -60,13 +79,14 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     HStack(alignment: .top, spacing: 8) {
                         SearchBar()
-                        VStack(spacing: 8) {
-                            Button { showSettings = true } label: { roundIcon("gearshape.fill") }
+                        VStack(spacing: 10) {
+                            DGRoundButton(size: 52) { showSettings = true } label: { Image(systemName: "gearshape.fill") }
+                                .accessibilityLabel("Settings")
                                 .accessibilityIdentifier("settings")
-                            Button { showTools = true } label: { roundIcon("line.3.horizontal") }
+                            DGRoundButton(size: 52) { showTools = true } label: { Image(systemName: "square.3.layers.3d") }
+                                .accessibilityLabel("Tools")
                                 .accessibilityIdentifier("tools")
-                            Button { model.toggle3D() } label: { roundText(model.prefs.is3D ? "2D" : "3D") }
-                                .accessibilityIdentifier("perspective")
+                            DGModesPill(is3D: model.prefs.is3D) { withAnimation(DG.tilt) { model.toggle3D() } }
                         }
                     }
                     .padding(.horizontal, 12)
@@ -82,7 +102,7 @@ struct ContentView: View {
 
             // Map controls: 2D/3D, compass when turned, my location. While
             // navigating Ferrostar draws its own zoom and recenter buttons.
-            VStack {
+            if !isNavigating { VStack {
                 Spacer()
                 HStack(alignment: .bottom) {
                     Spacer()
@@ -91,35 +111,20 @@ struct ContentView: View {
                             Button { model.faceNorth() } label: { compass }
                                 .accessibilityIdentifier("compass")
                         }
-                        if isNavigating {
-                            // Browsing has this under the menu button; on a
-                            // trip the top belongs to the instruction card.
-                            Button { model.toggle3D() } label: { roundText(model.prefs.is3D ? "2D" : "3D") }
-                                .accessibilityIdentifier("perspective")
-                        }
                         if !isNavigating {
-                            Button { model.follow() } label: { roundIcon("location.fill") }
+                            DGRoundButton { model.follow() } label: { Image(systemName: "location.fill") }
+                                .accessibilityLabel("My location")
                                 .accessibilityIdentifier("locate")
                         }
                         // Report, like Waze: one tap from anywhere, big enough
                         // to hit at a glance from the wheel.
-                        Button { if model.reportCoordinate != nil { showReport = true } } label: {
-                            VStack(spacing: 1) {
-                                Image(systemName: "exclamationmark.bubble.fill")
-                                    .font(.system(size: 26, weight: .semibold))
-                                Text("Report").font(.system(size: 11, weight: .bold))
-                            }
-                            .foregroundStyle(.white)
-                            .frame(width: 64, height: 64)
-                            .background(Color.orange, in: Circle())
-                            .shadow(color: .black.opacity(0.22), radius: 8, y: 3)
-                        }
-                        .accessibilityIdentifier("report")
+                        DGReportButton { if model.reportCoordinate != nil { showReport = true } }
+                            .accessibilityIdentifier("report")
                     }
                     .padding(.trailing, 12)
-                    .padding(.bottom, isNavigating ? 118 : bottomCardHeight + 12)
+                    .padding(.bottom, bottomCardHeight + 12)
                 }
-            }
+            } }
 
             // Above the trip bar, left of the side buttons, clear of the
             // instruction card whatever its height: on a trip the alert
@@ -127,16 +132,16 @@ struct ContentView: View {
             // banner at the top instead, under the search bar.)
             VStack {
                 Spacer()
-                if isNavigating { alertBanner.padding(.leading, 12).padding(.trailing, 76).padding(.bottom, 8) }
-                if model.prefs.showSpeedLimit, model.speedMps >= 0 || isNavigating {
+                // On a trip the alert rides under the maneuver card.
+                if model.prefs.showSpeedLimit, model.speedMps >= 0, !isNavigating {
                     HStack {
-                        Speedometer(speedMps: model.speedMps, limitKmh: model.limitKmh)
+                        SpeedDisc(speedMps: model.speedMps, limitKmh: model.limitKmh)
                         Spacer()
                     }
-                    .padding(.leading, 12)
+                    .padding(.leading, 14)
                 }
             }
-            .padding(.bottom, isNavigating ? 124 : bottomCardHeight + 12)
+            .padding(.bottom, isNavigating ? 110 : bottomCardHeight + 12)
             GeometryReader { geo in
                 VStack {
                     Spacer()
@@ -154,8 +159,9 @@ struct ContentView: View {
         }
         .overlay(alignment: .top) {
             if let t = model.toast {
-                Text(t).font(.subheadline).padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(.regularMaterial, in: Capsule()).padding(.top, 64)
+                Text(t).font(DG.font(15, .semibold)).foregroundStyle(DG.ink)
+                    .padding(.horizontal, 16).padding(.vertical, 11)
+                    .dgGlass(Capsule()).padding(.top, 64).padding(.horizontal, 16)
                     .task(id: t) { try? await Task.sleep(nanoseconds: 2_500_000_000); if model.toast == t { model.toast = nil } }
             }
         }
@@ -224,9 +230,11 @@ struct ContentView: View {
     /// The alert ahead, on a trip or driving without one, as a banner
     /// at the top. Nothing when it was swiped away or is behind.
     @ViewBuilder private var alertBanner: some View {
-        if let next = model.alerts.banner(within: model.prefs.stripAheadMeters) {
-            AlertBanner(item: next, along: model.alerts.hereAlong)
-                .animation(.spring(duration: 0.35), value: next.id)
+        if let c = model.alerts.cleared {
+            DriveAlert(item: c, along: model.alerts.hereAlong, more: .constant(false), cleared: true, standalone: true)
+        } else if let next = model.alerts.banner(within: model.prefs.stripAheadMeters) {
+            DriveAlert(item: next, along: model.alerts.hereAlong, more: $browseAlertMore, standalone: true)
+                .animation(DG.spring, value: next.id)
         }
     }
 
@@ -238,7 +246,9 @@ struct ContentView: View {
         if let n = model.offlineNotice {
             OfflineBanner(title: n.title, detail: n.detail).padding(.horizontal, 12)
         } else if model.coreState?.isCalculatingNewRoute == true {
-            NavigationUIBanner(severity: .loading) { Text("Rerouting") }
+            DGNote(systemImage: DGIcon.reroute, tone: .low, title: "Rerouting", detail: "Finding the way from here.",
+                   identifier: "rerouting")
+                .padding(.horizontal, 12)
         }
     }
 
@@ -278,19 +288,7 @@ struct OfflineBanner: View {
     let detail: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "wifi.slash").font(.subheadline.weight(.semibold)).foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline.weight(.semibold))
-                Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("offline-banner")
+        DGNote(systemImage: DGIcon.offline, tone: .mid, title: title, detail: detail, identifier: "offline-banner")
     }
 }
 
