@@ -548,18 +548,18 @@ struct CameraView: View {
             // replaces every so often, or a live stream.
             HStack(spacing: 8) {
                 if marker.stream != nil {
-                    Text("LIVE VIDEO").font(.caption2.weight(.bold)).padding(.horizontal, 7).padding(.vertical, 3)
+                    Text("LIVE VIDEO").font(DG.font(11, .bold)).padding(.horizontal, 7).padding(.vertical, 3)
                         .background(Color.red, in: Capsule()).foregroundStyle(.white)
-                    Text(playing ? "Streaming from the agency" : "Tap the picture to play").font(.caption).foregroundStyle(.secondary)
+                    Text(playing ? "Streaming from the agency" : "Tap the picture to play").font(DG.font(12)).foregroundStyle(DG.sub)
                 } else {
-                    Text("STILL PICTURE").font(.caption2.weight(.bold)).padding(.horizontal, 7).padding(.vertical, 3)
+                    Text("STILL PICTURE").font(DG.font(11, .bold)).padding(.horizontal, 7).padding(.vertical, 3)
                         .background(Color.secondary.opacity(0.2), in: Capsule())
-                    Text(takenText).font(.caption).foregroundStyle(.secondary)
+                    Text(takenText).font(DG.font(12)).foregroundStyle(DG.sub)
                 }
                 Spacer()
                 if marker.stream == nil || !playing {
                     Button { reload() } label: { Image(systemName: "arrow.clockwise") }
-                        .buttonStyle(.borderless).font(.caption)
+                        .buttonStyle(.borderless).font(DG.font(12))
                         .accessibilityIdentifier("camera-refresh")
                 }
             }
@@ -576,7 +576,7 @@ struct CameraView: View {
                             image.resizable().aspectRatio(contentMode: .fit)
                         case .failure:
                             Text(Connectivity.shared.online ? "This camera has no picture right now." : OfflineText.camera)
-                                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 60)
+                                .font(DG.font(12)).foregroundStyle(DG.sub).frame(maxWidth: .infinity, minHeight: 60)
                         default:
                             ProgressView().frame(maxWidth: .infinity, minHeight: 60)
                         }
@@ -599,18 +599,18 @@ struct CameraView: View {
             }
             if marker.stream == nil {
                 Text("Not video: the agency replaces this picture every minute or so, and the app fetches it again every minute while this card is open.")
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .font(DG.font(11)).foregroundStyle(DG.sub)
             }
             HStack(spacing: 10) {
                 if let stream = marker.stream, let url = URL(string: stream), videoURL == nil {
-                    Link("Watch the live video", destination: url).font(.caption)
+                    Link("Watch the live video", destination: url).font(DG.font(12))
                 }
                 if let image = marker.image, let url = URL(string: image) {
-                    Link("Open the full picture", destination: url).font(.caption)
+                    Link("Open the full picture", destination: url).font(DG.font(12))
                 }
             }
             if let src = marker.src {
-                Text("Source: \(src)").font(.caption2).foregroundStyle(.secondary)
+                Text("Source: \(src)").font(DG.font(11)).foregroundStyle(DG.sub)
             }
         }
         .task(id: marker.key) {
@@ -674,7 +674,7 @@ struct CameraVideo: View {
             VideoPlayer(player: player)
             if failed {
                 Text("The agency's stream is not answering right now. Streams come and go; the still picture above it is current.")
-                    .font(.caption).multilineTextAlignment(.center).foregroundStyle(.white).padding(12)
+                    .font(DG.font(12)).multilineTextAlignment(.center).foregroundStyle(.white).padding(12)
                     .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8)).padding(12)
             }
         }
@@ -702,7 +702,7 @@ struct SignBoard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if marker.signLines.isEmpty {
-                Text("This sign is blank right now.").font(.caption).foregroundStyle(.secondary)
+                Text("This sign is blank right now.").font(DG.font(12)).foregroundStyle(DG.sub)
             } else {
                 VStack(spacing: 2) {
                     ForEach(Array(marker.signLines.enumerated()), id: \.offset) { _, line in
@@ -718,7 +718,7 @@ struct SignBoard: View {
                 .accessibilityIdentifier("sign-board")
             }
             if let src = marker.src {
-                Text("Source: \(src)").font(.caption2).foregroundStyle(.secondary)
+                Text("Source: \(src)").font(DG.font(11)).foregroundStyle(DG.sub)
             }
         }
     }
@@ -753,24 +753,24 @@ struct TollRates: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text(marker.priceRange).font(.title3.weight(.semibold))
-                Text(freshness).font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                Text(marker.priceRange).font(DG.font(20, .semibold))
+                Text(freshness).font(DG.font(11, .bold)).foregroundStyle(DG.sub)
             }
             Text(required ? "Every vehicle pays here." : "Optional. The regular lanes are free.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(DG.font(12)).foregroundStyle(DG.sub)
             if !entries.isEmpty {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
                             if let label = entry.label, !label.isEmpty {
-                                Text(required ? label : "From " + label).font(.caption.weight(.semibold))
+                                Text(required ? label : "From " + label).font(DG.font(12, .semibold))
                             }
                             ForEach(Array((entry.rows ?? []).enumerated()), id: \.offset) { _, row in
                                 HStack {
-                                    Text(destinationText(row)).font(.caption).foregroundStyle(.secondary)
+                                    Text(destinationText(row)).font(DG.font(12)).foregroundStyle(DG.sub)
                                     Spacer()
                                     Text(row.price.map { RoadMarker.money($0) } ?? "")
-                                        .font(.caption.weight(.semibold))
+                                        .font(DG.font(12, .semibold))
                                 }
                             }
                         }
@@ -780,7 +780,7 @@ struct TollRates: View {
                 .accessibilityIdentifier("toll-rates")
             }
             if let src = marker.src {
-                Text("Source: \(src)").font(.caption2).foregroundStyle(.secondary)
+                Text("Source: \(src)").font(DG.font(11)).foregroundStyle(DG.sub)
             }
         }
     }

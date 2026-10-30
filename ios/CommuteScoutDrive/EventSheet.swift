@@ -46,9 +46,10 @@ struct EventPanel: View {
                         Text(c.dispatch != nil ? "More details and the dispatch log" : "More details")
                         Image(systemName: "chevron.down")
                     }
-                    .font(DG.T.button).foregroundStyle(DG.ink)
+                    .font(DG.T.button).foregroundStyle(DG.inkColor(.low))
                     .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(DG.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: DG.R.box, style: .continuous))
+                    .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 16).padding(.top, 8)
@@ -104,7 +105,8 @@ struct EventPanel: View {
                 ShareLink(item: marker.webURL) {
                     Image(systemName: "square.and.arrow.up").font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(DG.ink).frame(width: 48, height: 48)
-                        .background(DG.ink.opacity(0.06), in: Circle())
+                        .background(Color.white.opacity(0.7), in: Circle())
+                        .overlay(Circle().strokeBorder(DG.hair, lineWidth: 1))
                 }
                 .buttonStyle(DGPressStyle())
                 .accessibilityLabel("Share")
@@ -160,24 +162,47 @@ struct EventBody: View {
     }
 
     private func header(_ content: EventContent?) -> some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Circle().fill(accent).frame(width: 9, height: 9)
-                Text(content?.chip ?? Self.chip(kind)).font(DG.T.chip).foregroundStyle(accent)
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                disc
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(content?.title ?? Self.chip(kind)).font(DG.T.sheetTitle).foregroundStyle(DG.ink)
+                        .lineLimit(expanded ? nil : 3).fixedSize(horizontal: false, vertical: true)
+                    if let sub = content?.subtitle {
+                        Text(sub).font(DG.font(15)).foregroundStyle(DG.sub).lineLimit(expanded ? nil : 2)
+                    }
+                }
+                Spacer(minLength: 6)
+                Button { model.clearMarker() } label: {
+                    Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundStyle(DG.sub)
+                        .frame(width: 36, height: 36).background(DG.ink.opacity(0.06), in: Circle())
+                }
+                .accessibilityLabel("Close")
+                .accessibilityIdentifier("marker-close")
             }
-            .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(accent.opacity(0.12), in: Capsule())
-            if let ago = content?.ago {
-                Text(ago).font(DG.T.noteBody).foregroundStyle(DG.sub)
+            // A crash says what it is in its title; the other kinds need
+            // the chip, which tells a closed road from a closed lane and
+            // marks a plugin's report as a plugin's.
+            if let content, kind != "incident" {
+                HStack(spacing: 8) {
+                    HStack(spacing: 6) {
+                        Circle().fill(accent).frame(width: 9, height: 9)
+                        Text(content.chip).font(DG.T.chip).foregroundStyle(accent).lineLimit(1)
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(accent.opacity(0.12), in: Capsule())
+                    if let ago = content.ago { Text(ago).font(DG.T.noteBody).foregroundStyle(DG.sub) }
+                }
             }
-            Spacer()
-            Button { model.clearMarker() } label: {
-                Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundStyle(DG.sub)
-                    .frame(width: 30, height: 30).background(Color.secondary.opacity(0.14), in: Circle())
-            }
-            .accessibilityLabel("Close")
-            .accessibilityIdentifier("marker-close")
+        }
+    }
+
+    @ViewBuilder private var disc: some View {
+        if let m = marker, m.kind == "plugin" {
+            MarkerGlyph(marker: m, size: 28).frame(width: 44, height: 44).background(accent.opacity(0.14), in: Circle())
+        } else {
+            let k = marker.map { DGKind(marker: $0) } ?? DGKind(markerKind: kind, title: focus?.ref.title)
+            DGDisc(kind: k, tone: k.tone, size: 44)
         }
     }
 
@@ -187,97 +212,90 @@ struct EventBody: View {
     }
 
     @ViewBuilder private func details(_ c: EventContent, _ m: RoadMarker) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(c.title).font(DG.T.sheetTitle).lineLimit(expanded ? nil : 3)
-                .fixedSize(horizontal: false, vertical: true)
-            if let sub = c.subtitle {
-                Text(sub).font(DG.font(15)).foregroundStyle(DG.sub).lineLimit(expanded ? nil : 2)
-            }
-        }
         if let warning = c.warning {
             Label(warning, systemImage: "exclamationmark.octagon.fill")
-                .font(DG.font(15, .bold)).foregroundStyle(.red)
+                .font(DG.font(15, .bold)).foregroundStyle(DG.inkColor(.high))
         }
         // A camera's picture and a sign's board are the point of them:
         // shown collapsed too.
         if m.kind == "camera" { CameraView(marker: m) }
         if m.kind == "sign" { SignBoard(marker: m) }
-        let lines = expanded ? c.body : Array(c.body.prefix(1))
+        let lines = expanded ? c.body : Array(c.body.prefix(Self.collapsedLines(c)))
         ForEach(lines, id: \.self) { line in
-            Text(line.text).font(line.gloss ? DG.font(15).italic() : DG.T.lede)
-                .lineLimit(expanded ? nil : 3)
-                .foregroundStyle(line.gloss ? .secondary : .primary)
-                .fixedSize(horizontal: false, vertical: true)
+            if line.gloss, kind == "incident" {
+                PlainWords(text: line.text)
+            } else {
+                Text(line.text).font(line.gloss ? DG.font(15) : DG.T.lede)
+                    .lineLimit(expanded ? nil : 3)
+                    .foregroundStyle(line.gloss ? DG.sub : DG.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        let facts = expanded ? c.facts : Array(c.facts.prefix(3))
+        let away = model.here.map { EventContent.Fact(label: "From you", value: Units.distance(AlertsEngine.meters($0, m.coordinate))) }
+        let facts = (expanded ? c.facts : Array(c.facts.prefix(away == nil ? 3 : 2))) + [away].compactMap { $0 }
         if !facts.isEmpty { FactList(facts: facts) }
         if expanded {
             if let s = c.schedule { ScheduleBox(schedule: s, accent: accent) }
             if let chain = c.chain { ChainBox(levels: chain, accent: accent) }
             if m.kind == "toll" { TollRates(marker: m) }
-            if let d = c.dispatch { DispatchLogView(chpId: d.id, count: d.count) }
-            VStack(alignment: .leading, spacing: 2) {
-                if let here = model.here {
-                    Text(Units.distance(AlertsEngine.meters(here, m.coordinate)) + " from you")
-                }
-                ForEach(c.foot, id: \.self) { Text($0) }
+            if let d = c.dispatch { DispatchLogView(chpId: d.id) }
+            if !c.foot.isEmpty {
+                Text(c.foot.joined(separator: ". ") + ".").font(DG.font(12.5)).foregroundStyle(DG.faint)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .font(DG.T.rowSub).foregroundStyle(DG.sub)
         }
     }
 
+    /// The first sentence, and its plain-words box when it has one.
+    private static func collapsedLines(_ c: EventContent) -> Int {
+        c.body.count > 1 && c.body[1].gloss ? 2 : 1
+    }
+
     static func hasMore(_ c: EventContent, _ m: RoadMarker) -> Bool {
-        c.body.count > 1 || c.facts.count > 3 || c.schedule != nil || c.chain != nil || c.dispatch != nil
+        c.body.count > collapsedLines(c) || c.facts.count > 2 || c.schedule != nil || c.chain != nil || c.dispatch != nil
             || !c.foot.isEmpty || m.kind == "toll"
     }
 }
 
 /// The status line at the top of the sheet.
 struct StatusBanner: View {
-    enum Tone { case good, info, quiet, warn, busy }
+    enum Tone { case active, info, quiet, warn, busy }
     let tone: Tone
     let headline: String
     let detail: String?
     var retry: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .center, spacing: 12) {
             if tone == .busy {
-                ProgressView().controlSize(.small).padding(.top, 2)
+                ProgressView().controlSize(.small).frame(width: 22)
             } else {
-                Image(systemName: icon).font(.system(size: 18, weight: .semibold)).foregroundStyle(color)
+                Circle().fill(dgTone.color).frame(width: 10, height: 10)
+                    .frame(width: 22, height: 22).background(dgTone.color.opacity(0.18), in: Circle())
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(headline).font(DG.T.rowTitle)
-                if let detail { Text(detail).font(DG.T.noteBody).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true) }
+                Text(headline).font(DG.font(16, .bold)).foregroundStyle(dgTone.ink)
+                if let detail { Text(detail).font(DG.font(14)).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true) }
                 if let retry {
-                    Button("Try again", action: retry).font(DG.T.chip).padding(.top, 2)
+                    Button("Try again", action: retry).font(DG.T.chip).foregroundStyle(DG.inkColor(.low)).padding(.top, 2)
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(12)
-        .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: DG.R.facts, style: .continuous))
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .background(dgTone.color.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(dgTone.color.opacity(0.22), lineWidth: 1))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("event-status")
     }
 
-    private var icon: String {
+    /// Still there is the alert color: the event has not gone away.
+    private var dgTone: DGTone {
         switch tone {
-        case .good: "checkmark.circle.fill"
-        case .info: "arrow.triangle.2.circlepath"
-        case .quiet: "checkmark.seal.fill"
-        case .warn: "wifi.exclamationmark"
-        case .busy: ""
-        }
-    }
-
-    private var color: Color {
-        switch tone {
-        case .good: .green
-        case .info: .blue
-        case .quiet, .busy: .gray
-        case .warn: .orange
+        case .active: .high
+        case .info: .low
+        case .quiet, .busy: .clear
+        case .warn: .mid
         }
     }
 
@@ -296,7 +314,7 @@ struct StatusBanner: View {
             return StatusBanner(tone: .busy, headline: "Checking the latest status", detail: sent)
         case let .active(confirmed):
             return confirmed
-                ? StatusBanner(tone: .good, headline: "Still active",
+                ? StatusBanner(tone: .active, headline: "Still active",
                                detail: ["Checked just now.", sent].compactMap { $0 }.joined(separator: " "))
                 : StatusBanner(tone: .warn, headline: "Still active",
                                detail: ["Couldn't confirm it just now, but it is still on the map.", sent]
@@ -342,6 +360,22 @@ private struct AlertBlock: View {
     }
 }
 
+/// A CHP call type, said the way a person would.
+private struct PlainWords: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("In plain words").font(DG.font(13, .bold)).foregroundStyle(DG.inkColor(.low))
+            Text(text).font(DG.font(15)).foregroundStyle(DG.ink).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DGTone.low.color.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(DGTone.low.color.opacity(0.2), lineWidth: 1))
+    }
+}
+
 /// Label and value rows in a grouped box, as a settings list draws them.
 private struct FactList: View {
     let facts: [EventContent.Fact]
@@ -349,17 +383,18 @@ private struct FactList: View {
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(facts.enumerated()), id: \.offset) { i, f in
-                if i > 0 { Divider().padding(.leading, 12) }
+                if i > 0 { DGDivider(inset: 0) }
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(f.label).foregroundStyle(DG.sub)
+                    Text(f.label).font(DG.font(14.5)).foregroundStyle(DG.sub)
                     Spacer(minLength: 8)
-                    Text(f.value).multilineTextAlignment(.trailing).fixedSize(horizontal: false, vertical: true)
+                    Text(f.value).font(DG.font(14.5, .semibold)).foregroundStyle(DG.ink)
+                        .multilineTextAlignment(.trailing).fixedSize(horizontal: false, vertical: true)
                 }
-                .font(DG.font(15))
-                .padding(.horizontal, 12).padding(.vertical, 9)
+                .padding(.horizontal, 14).padding(.vertical, 11)
             }
         }
-        .background(DG.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: DG.R.facts, style: .continuous))
+        .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
     }
 }
 
@@ -412,26 +447,29 @@ private struct ChainBox: View {
     }
 }
 
-/// A CHP call's dispatch log, fetched when asked for: the entries newest
-/// first with the shorthand translated, then one line per unit.
+/// A CHP call's dispatch log, fetched when the panel is pulled up: the
+/// entries newest first with the shorthand translated, then one line per unit.
 private struct DispatchLogView: View {
     let chpId: String
-    let count: Int
     @State private var log: DispatchReply.Log?
     @State private var state = "idle"   // idle, loading, failed, ended
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let log {
-                section("Dispatch log (newest first)", key: "Blue text is a rough translation of the CHP shorthand.")
-                ForEach(Array(log.log.enumerated()), id: \.offset) { _, row in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(row.time).font(DG.font(12).monospacedDigit()).foregroundStyle(DG.sub).frame(width: 62, alignment: .leading)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(row.text).font(.footnote.monospaced()).fixedSize(horizontal: false, vertical: true)
+                section("Dispatch log", key: "Newest first. Each CHP line, then what it means.")
+                ForEach(Array(log.log.enumerated()), id: \.offset) { i, row in
+                    if i > 0 { DGDivider(inset: 0) }
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text(row.time).font(DG.font(13, .medium).monospacedDigit()).foregroundStyle(DG.faint).frame(width: 62, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 6) {
                             if let plain = row.plain {
-                                Text(plain).font(DG.T.noteBody).foregroundStyle(.blue).fixedSize(horizontal: false, vertical: true)
+                                Text(plain).font(DG.font(15, .semibold)).foregroundStyle(DG.ink).fixedSize(horizontal: false, vertical: true)
                             }
+                            Text(row.text).font(.system(size: 12, design: .monospaced)).foregroundStyle(DG.sub)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 8).padding(.vertical, 5)
+                                .background(DG.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                     }
                 }
@@ -440,7 +478,7 @@ private struct DispatchLogView: View {
                             key: "One line per unit. \"Cleared to leave\" means the unit finished its part and left the scene. CHP does not name units in the public feed.")
                     ForEach(log.units, id: \.unit) { u in
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text("Unit \(u.unit)").font(DG.font(13.5, .bold)).frame(width: 62, alignment: .leading)
+                            Text("Unit \(u.unit)").font(DG.font(13.5, .bold)).foregroundStyle(DG.ink).frame(width: 62, alignment: .leading)
                             Text(u.steps.map { "\($0.status) \($0.time)" }.joined(separator: ", ") + (u.done ? "" : ". Still working the scene"))
                                 .font(DG.T.noteBody).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
                         }
@@ -448,35 +486,33 @@ private struct DispatchLogView: View {
                 }
                 if log.log.isEmpty && log.units.isEmpty { Text("No shared entries yet.").font(DG.T.noteBody).foregroundStyle(DG.sub) }
             } else {
-                Button { Task { await load() } } label: {
-                    HStack(spacing: 8) {
-                        if state == "loading" { ProgressView().controlSize(.small) }
-                        Text(label).frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(.vertical, 4)
+                HStack(spacing: 8) {
+                    if state == "loading" || state == "idle" { ProgressView().controlSize(.small) }
+                    Text(label).font(DG.T.noteBody).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
                 }
-                .buttonStyle(.bordered)
-                .disabled(state != "idle")
                 .accessibilityIdentifier("dispatch-log")
             }
+        }
+        .task(id: chpId) {
+            guard log == nil else { return }
+            await load()
         }
     }
 
     private var label: String {
         switch state {
-        case "loading": "Loading the dispatch log"
         case "failed": "Log unavailable right now"
         case "ended": "The dispatch log ends when CHP clears the call."
-        default: "Show dispatch log (\(count))"
+        default: "Loading the dispatch log"
         }
     }
 
     private func section(_ title: String, key: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(DG.T.rowTitle)
+            Text(title).font(DG.font(17, .bold)).foregroundStyle(DG.ink)
             Text(key).font(DG.T.rowSub).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.top, 4)
+        .padding(.top, 8)
     }
 
     private func load() async {
