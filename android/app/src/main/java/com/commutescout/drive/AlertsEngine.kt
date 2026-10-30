@@ -5,6 +5,8 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.util.Log
+import com.commutescout.drive.design.AlertWords
+import com.commutescout.drive.design.Looks
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -86,7 +88,7 @@ class AlertsEngine(context: Context, prefs: Prefs) {
         forced = forced - u
         all = all - u
         _ahead.value = _ahead.value - u
-        _cleared.value = u
+        announceCleared(u)
         Log.i(TAG, "debug: forced clear of ${u.id}")
     }
     var spoken = true
@@ -167,6 +169,14 @@ class AlertsEngine(context: Context, prefs: Prefs) {
             val still = new.mapTo(HashSet()) { it.id }
             return old.filter { it.marker.kind in CLEARABLE && it.id !in still && it.alongMeters - along in minGap..maxGap }
         }
+
+        /** The cleared capsule's words, read aloud. */
+        fun clearedSentence(m: RoadMarker): String =
+            AlertWords.clearedLine(AlertWords.shortTitle(m, Looks.of(m))).replace("@", "at").replace("(", "").replace(")", "")
+
+        /** A cleared event speaks under the same rule as the alert, and never in free drive. */
+        fun speaksCleared(rule: Prefs.AlertRule, muted: Boolean, freeDrive: Boolean): Boolean =
+            rule.enabled && rule.speak && !muted && !freeDrive
 
         fun cumulativeDistances(pts: List<LatLon>): DoubleArray {
             val out = DoubleArray(pts.size)
@@ -454,6 +464,15 @@ class AlertsEngine(context: Context, prefs: Prefs) {
         speakWithFocus(sentence(marker.spokenTitle, gap), marker.key, flush = false)
     }
 
+    /** Shows the cleared capsule, and says so when this event's alert may speak. */
+    private fun announceCleared(u: Upcoming) {
+        _cleared.value = u
+        val rule = rules?.invoke(u.marker) ?: Prefs.AlertRule(true, spoken, announceAheadMeters, 0.0)
+        if (speaksCleared(rule, muted, freeDrive) && speaker.ready.value) {
+            speakWithFocus(clearedSentence(u.marker), "${u.id}:cleared", flush = false)
+        }
+    }
+
     /** A sample from Settings, in place of anything still queued. It speaks even when muted: the driver asked. */
     fun preview(text: String) = speakWithFocus(text, "preview", flush = true)
 
@@ -516,7 +535,7 @@ class AlertsEngine(context: Context, prefs: Prefs) {
         if (fetched != null && !freeDrive && route.isNotEmpty()) {
             clearedAhead(before, all, _hereAlong.value).firstOrNull { wanted(it.marker) && it.id !in _dismissed.value }?.let {
                 Log.i(TAG, "cleared ahead: ${it.id}")
-                _cleared.value = it
+                announceCleared(it)
             }
         }
         Log.i(TAG, "alerts: ${markers.size} markers in box, ${all.size} on the route")

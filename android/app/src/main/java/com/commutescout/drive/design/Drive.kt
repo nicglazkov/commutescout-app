@@ -166,6 +166,9 @@ data class AlertWords(
             return AlertWords(title, line, gap?.let { Units.distance(it) }, eta, look, layout, (gap ?: 0.0) / 1609.344)
         }
 
+        /** The cleared capsule's words, and the voice's: "Crash ahead has cleared". */
+        fun clearedLine(title: String): String = "${title.removeSuffix(" ahead")} ahead has cleared"
+
         /** "Crash ahead", not the feed's whole sentence. */
         fun shortTitle(m: RoadMarker, look: AlertLook): String = when {
             m.kind == "incident" && look.icon == "crash" -> "Crash ahead"
@@ -215,7 +218,7 @@ fun AlertTuck(words: AlertWords, marker: RoadMarker, cleared: Boolean, onOpen: (
             AnimatedContent(cleared, transitionSpec = { (fadeIn(tween(380, 90)) togetherWith fadeOut(tween(170)))
             }, modifier = Modifier.weight(1f), label = "words") { c ->
                 Column {
-                    Text(if (c) "${words.title.removeSuffix(" ahead")} ahead has cleared".replace("ahead ahead", "ahead") else words.title,
+                    Text(if (c) AlertWords.clearedLine(words.title) else words.title,
                         style = DGType.alertTitle, color = DG.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     val line = if (c) "All lanes are open again" else words.line
                     line?.let { Spacer(Modifier.height(3.dp)); Text(it, style = DGType.alertBody, color = tone.ink, maxLines = 1, overflow = TextOverflow.Ellipsis) }
