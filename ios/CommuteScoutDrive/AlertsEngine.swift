@@ -1,3 +1,4 @@
+import AudioToolbox
 import AVFoundation
 import CoreLocation
 import Foundation
@@ -317,13 +318,20 @@ final class AlertsEngine: ObservableObject {
             let gap = item.alongMeters - along
             if !announced.contains(item.id), gap <= rule.firstMeters, gap > -100 {
                 announced.insert(item.id)
-                if rule.speak && !muted { announce(item.marker, in: gap) }
+                if rule.speak && !muted { announce(item.marker, in: gap) } else if rule.chime && !muted { chime(item.marker) }
             } else if announced.contains(item.id), !repeated.contains(item.id), rule.repeatMeters > 0,
                       gap <= rule.repeatMeters, gap > -100 {
                 repeated.insert(item.id)
-                if rule.speak && !muted { announce(item.marker, in: gap) }
+                if rule.speak && !muted { announce(item.marker, in: gap) } else if rule.chime && !muted { chime(item.marker) }
             }
         }
+    }
+
+    /// The Sound delivery, and plugin alerts that are not spoken: a short
+    /// system tone instead of a sentence.
+    private func chime(_ marker: RoadMarker) {
+        DriveLog.note("alert chime: \(marker.kind) '\(marker.displayTitle)'")
+        AudioServicesPlaySystemSound(1057)
     }
 
     /// Repeat an alert on demand, muted or not.

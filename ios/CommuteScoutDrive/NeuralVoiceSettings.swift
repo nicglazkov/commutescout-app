@@ -22,10 +22,15 @@ struct VoicePackSection: View {
 
     var body: some View {
         if !shown.isEmpty {
-            Section {
-                ForEach(shown) { pack in packRow(pack) }
-            } header: { Text("Downloaded voices") } footer: {
-                Text("One download adds every voice in a set. When a trip starts, the first instructions may be said in the system voice while the rest are prepared.")
+            VStack(alignment: .leading, spacing: 0) {
+                DGSectionLabel("Downloaded voices")
+                DGGroup {
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { i, pack in
+                        if i > 0 { DGDivider(inset: 14) }
+                        packRow(pack).padding(.horizontal, 14).padding(.vertical, 10)
+                    }
+                }
+                DGFootnote("One download adds every voice in a set. When a trip starts, the first instructions may be said in the system voice while the rest are prepared.")
             }
             .confirmationDialog("Delete \(askDelete?.title.lowercased() ?? "voices")?", isPresented: Binding(get: { askDelete != nil }, set: { if !$0 { askDelete = nil } }),
                                 titleVisibility: .visible, presenting: askDelete) { pack in
@@ -43,8 +48,8 @@ struct VoicePackSection: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(pack.title).font(.headline)
-                    Text(Self.summary(pack)).font(.caption).foregroundStyle(.secondary)
+                    Text(pack.title).font(DG.font(16, .medium)).foregroundStyle(DG.ink)
+                    Text(Self.summary(pack)).font(DG.T.rowSub).foregroundStyle(DG.sub)
                 }
                 Spacer(minLength: 8)
                 packAction(pack, state)
