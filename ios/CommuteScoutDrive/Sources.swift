@@ -47,7 +47,7 @@ struct FlareSource: Codable, Identifiable, Hashable {
     }
 
     /// Where the plugin says it covers, in words.
-    var coverageLabel: String {
+    @MainActor var coverageLabel: String {
         guard let b = coverage, b.count == 4 else { return "Coverage not stated" }
         let h = b[2] - b[0], w = b[3] - b[1]
         if h >= 20, w >= 50 { return "Nationwide" }
