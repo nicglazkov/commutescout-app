@@ -457,7 +457,7 @@ fun DriveScreen(model: DriveViewModel) {
                 .withProgressView { _, _, _ -> }
                 .withRoadNameView { _, _, _ -> }
                 .withCustomOverlayView { modifier ->
-                if (!uiState.isNavigating() && prefs.welcomeDone && !showSettings) {
+                if (!uiState.isNavigating() && !MapDrawing.cover && prefs.welcomeDone && !showSettings) {
                     BrowsingOverlay(modifier, model, offlineNotice, onSettings = { showSettings = true },
                         note = if (tripDone) navNote else null,
                         banner = bannerItem?.let { next -> {
@@ -485,6 +485,8 @@ fun DriveScreen(model: DriveViewModel) {
             if (driving && !isNavigating) here?.let { h -> ArrowPuck(h, course ?: 0.0) }
             // The alert the banner names: a breathing ring around its marker.
             bannerItem?.let { AlertRing(it, along) }
+            // Watch areas and offline maps: what their pages draw on this map.
+            MapDrawingLayers()
         }
 
         if (isNavigating) NavChrome(model, uiState, mapState, bannerItem, cleared, along, speedMps, navNote, prefs.is3D, alertOpen,
@@ -504,7 +506,7 @@ fun DriveScreen(model: DriveViewModel) {
         val tallCard = !isNavigating && room < (if (abs(bearing) > 1.0) 168.dp else 116.dp)
         // Map controls: 2D/3D, compass when turned, my location. While
         // navigating Ferrostar draws its own zoom and recenter buttons.
-        if (!tallCard && !isNavigating && prefs.welcomeDone && !showSettings && !showLayers) Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = DG.gutter, bottom = aboveCard),
+        if (!tallCard && !isNavigating && !MapDrawing.cover && prefs.welcomeDone && !showSettings && !showLayers) Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = DG.gutter, bottom = aboveCard),
             verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             if (abs(bearing) > 1.0) {
                 GlassRound("nav", "Face north", { scope.launch { mapState.cameraState.animateTo(mapState.cameraState.position.copy(bearing = 0.0)) } },
@@ -574,12 +576,17 @@ fun DriveScreen(model: DriveViewModel) {
     when (tool) {
         Tool.ALERTS -> AlertsListSheet(model, mapState) { tool = null }
         Tool.DIRECTIONS -> DirectionsSheet(model) { tool = null }
-        Tool.WATCHES -> WatchesSheet(model) { tool = null }
+        Tool.WATCHES -> WatchesSheet(model, mapState) { tool = null }
         Tool.ASK -> AskSheet(model) { tool = null }
         Tool.SOURCES -> SourcesSheet(model) { tool = null }
         Tool.MARKETPLACE -> MarketplaceSheet(model) { tool = null }
         else -> {}
     }
+    // Debug builds open Watch areas or Offline maps straight away (csPage).
+    if (BuildConfig.DEBUG) LaunchedEffect(Unit) {
+        when (MorePages.wanted) { "watches", "watchedit" -> tool = Tool.WATCHES; "offline", "picker", "savedmap" -> MorePages.offlineOpen = true }
+    }
+    if (MorePages.offlineOpen) OfflineMapsSheet(model) { MorePages.offlineOpen = false }
     reportAt?.let { at -> ReportSheet(model, at.lat, at.lon) { reportAt = null } }
     // Errors rise in the design's confirm card; the last words stay while it slides away.
     val lastError = remember { mutableStateOf<String?>(null) }

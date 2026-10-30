@@ -305,8 +305,9 @@ final class MapOverlay {
         } else {
             // A camera with live video wears a red ring, so the map says
             // which cameras can be watched and which are stills.
-            icon = m.kind == "camera" && m.stream != nil ? "icon:camera_live" : "icon:\(m.kind)"
-            tint = MarkerIcons.color[m.kind] ?? .gray
+            let k = DGKind(marker: m)
+            icon = k == .camera && m.stream != nil ? "icon:dg:camera_live" : "icon:dg:\(k.rawValue)"
+            tint = UIColor(k.tone.color)
         }
         f.attributes = ["key": m.key, "kind": m.kind, "geo": "dot", "icon": icon, "tint": tint.hex]
         return f
