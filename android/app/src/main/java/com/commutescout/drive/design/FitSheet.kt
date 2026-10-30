@@ -72,6 +72,8 @@ fun FitSheet(
             m.fillMaxWidth()
                 .onSizeChanged { height[0] = it.height.toFloat().coerceAtLeast(1f) }
                 .graphicsLayer { translationY = enter.value * size.height + drag.value }
+                // Solid under the glass: without the mockup's blur, map chrome would read through.
+                .background(Color.White, RoundedCornerShape(topStart = DG.rSheet, topEnd = DG.rSheet))
                 .glass(RoundedCornerShape(topStart = DG.rSheet, topEnd = DG.rSheet), elevation = 24.dp, strong = true)
                 // Taps on the sheet's background never fall through to the map.
                 .clickable(remember { MutableInteractionSource() }, null) {}

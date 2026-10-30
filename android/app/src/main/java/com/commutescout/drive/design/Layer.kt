@@ -85,7 +85,7 @@ fun SheetLayer(
             val state = rememberSheetState(dps, start, onDismiss = { sheetScope.close(null) })
             Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) { sheetScope.close(null) })
             above?.invoke(sheetScope)
-            DGSheet(state, modifier.align(Alignment.BottomCenter).graphicsLayer { translationY = offset.value * state.height.value }, fill = Color.White.copy(alpha = .55f)) {
+            DGSheet(state, modifier.align(Alignment.BottomCenter).graphicsLayer { translationY = offset.value * state.height.value }, fill = Color.White) {
                 content(sheetScope)
             }
         }
