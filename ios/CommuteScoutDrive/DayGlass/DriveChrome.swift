@@ -71,8 +71,7 @@ struct ManeuverCard: View {
         let (num, unit) = ManeuverCard.split(Units.distance(dist))
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 14) {
-                Image(systemName: ManeuverCard.symbol(vi?.primaryContent))
-                    .font(.system(size: 30, weight: .bold))
+                DGIconView(name: ManeuverCard.symbol(vi?.primaryContent), size: 32, stroke: 2.6)
                     .foregroundStyle(.white)
                     .frame(width: 58, height: 58)
                     .background(RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -144,8 +143,7 @@ struct LanesRow: View {
     var body: some View {
         HStack(spacing: 4) {
             ForEach(Array(lanes.enumerated()), id: \.offset) { _, l in
-                Image(systemName: ManeuverCard.direction(l.activeDirection ?? l.directions.first ?? "straight"))
-                    .font(.system(size: 16, weight: .bold))
+                DGIconView(name: ManeuverCard.direction(l.activeDirection ?? l.directions.first ?? "straight"), size: 20, stroke: 2.4)
                     .foregroundStyle(l.active ? DGTone.low.ink : DG.faint)
                     .frame(maxWidth: 40, minHeight: 30)
                     .background(l.active ? DGTone.low.color.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
@@ -327,7 +325,7 @@ struct TripBar: View {
             }
             Spacer(minLength: 0)
             Button { onExit?() } label: {
-                Image(systemName: "xmark").font(.system(size: 18, weight: .bold))
+                DGIconView(name: "close", size: 22, stroke: 2.6)
                     .foregroundStyle(DGTone.high.ink)
                     .frame(width: 52, height: 52)
                     .background(DGTone.high.color.opacity(0.13), in: Circle())
@@ -392,30 +390,43 @@ struct SpeedDisc: View {
 }
 
 /// A message from the app itself: a faster route, a lost signal, a
-/// watch alert, arrival. Glass with the icon in a disc, a bold line,
-/// a small one, and up to two actions.
+/// watch alert, arrival. The mockups' capsule: tinted glass, the icon in
+/// a small disc, a bold line and a small one, and up to two actions
+/// under them. A short message with no actions hugs its words; one
+/// action with a short line sits inline on the right.
 struct DGNote<Actions: View>: View {
     var systemImage: String
     var tone: DGTone
     var title: String
     var detail: String?
     var identifier: String = "dg-note"
+    var inline = false
+    var showsActions = true
     @ViewBuilder var actions: () -> Actions
 
+    private var hasActions: Bool { showsActions && Actions.self != EmptyView.self }
+    private var narrow: Bool { !hasActions && (detail?.count ?? 0) <= 30 }
+
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
-                DGDisc(systemImage: systemImage, tone: tone, size: 40)
-                VStack(alignment: .leading, spacing: 2) {
+                DGDisc(systemImage: systemImage, tone: tone, size: 36)
+                VStack(alignment: .leading, spacing: 1) {
                     Text(title).font(DG.T.noteTitle).foregroundStyle(DG.ink)
-                    if let detail { Text(detail).font(DG.T.noteBody).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true) }
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let detail {
+                        Text(detail).font(DG.T.noteBody).foregroundStyle(DG.sub)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                Spacer(minLength: 0)
+                if !narrow { Spacer(minLength: 0) }
+                if inline && hasActions { HStack(spacing: 8) { actions() }.fixedSize() }
             }
-            HStack(spacing: 8) { actions() }
+            if !inline && hasActions { HStack(spacing: 8) { actions() } }
         }
-        .padding(14)
-        .dgGlass(radius: 24, tone: tone == .clear ? nil : tone)
+        .padding(.leading, 12).padding(.trailing, narrow ? 22 : 18).padding(.vertical, 12)
+        .frame(maxWidth: narrow ? nil : .infinity, alignment: .leading)
+        .dgGlass(radius: DG.R.cap, tone: tone)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier)
     }
@@ -424,5 +435,38 @@ struct DGNote<Actions: View>: View {
 extension DGNote where Actions == EmptyView {
     init(systemImage: String, tone: DGTone, title: String, detail: String? = nil, identifier: String = "dg-note") {
         self.init(systemImage: systemImage, tone: tone, title: title, detail: detail, identifier: identifier) { EmptyView() }
+    }
+}
+
+/// What a tap on a system message's button means.
+enum SystemNoteAction { case primary, secondary }
+
+extension DGNote where Actions == SystemNoteButtons {
+    /// A system message with its buttons; `act` hears which was tapped.
+    init(note: SystemNote, identifier: String = "dg-note", act: @escaping (SystemNoteAction) -> Void) {
+        self.init(systemImage: note.icon, tone: note.tone, title: note.title, detail: note.detail,
+                  identifier: identifier, inline: note.inline, showsActions: note.primary != nil) {
+            SystemNoteButtons(note: note, act: act)
+        }
+    }
+}
+
+/// A system message's one or two buttons, 44 points high.
+struct SystemNoteButtons: View {
+    var note: SystemNote
+    var act: (SystemNoteAction) -> Void
+
+    var body: some View {
+        if let p = note.primary {
+            Button(p) { act(.primary) }
+                .buttonStyle(DGButtonStyle(kind: note.tone == .low ? .blue : .primary, height: 44))
+                .fixedSize(horizontal: note.inline, vertical: false)
+                .accessibilityIdentifier("note-" + note.id.rawValue + "-primary")
+            if let s = note.secondary {
+                Button(s) { act(.secondary) }
+                    .buttonStyle(DGButtonStyle(kind: .glass, height: 44))
+                    .accessibilityIdentifier("note-" + note.id.rawValue + "-secondary")
+            }
+        }
     }
 }

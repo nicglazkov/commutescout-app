@@ -8,9 +8,20 @@ struct DriveApp: App {
     @StateObject private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
 
+    /// The app, or with "-csCatalog [system]" the catalog of every alert
+    /// or every message, for comparing against the design.
+    @ViewBuilder private var root: some View {
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-csCatalog") {
+            AlertCatalog(page: args.dropFirst(i + 1).first == "system" ? .system : .alerts)
+        } else {
+            ContentView()
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            root
                 .environmentObject(model)
                 .preferredColorScheme(model.prefs.theme.colorScheme)
                 .task { await AutoDrive.runIfAsked(model) }

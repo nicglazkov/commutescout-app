@@ -106,7 +106,7 @@ struct DGChip: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            if let systemImage { Image(systemName: systemImage).font(.system(size: 11, weight: .bold)) }
+            if let systemImage { DGIconView(name: systemImage, size: 14, stroke: 2.4) }
             Text(text).font(DG.T.chip)
         }
         .foregroundStyle(tone == .clear ? DG.sub : tone.ink)
@@ -125,13 +125,13 @@ struct DGDisc: View {
 
     var body: some View {
         let c = tone.color
-        Image(systemName: systemImage ?? kind.map(DGIcon.symbol) ?? "exclamationmark")
-            .font(.system(size: size * 0.42, weight: .bold))
-            .foregroundStyle(ghost ? c : .white)
+        DGIconView(name: systemImage ?? kind.map(DGIcon.name) ?? "hazard", size: size * 0.5, stroke: 2.2)
+            .foregroundStyle(ghost ? DG.faint : .white)
             .frame(width: size, height: size)
             .background {
                 if ghost {
-                    Circle().fill(c.opacity(0.12)).overlay(Circle().strokeBorder(c.opacity(0.3), lineWidth: 1))
+                    // The mockups' ghost disc: a pale gray well, for what is over.
+                    Circle().fill(DG.ink.opacity(0.05)).overlay(Circle().strokeBorder(DG.hair, lineWidth: 1))
                 } else {
                     Circle().fill(LinearGradient(colors: [c.mix(.white, 0.12), c], startPoint: .top, endPoint: .bottom))
                         .overlay(Circle().strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .clear],
@@ -158,34 +158,26 @@ extension Color {
 
 // MARK: - Icons
 
-/// Each kind's icon. SF Symbols drawn at the stroke weight of the rest
-/// of the chrome.
+/// Each kind's icon and the app messages' icons, by their names in the
+/// design's set (DGIcons). Views that take a `systemImage` draw these.
 enum DGIcon {
-    static func symbol(_ k: DGKind) -> String {
-        switch k {
-        case .crash: return "car.fill"
-        case .closure: return "xmark.octagon.fill"
-        case .hazard: return "exclamationmark.triangle.fill"
-        case .police: return "shield.lefthalf.filled"
-        case .jam: return "car.2.fill"
-        case .chain: return "link"
-        case .fire: return "flame.fill"
-        case .ice: return "snowflake"
-        case .sign: return "text.alignleft"
-        case .camera: return "camera.fill"
-        case .toll: return "dollarsign.circle.fill"
-        }
+    /// The set's name for a kind's icon.
+    static func name(_ k: DGKind) -> String {
+        k == .jam ? "traffic" : k.rawValue
     }
 
+    /// Kept for callers that still ask by the old name; the same as `name`.
+    static func symbol(_ k: DGKind) -> String { name(k) }
+
     /// The system messages' icons.
-    static let reroute = "arrow.triangle.branch"
-    static let confirm = "questionmark.bubble.fill"
-    static let speed = "speedometer"
-    static let gps = "location.slash.fill"
-    static let offline = "wifi.slash"
-    static let watch = "eye.fill"
-    static let arrive = "flag.checkered"
-    static let check = "checkmark"
+    static let reroute = "reroute"
+    static let confirm = "confirm"
+    static let speed = "speed"
+    static let gps = "gps"
+    static let offline = "offline"
+    static let watch = "watch"
+    static let arrive = "arrive"
+    static let check = "check"
 }
 
 // MARK: - 2D and 3D
@@ -225,8 +217,7 @@ struct DGReportButton: View {
     var action: () -> Void
     var body: some View {
         Button(action: action) {
-            Image(systemName: "plus.bubble.fill")
-                .font(.system(size: 22, weight: .bold))
+            DGIconView(name: "report", size: 24, stroke: 2.2)
                 .foregroundStyle(.white)
                 .frame(width: 56, height: 56)
                 .background(Circle().fill(LinearGradient(colors: [DG.hex(0x4a8ff8), DG.hex(0x2f7cf6)],

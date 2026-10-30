@@ -699,6 +699,10 @@ private struct TestingSettings: View {
     var body: some View {
         Form {
             Section { Toggle("Simulate driving the route", isOn: $model.simulating) }
+            Section("Design") {
+                NavigationLink("Every alert") { AlertCatalog(page: .alerts) }
+                NavigationLink("App messages") { AlertCatalog(page: .system) }
+            }
         }
         .navigationTitle("Testing")
         .navigationBarTitleDisplayMode(.inline)
