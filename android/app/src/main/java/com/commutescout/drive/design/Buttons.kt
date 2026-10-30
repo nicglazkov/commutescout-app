@@ -66,7 +66,9 @@ fun DGButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, 
         BtnStyle.PRIMARY -> DG.ink
         BtnStyle.BLUE -> DG.low
         BtnStyle.DONE -> DG.good.tint(.14f)
-        BtnStyle.PLAIN -> Color.White.copy(alpha = .75f)
+        BtnStyle.PLAIN, BtnStyle.WARN -> Color.White.copy(alpha = .75f)
+        BtnStyle.DANGER -> DG.high.copy(alpha = .1f)
+        BtnStyle.QUIET -> Color.Transparent
     }, label = "btn")
     val fg = when (style) {
         BtnStyle.PRIMARY, BtnStyle.BLUE -> Color.White; BtnStyle.DONE -> DG.goodInk; BtnStyle.PLAIN -> DG.ink
