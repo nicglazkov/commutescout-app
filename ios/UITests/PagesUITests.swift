@@ -76,8 +76,8 @@ final class PagesUITests: XCTestCase {
         app.swipeDown()
         page("map-style")
         shot("map-style")
-        app.buttons["mapstyle-dark"].firstMatch.tap()
-        shot("map-style-dark")
+        app.buttons["mapstyle-slate"].firstMatch.tap()
+        shot("map-style-slate")
         app.buttons["mapstyle-positron"].firstMatch.tap()
         back()
         page("units")
@@ -248,14 +248,14 @@ final class PagesUITests: XCTestCase {
         app.buttons["tools"].firstMatch.tap()
         shot("tools", 2)
         // Each tool page is a sheet of its own; a swipe down closes it.
-        for tool in ["tool-layers", "tool-directions", "tool-ask", "tool-watches", "tool-marketplace"] {
+        for tool in ["tool-directions", "tool-ask", "tool-watches"] {
             let b = app.buttons[tool].firstMatch
             if b.waitForExistence(timeout: 2) {
                 b.tap(); shot(tool, 2)
                 let done = app.buttons["Done"].firstMatch
                 if done.exists { done.tap() } else { app.swipeDown(velocity: .fast) }
                 sleep(1)
-                if !app.buttons["tool-layers"].firstMatch.exists { app.buttons["tools"].firstMatch.tap(); sleep(1) }
+                if !app.buttons["tool-alerts"].firstMatch.exists { app.buttons["tools"].firstMatch.tap(); sleep(1) }
             }
         }
         if app.buttons["Done"].firstMatch.exists { app.buttons["Done"].firstMatch.tap() } else { app.swipeDown(velocity: .fast) }

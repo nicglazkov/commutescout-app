@@ -245,6 +245,14 @@ struct AlertOutcome: Equatable {
 /// groups the alerts themselves use (act on it, heads up, good to know).
 /// A chip turned off stops the alert, never the marker on the map.
 /// Plugin alerts are not here: they have their own section and switches.
+/// The looks on offer, as saved. A look that is no longer offered
+/// (Light, Dark) goes back to the default, Positron.
+enum MapStyleChoice {
+    static let offered = ["auto", "positron", "bright", "slate", "outdoors"]
+
+    static func stored(_ raw: String) -> String { offered.contains(raw) ? raw : "auto" }
+}
+
 enum AlertChips {
     struct Chip: Equatable { var key: String; var label: String }
     struct Tier { var label: String; var chips: [Chip] }

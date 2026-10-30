@@ -22,14 +22,12 @@ struct MapStylePage: View {
         Look(style: .bright, name: "Bright", about: "More color for roads, parks and water"),
         Look(style: .slate, name: "Slate", about: "Cool blue-gray, easy on the eyes"),
         Look(style: .outdoors, name: "Gray", about: "Neutral, with no color but alerts"),
-        Look(style: .light, name: "Light", about: "Classic street map colors"),
-        Look(style: .dark, name: "Dark", about: "Dim, for driving at night"),
     ]
 
-    /// The style in use: the default follows the phone, Positron by day
-    /// and Dark at night.
+    /// The look picked. The default is Positron, which the map draws
+    /// dark when the app is dark.
     static func shown(_ s: Prefs.MapStyle, dark: Bool) -> Prefs.MapStyle {
-        s == .auto ? (dark ? .dark : .positron) : s
+        s == .auto ? .positron : s
     }
 
     static func name(_ s: Prefs.MapStyle, dark: Bool) -> String {
@@ -47,7 +45,7 @@ struct MapStylePage: View {
             DGSectionLabel("Light and dark")
             DGSegmented(options: [(Prefs.Theme.system, "Match my phone", nil), (.light, "Light", nil), (.dark, "Dark", nil)],
                         selection: Binding(get: { prefs.theme }, set: { prefs.theme = $0 }), identifier: "theme")
-            DGFootnote("The default style, Positron, turns to Dark at night when the app is dark.")
+            DGFootnote("Positron, the default style, turns dark when the app is dark.")
         }
         .onAppear { withAnimation(DG.spring) { detent = SettingsSheet.peek } }
         .onDisappear { withAnimation(DG.spring) { detent = .large } }

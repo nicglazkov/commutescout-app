@@ -155,14 +155,11 @@ final class DriveUITests: XCTestCase {
         XCTAssertTrue(reveal(link) || link.exists, "link back to the website")
         back()
         app.buttons["page-close"].firstMatch.tap()
-        app.buttons["tools"].tap()
-        app.buttons["tool-layers"].tap()
-        XCTAssertTrue(app.staticTexts["Base map"].waitForExistence(timeout: 5))
-        app.buttons["Dark"].tap()
-        app.buttons["Match theme"].tap()
+        app.buttons["layers"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["page-map-layers"].firstMatch.waitForExistence(timeout: 5))
         let traffic = app.switches["Traffic"]
         if traffic.exists { traffic.tap(); traffic.tap() }
-        app.buttons["Done"].tap()
+        app.buttons["page-close"].firstMatch.tap()
         // Map controls exist while browsing.
         XCTAssertTrue(app.buttons["perspective"].exists)
         XCTAssertTrue(app.buttons["locate"].exists)
@@ -179,10 +176,6 @@ final class DriveUITests: XCTestCase {
         app.buttons["tool-ask"].tap()
         XCTAssertTrue(app.navigationBars["Ask"].waitForExistence(timeout: 5))
         app.buttons["Done"].firstMatch.tap()
-        app.buttons["tool-marketplace"].tap()
-        XCTAssertTrue(app.staticTexts["Marketplace"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["add-source"].waitForExistence(timeout: 5))
-        app.buttons["page-back"].firstMatch.tap()
         app.buttons["tool-watches"].tap()
         XCTAssertTrue(app.staticTexts["Watch areas"].firstMatch.waitForExistence(timeout: 5))
         app.buttons["page-close"].firstMatch.tap()

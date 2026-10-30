@@ -21,12 +21,12 @@ final class Prefs: ObservableObject {
     /// offline. "outdoors" is the old raw value for Grayscale, kept so a
     /// saved choice still reads.
     enum MapStyle: String, CaseIterable, Identifiable {
-        case auto, positron, bright, slate, light, dark, outdoors
+        case auto, positron, bright, slate, outdoors
         var id: String { rawValue }
         var label: String {
             switch self {
             case .auto: "Match theme"; case .positron: "Positron"; case .bright: "Bright"; case .slate: "Slate"
-            case .light: "Light"; case .dark: "Dark"; case .outdoors: "Grayscale"
+            case .outdoors: "Grayscale"
             }
         }
         /// The bundled style for this choice in the given appearance.
@@ -36,8 +36,6 @@ final class Prefs: ObservableObject {
             case .positron: "positron"
             case .bright: "bright"
             case .slate: "slate"
-            case .light: "light"
-            case .dark: "dark"
             case .outdoors: "grayscale"
             }
         }
@@ -228,7 +226,7 @@ final class Prefs: ObservableObject {
     }
 
     var mapStyle: MapStyle {
-        get { MapStyle(rawValue: mapStyleRaw) ?? .auto }
+        get { MapStyle(rawValue: MapStyleChoice.stored(mapStyleRaw)) ?? .auto }
         set { mapStyleRaw = newValue.rawValue; objectWillChange.send() }
     }
 

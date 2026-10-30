@@ -13,6 +13,8 @@ struct DGPage<Content: View>: View {
     var largeTitle = false
     var intro: String?
     var identifier: String?
+    /// "xmark" on a page at the root of a sheet.
+    var backSymbol = "chevron.left"
     @ViewBuilder var content: () -> Content
     @Environment(\.dismiss) private var dismiss
     @State private var scrolled = false
@@ -47,7 +49,7 @@ struct DGPage<Content: View>: View {
                 Text(title).font(DG.font(17, .semibold)).foregroundStyle(DG.ink)
                     .opacity(largeTitle && !scrolled ? 0 : 1)
                 HStack {
-                    DGBackButton { dismiss() }
+                    DGBackButton(symbol: backSymbol) { dismiss() }
                     Spacer()
                 }
             }

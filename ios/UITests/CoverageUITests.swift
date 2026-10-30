@@ -346,20 +346,22 @@ final class CoverageUITests: XCTestCase {
 
     // MARK: tools
 
-    func testLayersSheetStylesTrafficAndKinds() {
-        app.buttons["tools"].tap()
-        app.buttons["tool-layers"].tap()
-        XCTAssertTrue(app.staticTexts["Base map"].waitForExistence(timeout: 5))
-        for style in ["Light", "Dark", "Outdoors", "Match theme"] where app.buttons[style].exists {
-            app.buttons[style].tap()
-        }
+    func testTheMapsLayersButtonOpensTheOneLayersPage() {
+        app.buttons["layers"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["page-map-layers"].firstMatch.waitForExistence(timeout: 5))
         flip("Traffic"); flip("Traffic")
-        flip("3D perspective"); flip("3D perspective")
-        // A medium sheet: the row is below the fold; pull the sheet up, then look.
-        app.swipeUp()
-        let plugins = app.descendants(matching: .any)["layers-plugins"].firstMatch
-        XCTAssertTrue(reveal(plugins) || plugins.waitForExistence(timeout: 3), "plugins link in the layers sheet")
-        app.buttons["Done"].tap()
+        // 3D is the map's own button, and base maps are Map style's alone.
+        XCTAssertFalse(app.switches["3D perspective"].exists)
+        XCTAssertFalse(app.staticTexts["Base map"].exists)
+        let plugins = app.descendants(matching: .any)["settings-layers-plugins-link"].firstMatch
+        XCTAssertTrue(reveal(plugins), "plugins link")
+        let style = app.descendants(matching: .any)["settings-layers-map-style"].firstMatch
+        XCTAssertTrue(reveal(style), "map style link")
+        style.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["page-map-style"].firstMatch.waitForExistence(timeout: 5))
+        app.buttons["page-back"].firstMatch.tap()
+        app.buttons["page-close"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["layers"].waitForExistence(timeout: 5))
     }
 
     func testAlertsNearbyRowCentersOnTheMarker() {
@@ -447,9 +449,8 @@ final class CoverageUITests: XCTestCase {
     }
 
     func testMarketplaceTilesAndInstall() {
-        app.buttons["tools"].tap()
-        XCTAssertTrue(app.buttons["tool-marketplace"].waitForExistence(timeout: 5))
-        app.buttons["tool-marketplace"].tap()
+        openSettings()
+        openPage("plugins")
         XCTAssertTrue(app.staticTexts["Marketplace"].firstMatch.waitForExistence(timeout: 8))
         let cards = app.descendants(matching: .any).matching(identifier: "plugin-card")
         if cards.firstMatch.waitForExistence(timeout: 10) {
@@ -475,14 +476,14 @@ final class CoverageUITests: XCTestCase {
         app.buttons["page-back"].firstMatch.tap()
     }
 
-    func testToolsSheetWebLinkAndLayersShortcut() {
+    func testToolsSheetHoldsNoLayersOrPluginsAndLinksTheWeb() {
         app.buttons["tools"].tap()
-        XCTAssertTrue(app.buttons["tool-layers"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["tool-alerts"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["tool-layers"].exists)
+        XCTAssertFalse(app.buttons["tool-marketplace"].exists)
         // The web link is the last row; a shorter screen needs a scroll to reach it.
         if !app.staticTexts["Open the full map on the web"].exists { app.swipeUp() }
         XCTAssertTrue(app.staticTexts["Open the full map on the web"].waitForExistence(timeout: 5))
-        app.buttons["tool-layers"].tap()
-        XCTAssertTrue(app.staticTexts["Base map"].waitForExistence(timeout: 5))
         app.buttons["Done"].tap()
     }
 

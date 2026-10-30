@@ -99,7 +99,7 @@ struct ContentView: View {
                             DGRoundButton(size: 52) { showSettings = true } label: { Image(systemName: "gearshape.fill") }
                                 .accessibilityLabel("Settings")
                                 .accessibilityIdentifier("settings")
-                            DGRoundButton(size: 52) { showTools = true } label: { Image(systemName: "square.3.layers.3d") }
+                            DGRoundButton(size: 52) { showTools = true } label: { Image(systemName: "square.grid.2x2.fill") }
                                 .accessibilityLabel("Tools")
                                 .accessibilityIdentifier("tools")
                             DGModesPill(is3D: model.prefs.is3D) { withAnimation(DG.tilt) { model.toggle3D() } }
@@ -128,6 +128,9 @@ struct ContentView: View {
                                 .accessibilityIdentifier("compass")
                         }
                         if !isNavigating {
+                            DGRoundButton { showLayers = true } label: { Image(systemName: "square.3.layers.3d") }
+                                .accessibilityLabel("Map layers")
+                                .accessibilityIdentifier("layers")
                             DGRoundButton { model.follow() } label: { Image(systemName: "location.fill") }
                                 .accessibilityLabel("My location")
                                 .accessibilityIdentifier("locate")
@@ -180,8 +183,8 @@ struct ContentView: View {
             MorePagesLauncher(screen: moreScreen ?? "offline")
         }
         .sheet(isPresented: $model.showWatches) { WatchesView() }
-        .sheet(isPresented: $showLayers) { LayersSheet().presentationDetents([.medium, .large]) }
-        .sheet(isPresented: $showTools) { ToolsSheet(showLayers: $showLayers).presentationDetents([.medium, .large]) }
+        .sheet(isPresented: $showLayers) { MapLayersSheet() }
+        .sheet(isPresented: $showTools) { ToolsSheet().presentationDetents([.medium, .large]) }
         .overlay {
             if showReport, let c = model.reportCoordinate {
                 ReportFlow(coordinate: c, isPresented: $showReport).transition(.opacity)
@@ -373,63 +376,6 @@ struct ResumeCard: View {
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .padding(12)
-    }
-}
-
-/// What the map shows: the same layers as the website's Layers tool.
-struct LayersSheet: View {
-    @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Base map") {
-                    // The same cards as Settings, so the choice looks the same everywhere.
-                    BaseMapCards(choice: Binding(get: { model.prefs.mapStyle }, set: { model.prefs.mapStyle = $0 }), dark: model.isDark)
-                        .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
-                    Toggle("Traffic", isOn: Binding(get: { model.prefs.traffic }, set: { model.prefs.traffic = $0; model.objectWillChange.send() }))
-                    Toggle("3D perspective", isOn: Binding(get: { model.prefs.is3D }, set: { _ in model.toggle3D() }))
-                }
-                Section {
-                    Picker("Sources", selection: Binding(get: { model.prefs.sourceFilter },
-                                                         set: { model.prefs.sourceFilter = $0; model.markers.refresh(force: true) })) {
-                        ForEach(Prefs.SourceFilter.allCases) { f in Text(f.label).tag(f) }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("source-filter")
-                } footer: {
-                    Text("Official is agency data. Plugins are the sources you installed from the marketplace.")
-                }
-                Section("On the road") {
-                    ForEach(Prefs.layerKinds, id: \.key) { k in
-                        Toggle(isOn: Binding(get: { model.prefs.isChosen(k.key) },
-                                             set: { model.prefs.setShown(k.key, $0); model.markers.refresh(force: true) })) {
-                            Label { Text(k.label) } icon: {
-                                Image(systemName: MarkerIcons.name(k.key)).foregroundStyle(MarkerIcons.tint(k.key))
-                            }
-                        }
-                    }
-                    Text("Cameras and toll prices start off, the same as the website. Cameras are the densest layer.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                Section {
-                    // One place for plugins: add, remove and show each on
-                    // the map from its own page in the marketplace.
-                    NavigationLink { MarketplaceView() } label: {
-                        Label("Plugins", systemImage: "puzzlepiece.extension")
-                    }
-                    .accessibilityIdentifier("layers-plugins")
-                }
-                Section {
-                    Link(destination: URL(string: "https://commutescout.com/data-sources")!) {
-                        Label("Where this data comes from", systemImage: "safari")
-                    }
-                }
-            }
-            .navigationTitle("Layers")
-            .toolbar { Button("Done") { dismiss() } }
-        }
     }
 }
 

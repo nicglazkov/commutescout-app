@@ -58,6 +58,13 @@ final class SettingsLogicTests: XCTestCase {
         XCTAssertEqual(r.headline, "1 down")
     }
 
+    func testASavedStyleNoLongerOfferedGoesBackToTheDefault() {
+        XCTAssertEqual(MapStyleChoice.stored("light"), "auto")
+        XCTAssertEqual(MapStyleChoice.stored("dark"), "auto")
+        XCTAssertEqual(MapStyleChoice.stored(""), "auto")
+        for raw in MapStyleChoice.offered { XCTAssertEqual(MapStyleChoice.stored(raw), raw) }
+    }
+
     func testHeadlineAndCoverageWords() {
         let none = SourcesHealth.report([], checkedAt: nil, summary: ["fresh": 5, "stale": 2, "down": 0, "states": 1])
         XCTAssertEqual(none.headline, "2 stale")
