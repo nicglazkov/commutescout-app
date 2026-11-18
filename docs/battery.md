@@ -77,3 +77,20 @@ about 20 minutes, city streets then freeway) with `xcrun simctl location`
 and records the app's CPU time and the CSPERF lines. A simulator has no
 real GPS, radio or display, so it shows the app's own work, not the
 phone's power draw. A real drive and Settings > Battery are the final test.
+
+## Results (simulator, 0.6.0 vs 0.6.1, 20 minute drive)
+
+| | Trip 0.6.0 | Trip 0.6.1 | No trip 0.6.0 | No trip 0.6.1 |
+|---|---|---|---|---|
+| App CPU, average | 18.3% | 10.7% | 15.7% | 9.1% |
+| App CPU, 95th percentile | 29.9% | 16.5% | 26.3% | 14.2% |
+| App CPU, peak | 44.2% | 21.7% | 46.1% | 18.5% |
+| Map frames per second | 55.5 | 27.5 | 51.1 | 25.2 |
+| Screen redraws per fix | 2.98 | 1.22 | 2.76 | 1.07 |
+| Location fixes per minute | 58 | 54 | 58 | 50 |
+| Marker rebuilds (whole drive) | 51 | 14 | 54 | 19 |
+| Snapshot downloads | 8 | 2 | 8 | 2 |
+| App network tasks per minute | 7.6 | 6.8 | 7.4 | 6.2 |
+
+Measured on an iPhone 17 Pro simulator on an M-series MacBook, Release
+build with the probe compiled in. Network tasks include map tiles.
