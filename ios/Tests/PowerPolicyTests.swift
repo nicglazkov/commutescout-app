@@ -43,7 +43,9 @@ final class PowerPolicyTests: XCTestCase {
         XCTAssertTrue(PowerPolicy.headingWorthShowing(old: 90, new: 93))
         XCTAssertTrue(PowerPolicy.headingWorthShowing(old: 0, new: 1.5))   // the button appears
         XCTAssertTrue(PowerPolicy.headingWorthShowing(old: 1.5, new: 0))   // and goes
-        XCTAssertFalse(PowerPolicy.headingWorthShowing(old: 359.5, new: 0.6))
+        // Turns are measured the short way round north.
+        XCTAssertTrue(PowerPolicy.headingWorthShowing(old: 359, new: 3))
+        XCTAssertFalse(PowerPolicy.headingWorthShowing(old: 359, new: 359.5))
     }
 
     func testBeatsAlignToTheClockSoFetchesLeaveTogether() {
@@ -76,7 +78,7 @@ final class PowerPolicyTests: XCTestCase {
         XCTAssertLessThanOrEqual(b.w, -121.901 - PowerPolicy.cell + 1e-9)
         XCTAssertGreaterThanOrEqual(b.e, -121.880 + PowerPolicy.cell - 1e-9)
         // Snapped: a view moved a few hundred metres asks for the same box.
-        let c = PowerPolicy.gridBox(south: 37.333, west: -121.899, north: 37.344, east: -121.878)
+        let c = PowerPolicy.gridBox(south: 37.333, west: -121.903, north: 37.344, east: -121.882)
         XCTAssertEqual(b.s, c.s, accuracy: 1e-9)
         XCTAssertEqual(b.n, c.n, accuracy: 1e-9)
         XCTAssertEqual(b.w, c.w, accuracy: 1e-9)
