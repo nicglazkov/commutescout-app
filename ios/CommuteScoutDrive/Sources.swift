@@ -445,13 +445,30 @@ final class SourcesStore: ObservableObject {
         // Removed, or replaced by a fresh catalog, while a poll was in flight.
         guard mine.contains(where: { $0.id == src.id }) || own.contains(where: { $0.id == src.id }) else { return }
         timers[src.id]?.invalidate()
-        timers[src.id] = Timer.scheduledTimer(withTimeInterval: backoff[src.id] ?? Double(src.refreshS), repeats: false) { [weak self] _ in
+        // A plugin that answers is asked on the shared beat, with the
+        // map's and the alerts' fetches, so the radio wakes once for all
+        // of them (PowerPolicy). One that failed waits out its backoff.
+        let due = backoff[src.id].map { Date().addingTimeInterval($0) }
+            ?? PowerPolicy.nextBeat(after: Date(), every: PowerPolicy.pluginEvery(requested: src.refreshS))
+        let t = Timer(fire: due, interval: 0, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 await self.poll(src)
                 self.scheduleNext(src)
             }
         }
+        t.tolerance = 2
+        RunLoop.main.add(t, forMode: .common)
+        timers[src.id] = t
+    }
+
+    /// In the background nothing on the map is seen: no plugin polls.
+    private var asleep = false
+    func pause() { asleep = true }
+    func resume() {
+        guard asleep else { return }
+        asleep = false
+        for s in mine + own { Task { await poll(s) } }
     }
 
     /// The plugin failed to answer: the next poll waits twice as long, up to ten minutes.
@@ -462,7 +479,7 @@ final class SourcesStore: ObservableObject {
     }
 
     private func poll(_ src: FlareSource) async {
-        guard let base = src.base, let center = lastCenter, isOn(src.id) else { return }
+        guard !asleep, let base = src.base, let center = lastCenter, isOn(src.id) else { return }
         // Own session: the account token goes only to a catalog base; signed
         // out, the mediated copy from commutescout.com is what shows.
         var bearer = src.token
@@ -487,6 +504,7 @@ final class SourcesStore: ObservableObject {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let t = bearer { req.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization") }
         let data: Data
+        PerfProbe.count("req.plugin")
         do {
             let (d, resp) = try await Backend.session.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
@@ -504,7 +522,9 @@ final class SourcesStore: ObservableObject {
     }
 
     private func rebuild() {
-        directMarkers = (mine + own).filter { isOn($0.id) }.flatMap { perSource[$0.id] ?? [] }
+        let next = (mine + own).filter { isOn($0.id) }.flatMap { perSource[$0.id] ?? [] }
+        // An answer like the last one changes nothing on screen.
+        if next != directMarkers { directMarkers = next }
     }
 
     /// Writes the list to defaults without tokens; each token goes to the keychain.

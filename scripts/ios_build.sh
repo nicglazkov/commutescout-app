@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../ios"
 export PATH="/opt/homebrew/bin:$PATH" LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
-DD="$HOME/src/csdrive-dd"
+DD="${DD:-$HOME/src/csdrive-dd}"
 SIM="${SIM:-iPhone 17}"
 
 # The app calls FirebaseApp.configure() at launch, and Firebase aborts the

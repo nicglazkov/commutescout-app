@@ -100,9 +100,13 @@ class MarkerStore {
     init {
         scope.launch {
             while (isActive) {
-                delay(60_000)
+                // On the shared beat with the alerts and the plugins, so
+                // the radio wakes once a minute for all of them (Power).
+                delay(Power.untilNextBeat(System.currentTimeMillis()))
                 _tick.value += 1
-                if (Engine.awake() && Connectivity.online.value && System.currentTimeMillis() >= holdUntil) refresh(force = true)
+                // The viewport's markers only draw on the map: none while
+                // the screen is off, trip or not.
+                if (Engine.foreground.value && Connectivity.online.value && System.currentTimeMillis() >= holdUntil) refresh(force = true)
             }
         }
         scope.launch { markers.collect { byKey = it.associateBy { m -> m.key } } }

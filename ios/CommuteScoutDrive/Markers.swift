@@ -61,19 +61,28 @@ final class MarkerStore: ObservableObject {
     /// snapshot runs.
     static let viewportFromZoom = 5.5
 
+    /// On the move (driving or on a trip) the country-wide snapshot is
+    /// read less often: the viewport fetch carries what is around the car.
+    var moving = false
+
     init() {
-        timer = Timer.scheduledTimer(withTimeInterval: Self.viewportEvery, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, !self.paused else { return }
-                if !Connectivity.shared.online { self.pruneStale(); return }
-                for feed in self.wantedFeeds where Date().timeIntervalSince(self.feedAt[feed] ?? .distantPast) >= Self.snapshotEvery {
-                    self.load(feed, again: true)
-                }
-                guard Date() >= self.holdUntil else { return }
-                self.refresh(force: true)
-            }
-        }
+        // On the shared beat, so this fetch leaves with the alerts' and
+        // the plugins' and the radio wakes once (PowerPolicy.beat).
+        timer = Timer.onBeat(every: Self.viewportEvery) { [weak self] in self?.tick() }
         Connectivity.shared.onReconnect { [weak self] in self?.reconnected() }
+    }
+
+    private func tick() {
+        guard !paused else { return }
+        if !Connectivity.shared.online { pruneStale(); return }
+        let every = PowerPolicy.snapshotEvery(moving: moving)
+        // A few seconds early still counts, so a refresh is not pushed a
+        // whole beat later by timer slack.
+        for feed in wantedFeeds where Date().timeIntervalSince(feedAt[feed] ?? .distantPast) >= every - 5 {
+            load(feed, again: true)
+        }
+        guard Date() >= holdUntil else { return }
+        refresh(force: true)
     }
 
     /// Without a signal nothing on screen gets newer, so what has gone
@@ -107,7 +116,12 @@ final class MarkerStore: ObservableObject {
     /// Backgrounded with no trip: the timed refreshes stop.
     private var paused = false
     func pause() { paused = true; task?.cancel() }
-    func resume() { paused = false; refresh(force: true) }
+    func resume() {
+        guard paused else { return }
+        paused = false
+        // What went stale while away is fetched now; a fresh box is not.
+        if Date().timeIntervalSince(fetchedAt) >= Self.viewportEvery { refresh(force: true) }
+    }
 
     // MARK: snapshot
 
@@ -137,6 +151,9 @@ final class MarkerStore: ObservableObject {
             do {
                 let payload = try await Snapshot.fetch(feed, box: nil)
                 self?.seed(feed, payload)
+            } catch Snapshot.Unchanged.notModified {
+                // The published file is the one already painted.
+                DriveLog.note("snapshot: \(feed.rawValue) unchanged")
             } catch {
                 self?.fetchedFeeds.remove(feed)
                 DriveLog.note("snapshot: \(feed.rawValue) failed, \(error)")
@@ -188,13 +205,15 @@ final class MarkerStore: ObservableObject {
     /// and nothing is dropped: the snapshot is the map there.
     func view(bounds: MLNCoordinateBounds, zoom: Double, kinds: String) {
         guard zoom >= Self.viewportFromZoom, !kinds.isEmpty else { return }
-        let latPad = (bounds.ne.latitude - bounds.sw.latitude) * 0.5
-        let lonPad = (bounds.ne.longitude - bounds.sw.longitude) * 0.5
         let inside = box.map { b in
             bounds.sw.latitude >= b.s && bounds.sw.longitude >= b.w && bounds.ne.latitude <= b.n && bounds.ne.longitude <= b.e
         } ?? false
-        if inside && kinds == self.kinds && Date().timeIntervalSince(fetchedAt) < Self.viewportEvery { return }
-        box = (bounds.sw.latitude - latPad, bounds.sw.longitude - lonPad, bounds.ne.latitude + latPad, bounds.ne.longitude + lonPad)
+        // Inside the box the beat keeps it fresh; nothing to ask now.
+        if inside && kinds == self.kinds && !paused { return }
+        // Snapped out to the grid with a cell to spare (PowerPolicy.gridBox):
+        // following a car asks again every few kilometres, not every pan.
+        box = PowerPolicy.gridBox(south: bounds.sw.latitude, west: bounds.sw.longitude,
+                                  north: bounds.ne.latitude, east: bounds.ne.longitude)
         self.kinds = kinds
         refresh(force: false)
     }
@@ -205,6 +224,7 @@ final class MarkerStore: ObservableObject {
         task = Task { [kinds] in
             if !force { try? await Task.sleep(nanoseconds: 350_000_000) }   // let the pan settle
             guard !Task.isCancelled else { return }
+            PerfProbe.count("fetch.viewport")
             loading = true
             defer { loading = false }
             let result = await Task { try await LiveData.markers(in: (b.s, b.w, b.n, b.e), kinds: kinds) }.result
@@ -232,12 +252,25 @@ final class MarkerStore: ObservableObject {
     private func take(_ found: [RoadMarker], kinds: String, box b: (s: Double, w: Double, n: Double, e: Double)) {
         let asked = Set(kinds.split(separator: ",").map { Prefs.emittedKind(String($0)) })
         let now = Date()
-        held = held.filter { _, h in
+        var dropped: [String: RoadMarker] = [:]
+        held = held.filter { key, h in
             let m = h.marker
             let inside = m.lat >= b.s && m.lat <= b.n && m.lon >= b.w && m.lon <= b.e
-            return !(inside && asked.contains(m.kind))
+            if inside && asked.contains(m.kind) { dropped[key] = m; return false }
+            return true
         }
-        for m in found { held[m.key] = Held(marker: m, origin: .viewport, at: now) }
+        var same = dropped.count == found.count
+        for m in found {
+            if same, dropped[m.key] != m { same = false }
+            held[m.key] = Held(marker: m, origin: .viewport, at: now)
+        }
+        // The same answer as last time changes nothing on screen. Telling
+        // the views anyway rebuilds every marker in the country for the
+        // map and sends them all to it again, once a minute, for nothing.
+        if same {
+            PerfProbe.count("viewportSame")
+            return
+        }
         publish()
     }
 }

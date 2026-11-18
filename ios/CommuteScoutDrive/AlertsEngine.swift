@@ -200,7 +200,8 @@ final class AlertsEngine: ObservableObject {
         cleared = nil
         prerendered = []
         freeDrive = true
-        timer = Timer.scheduledTimer(withTimeInterval: Self.refreshSeconds, repeats: true) { [weak self] _ in
+        // On the shared beat with the map's fetches (PowerPolicy.beat).
+        timer = Timer.onBeat(every: Self.refreshSeconds) { [weak self] in
             Task { await self?.refreshAround() }
         }
     }
@@ -212,17 +213,32 @@ final class AlertsEngine: ObservableObject {
         lastSegment = 0
         dismissed = []
         cleared = nil
-        let lats = coordinates.map(\.latitude), lons = coordinates.map(\.longitude)
-        guard let s = lats.min(), let n = lats.max(), let w = lons.min(), let e = lons.max() else { return }
-        box = (s - 0.05, w - 0.05, n + 0.05, e + 0.05)
+        guard let window = windowBox() else { return }
+        box = window
         announced = []
         repeated = []
         prerendered = []
         allAsOf = nil
         Task { await refresh() }
-        timer = Timer.scheduledTimer(withTimeInterval: Self.refreshSeconds, repeats: true) { [weak self] _ in
+        timer = Timer.onBeat(every: Self.refreshSeconds) { [weak self] in
             Task { await self?.refresh() }
         }
+    }
+
+    /// Where along the route the last fetch's window began.
+    private var windowAt = 0.0
+    private var refreshing = false
+
+    /// The box around the road ahead: a kilometre behind the car to
+    /// `PowerPolicy.routeAhead` in front, not the whole route. A long
+    /// trip asks for what is coming, and the window moves on with the
+    /// car (`update(position:)`).
+    private func windowBox() -> (south: Double, west: Double, north: Double, east: Double)? {
+        guard let r = PowerPolicy.routeWindow(cumulative: cumulative, here: hereAlong) else { return nil }
+        let part = route[r]
+        let lats = part.map(\.latitude), lons = part.map(\.longitude)
+        guard let s = lats.min(), let n = lats.max(), let w = lons.min(), let e = lons.max() else { return nil }
+        return (s - 0.05, w - 0.05, n + 0.05, e + 0.05)
     }
 
     /// The route ahead of the driver as a sparse line: a vertex every
@@ -303,6 +319,7 @@ final class AlertsEngine: ObservableObject {
     /// own markers stand in, as they do on a trip.
     private func refreshAround() async {
         guard freeDrive, let box else { return }
+        PerfProbe.count("fetch.around")
         do {
             around = try await LiveData.markers(in: box, kinds: LiveData.kinds)
         } catch {
@@ -319,6 +336,11 @@ final class AlertsEngine: ObservableObject {
         let hit = Self.along(route, cumulative, position, near: lastSegment)
         lastSegment = hit.segment
         hereAlong = hit.along
+        // Far enough into the window: fetch the road ahead now, not at
+        // the next beat.
+        if hit.along - windowAt >= PowerPolicy.routeSlide, !refreshing {
+            Task { await refresh() }
+        }
         let upcoming = all.filter { $0.alongMeters > hit.along - 100 && (rules?($0.marker).enabled ?? true) }
         if upcoming != ahead { ahead = upcoming }
         announce(upcoming, from: hit.along)
@@ -427,7 +449,15 @@ final class AlertsEngine: ObservableObject {
     }
 
     private func refresh() async {
+        guard !refreshing else { return }
+        if !route.isEmpty, !freeDrive, let w = windowBox() {
+            box = w
+            windowAt = hereAlong
+        }
         guard let box else { return }
+        refreshing = true
+        defer { refreshing = false }
+        PerfProbe.count("fetch.route")
         let markers: [RoadMarker]
         let asOf: Date
         var live = false

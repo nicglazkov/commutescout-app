@@ -125,6 +125,14 @@ enum Snapshot {
         }
     }
 
+    /// The published file has not changed since it was last painted.
+    enum Unchanged: Error { case notModified }
+
+    /// The version of each bundle last read, so the next refresh asks
+    /// "anything newer?" and an unchanged file costs a few hundred bytes
+    /// instead of half a megabyte and a five megabyte read.
+    private static let tags = TagStore()
+
     /// Fetch and decode one bundle, keeping only what falls inside the
     /// box. Both the transfer and the decode run off the main thread:
     /// this is a nonisolated async function, so it never borrows the
@@ -134,8 +142,14 @@ enum Snapshot {
     /// itself, so what arrives here is already JSON.
     static func fetch(_ feed: Feed, box: GeoBox?) async throws -> SnapshotPayload {
         var data: Data
+        var tag: String?
         do {
-            data = try await get(base.appendingPathComponent(feed.rawValue))
+            let url = base.appendingPathComponent(feed.rawValue)
+            let (d, t) = try await getIfChanged(url, tag: box == nil ? await tags.get(feed) : nil)
+            data = d
+            tag = t
+        } catch Unchanged.notModified {
+            throw Unchanged.notModified
         } catch {
             // A bad day for the snapshot host degrades to the old
             // behaviour, not to a blank map: the API builds the same
@@ -157,12 +171,39 @@ enum Snapshot {
             }
         }
         OfflineStore.save(data, as: savedName(feed))
-        return try decode(data, box: box)
+        let payload = try decode(data, box: box)
+        if box == nil { await tags.set(feed, tag) }
+        return payload
+    }
+
+    actor TagStore {
+        private var tags: [Feed: String] = [:]
+        func get(_ f: Feed) -> String? { tags[f] }
+        func set(_ f: Feed, _ t: String?) { tags[f] = t }
+    }
+
+    /// A GET that sends the last version's ETag; 304 means unchanged.
+    private static func getIfChanged(_ url: URL, tag: String?) async throws -> (Data, String?) {
+        PerfProbe.count("req.snapshot")
+        var req = URLRequest(url: url)
+        if let tag {
+            req.setValue(tag, forHTTPHeaderField: "If-None-Match")
+            // The 304 must reach this code, not be answered from a cache.
+            req.cachePolicy = .reloadIgnoringLocalCacheData
+        }
+        let (data, response) = try await Backend.session.data(for: req)
+        let http = response as? HTTPURLResponse
+        if http?.statusCode == 304 { throw Unchanged.notModified }
+        guard let http, (200 ..< 300).contains(http.statusCode) else {
+            throw BackendError.status(http?.statusCode ?? 0)
+        }
+        return (data, http.value(forHTTPHeaderField: "ETag"))
     }
 
     private static func savedName(_ feed: Feed) -> String { "snapshot-" + feed.rawValue.replacingOccurrences(of: ".gz", with: "") }
 
     private static func get(_ url: URL) async throws -> Data {
+        PerfProbe.count("req.snapshot")
         let (data, response) = try await Backend.session.data(from: url)
         guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
             throw BackendError.status((response as? HTTPURLResponse)?.statusCode ?? 0)
