@@ -38,7 +38,7 @@ enum DriveState: Equatable {
 /// a route) asks for it: the system prompt comes from that button, not
 /// over welcome step 1.
 final class LocationSource: LocationProviding {
-    private var made: CoreLocationProvider?
+    private var made: DeviceLocationProvider?
     private let probe = CLLocationManager()   // reads the status; never asks
     private let simulated = SimulatedLocationProvider(location: CLLocation(latitude: 37.3382, longitude: -121.8863))
     private var listener: (any LocationManagingDelegate)?
@@ -53,13 +53,22 @@ final class LocationSource: LocationProviding {
 
     /// The phone's provider, made once asking is allowed or the answer
     /// is already known.
-    private var device: CoreLocationProvider? {
+    private var device: DeviceLocationProvider? {
         if made == nil, !held || probe.authorizationStatus != .notDetermined {
-            let d = CoreLocationProvider(activityType: .automotiveNavigation, allowBackgroundLocationUpdates: true)
+            let d = DeviceLocationProvider()
+            d.apply(power)
             d.delegate = listener
             made = d
         }
         return made
+    }
+
+    /// What the GPS is asked for (PowerPolicy.location), kept for a
+    /// provider made later.
+    private var power = PowerPolicy.location(navigating: false, driving: false)
+    func apply(_ s: PowerPolicy.LocationSetting) {
+        power = s
+        made?.apply(s)
     }
 
     private var current: LocationProviding? { simulate ? simulated : device }
@@ -103,11 +112,18 @@ final class LocationSource: LocationProviding {
 /// driving mode and for alerts on a drive with no destination.
 final class LocationRelay: LocationManagingDelegate {
     weak var core: FerrostarCore?
-    var onFix: ((UserLocation) -> Void)?
+    var onFix: (@MainActor (UserLocation) -> Void)?
 
     func locationManager(_ manager: LocationProviding, didUpdateLocations locations: [UserLocation]) {
+        PerfProbe.count("fix", locations.count)
+        // Core Location calls on the main thread: handle the fix in this
+        // same turn rather than a task of its own, so what it changes on
+        // screen is drawn together with the trip's own update.
+        if let last = locations.last, let onFix {
+            if Thread.isMainThread { MainActor.assumeIsolated { onFix(last) } }
+            else { DispatchQueue.main.async { onFix(last) } }
+        }
         core?.locationManager(manager, didUpdateLocations: locations)
-        if let last = locations.last { onFix?(last) }
     }
 
     func locationManager(_ manager: LocationProviding, didUpdateHeading newHeading: Heading) {
@@ -121,7 +137,9 @@ final class LocationRelay: LocationManagingDelegate {
 
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var state: DriveState = .browsing
+    @Published var state: DriveState = .browsing {
+        didSet { if oldValue.isNavigating != state.isNavigating { applyPower() } }
+    }
     /// Driving mode: the phone is moving at road speed with no trip
     /// running. The map turns to face the way the car is pointed and
     /// the dot becomes an arrow, as it does on a trip.
@@ -159,6 +177,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var core: FerrostarCore
 
     let location = LocationSource(held: Prefs.welcomeIsDue)
+    /// The map's dot when no trip runs: the app's own fixes, so MapLibre
+    /// does not run a second location manager (DeviceLocation.swift).
+    let mapFeed = MapLocationFeed()
+    /// The trip's snapped puck, handed to the navigation view. One
+    /// instance for the app's life, as Ferrostar asks.
+    let navPuck = StaticLocationManager(initialLocation: CLLocation())
     let places = PlaceStore()
     let alerts = AlertsEngine()
     let markers = MarkerStore()
@@ -194,6 +218,7 @@ final class AppModel: ObservableObject {
     private var sceneCache: (key: String, scene: MapOverlay.Scene)?
 
     init() {
+        PerfProbe.start()
         core = Self.makeCore(location: location, prefs: prefs)
         builtFor = prefs.routingKey
         wireCore()
@@ -209,7 +234,8 @@ final class AppModel: ObservableObject {
         // free of the model and follows a simulated drive too.
         LiveData.position = { [weak self] in self?.here }
         LiveData.routeAhead = { [weak self] in self?.alerts.stretchAhead() ?? [] }
-        relay.onFix = { [weak self] loc in Task { @MainActor in self?.noteFix(loc) } }
+        relay.onFix = { [weak self] loc in self?.noteFix(loc) }
+        mapFeed.authorization = { [weak self] in self?.location.authorizationStatus ?? .notDetermined }
         alerts.startFreeDrive()
         mapFiles.position = { [weak self] in self?.here ?? self?.viewCenter }
         camera = .center(Self.defaultCenter, zoom: 8)
@@ -398,17 +424,28 @@ final class AppModel: ObservableObject {
                 await self?.push.register()
             }
         }
-        coreSink = core.$state.receive(on: DispatchQueue.main).sink { [weak self] s in
-            self?.noteLocation(s)
-            guard let self else { return }
-            self.coreState = s
-            if let loc = s?.preferredUserLocation?.clLocation.coordinate, self.state.isNavigating {
-                self.alerts.update(position: loc)
-                NeuralVoices.shared.setAlong(self.alerts.hereAlong)
+        // Ferrostar sets its state on the main thread already; taking it
+        // in the same turn (no second hop) means one redraw per fix, not
+        // one for the fix and another for the trip.
+        coreSink = core.$state.sink { [weak self] s in
+            guard Thread.isMainThread else {
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.tookCoreState(s) } }
+                return
             }
-            // Arrived: nothing left to resume.
-            if case .complete = s?.tripState { SavedTrip.clear() }
+            MainActor.assumeIsolated { self?.tookCoreState(s) }
         }
+    }
+
+    private func tookCoreState(_ s: NavigationState?) {
+        noteLocation(s)
+        if let pendingSpeed { speedMps = pendingSpeed; self.pendingSpeed = nil }
+        coreState = s
+        if let loc = s?.preferredUserLocation?.clLocation.coordinate, state.isNavigating {
+            alerts.update(position: loc)
+            NeuralVoices.shared.setAlong(alerts.hereAlong)
+        }
+        // Arrived: nothing left to resume.
+        if case .complete = s?.tripState { SavedTrip.clear() }
     }
 
     /// Settings changed: apply what applies now, and rebuild the core
@@ -644,7 +681,16 @@ final class AppModel: ObservableObject {
     /// fix and hit the network all day. A trip keeps everything, which
     /// is what the location background mode is for.
     func pauseIfIdle() {
-        guard !state.isNavigating else { return }
+        // On a trip the voice keeps going from the pocket, and so do the
+        // GPS and the route's alerts. Nothing on the map is seen, so its
+        // markers and plugin dots stop fetching until the screen is back.
+        guard !state.isNavigating else {
+            markers.pause()
+            sources.pause()
+            DriveLog.note("background: trip continues, map fetches paused")
+            return
+        }
+        sources.pause()
         NeuralVoices.shared.free("in the background")
         location.stopUpdating()
         alerts.stop()
@@ -657,6 +703,7 @@ final class AppModel: ObservableObject {
         location.startUpdating()
         if !state.isNavigating { alerts.startFreeDrive() }
         markers.resume()
+        sources.resume()
         speedMps = -1
     }
 
@@ -670,16 +717,12 @@ final class AppModel: ObservableObject {
     private func noteLocation(_ s: NavigationState?) {
         guard let loc = s?.preferredUserLocation else { return }
         let now = Date()
-        if let last = lastFixAt, now.timeIntervalSince(last) > 15 {
+        // A stopped car gets no fixes (the distance filter), so only a
+        // gap that ends at road speed is a lost signal.
+        if let last = lastFixAt, now.timeIntervalSince(last) > 15, rawSpeed >= 2 {
             DriveLog.note("location gap \(Int(now.timeIntervalSince(last))) s")
         }
         lastFixAt = now
-        staleSpeedTimer?.invalidate()
-        // No fix for a while (a tunnel, a garage): the speedometer must
-        // not keep showing the last speed as if it were now.
-        staleSpeedTimer = Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.speedMps = -1 }
-        }
         fixes += 1
         if case .navigating = state, now.timeIntervalSince(lastSummary) >= 60 {
             let speed = loc.speed.map { String(format: "%.0f km/h", $0.value * 3.6) } ?? "?"
@@ -962,7 +1005,12 @@ final class AppModel: ObservableObject {
         }
         lastFixForSpeed = (cl.coordinate, cl.timestamp)
         let course = cl.course >= 0 ? cl.course : nil
-        speedMps = speed
+        rawSpeed = speed
+        lastRawFixAt = now
+        mapFeed.push(cl)
+        // On a trip the speed is shown with the trip's own update, which
+        // follows this fix: one redraw for both.
+        if state.isNavigating, coreState?.isNavigating == true { pendingSpeed = speed } else { speedMps = speed }
         if !state.isNavigating {
             alerts.update(position: cl.coordinate, course: course, speed: speed)
             askPostedLimit(at: cl.coordinate, course: course, speed: speed)
@@ -976,16 +1024,58 @@ final class AppModel: ObservableObject {
             if stillSince == nil { stillSince = now }
             if driving, now.timeIntervalSince(stillSince ?? now) >= 60 { setDriving(false) }
         }
+        armSilence()
     }
 
-    /// The limit on the road ahead, once a minute or every 500 m while
+    private var rawSpeed: Double = -1
+    private var lastRawFixAt: Date?
+    private var pendingSpeed: Double?
+
+    /// The GPS sends a fix only every few metres (PowerPolicy.location),
+    /// so a stopped car gets none. One timer, moved along with each fix,
+    /// covers what the stream of fixes used to: a car that went quiet at
+    /// speed lost its signal and its speed is unknown; a car that went
+    /// quiet standing still is stopped, and a minute of that ends
+    /// driving mode as a minute of standing fixes did.
+    private func armSilence() {
+        let due = Date().addingTimeInterval(6)
+        if let t = staleSpeedTimer, t.isValid { t.fireDate = due; return }
+        staleSpeedTimer = Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.silence() }
+        }
+        staleSpeedTimer?.tolerance = 1
+    }
+
+    private func silence() {
+        guard let last = lastRawFixAt else { return }
+        let quiet = Date().timeIntervalSince(last)
+        if PowerPolicy.speedUnknownAfterSilence(lastSpeed: rawSpeed) {
+            speedMps = -1
+            return
+        }
+        if speedMps > 0 { speedMps = 0 }
+        guard driving else { return }
+        let still = stillSince ?? last
+        if Date().timeIntervalSince(still) >= 60 {
+            setDriving(false)
+        } else {
+            stillSince = still
+            staleSpeedTimer = Timer.scheduledTimer(withTimeInterval: max(1, 60 - quiet), repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.silence() }
+            }
+        }
+    }
+
+    /// The limit on the road ahead, once a minute or every kilometre while
     /// moving, with no trip running (a trip's route carries its own).
     /// An unknown answer clears the sign rather than leaving a stale one.
     private func askPostedLimit(at p: CLLocationCoordinate2D, course: Double?, speed: Double) {
         guard speed >= 4, online, let course else { return }
         let now = Date()
         let moved = limitAskedAtPoint.map { AlertsEngine.meters($0, p) } ?? .infinity
-        guard now.timeIntervalSince(limitAskedAt) >= 45 || moved >= 500 else { return }
+        // A minute or a kilometre, whichever comes first: about once a
+        // minute at any speed, rather than every 17 seconds on a freeway.
+        guard now.timeIntervalSince(limitAskedAt) >= 60 || moved >= 1000 else { return }
         limitAskedAt = now
         limitAskedAtPoint = p
         Task { [weak self] in
@@ -1027,6 +1117,7 @@ final class AppModel: ObservableObject {
 
     private func setDriving(_ on: Bool) {
         driving = on
+        applyPower()
         speechWarmth()
         DriveLog.note(on ? "driving mode on" : "driving mode off")
         applyIdleTimer()
@@ -1046,6 +1137,12 @@ final class AppModel: ObservableObject {
         // One mute for both voices.
         alerts.spoken = prefs.spokenAlerts && !muted
         alerts.muted = muted
+    }
+
+    /// The GPS setting for the moment (PowerPolicy.location).
+    private func applyPower() {
+        location.apply(PowerPolicy.location(navigating: state.isNavigating, driving: driving))
+        markers.moving = driving || state.isNavigating
     }
 
     /// The screen stays on while a trip runs or the car is moving, if
@@ -1074,6 +1171,7 @@ final class AppModel: ObservableObject {
         if let c = sceneCache, c.key == key { return c.scene }
         var scene = sceneCache?.scene ?? MapOverlay.Scene()
         if scene.markersVersion != dataKey {
+            PerfProbe.count("markerRebuild")
             scene.markers = allMarkers.filter { prefs.isShown($0.kind) && pluginIsOn($0) }.map(MapOverlay.feature(for:))
                 + (gone.map { [MapOverlay.goneFeature(for: $0)] } ?? [])
             scene.markersVersion = dataKey
@@ -1095,7 +1193,7 @@ final class AppModel: ObservableObject {
             if let r = ring {
                 let m = r.marker
                 let tint = m.kind == "plugin" ? PluginStyle.color(PluginStyle.sourceId(m)) : (MarkerIcons.color[m.kind] ?? .orange)
-                scene.alert = MapOverlay.AlertRing(coordinate: m.coordinate, tint: tint,
+                scene.alert = MapOverlay.AlertRing(id: m.key, coordinate: m.coordinate, tint: tint,
                                                    label: Units.distance(max(0, r.alongMeters - alerts.hereAlong)))
             } else {
                 scene.alert = nil

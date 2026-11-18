@@ -103,9 +103,46 @@ struct MapHook: UIViewRepresentable {
             mv.addGestureRecognizer(press)
             // UI tests wait on this: from here on a press drops a pin.
             mv.accessibilityIdentifier = "cs-map"
+            // 30 frames a second while the map follows the car; the
+            // display's full rate while a finger is on it (PowerPolicy).
+            let touch = TouchWatch { [weak self] down in self?.touching(down) }
+            touch.delegate = self
+            mv.addGestureRecognizer(touch)
+            mv.preferredFramesPerSecond = Self.fps(touching: false)
+            startPolling()
+            // Nothing on the map is seen in the background: no polling.
+            let nc = NotificationCenter.default
+            nc.addObserver(self, selector: #selector(background), name: UIApplication.didEnterBackgroundNotification, object: nil)
+            nc.addObserver(self, selector: #selector(foreground), name: UIApplication.willEnterForegroundNotification, object: nil)
+            applyTraffic()
+        }
+
+        private func startPolling() {
             timer?.invalidate()
             timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in self?.poll(); self?.restore() }
-            applyTraffic()
+            timer?.tolerance = 0.2
+        }
+
+        private static func fps(touching: Bool) -> MLNMapViewPreferredFramesPerSecond {
+            let n = PowerPolicy.mapFramesPerSecond(touching: touching)
+            return n == 0 ? .maximum : MLNMapViewPreferredFramesPerSecond(rawValue: n)
+        }
+
+        @objc private func background() { timer?.invalidate(); timer = nil }
+        @objc private func foreground() { startPolling() }
+
+        private var calm: DispatchWorkItem?
+        private func touching(_ down: Bool) {
+            calm?.cancel()
+            guard let mv = mapView else { return }
+            let fast = Self.fps(touching: true), slow = Self.fps(touching: false)
+            if down {
+                if mv.preferredFramesPerSecond != fast { mv.preferredFramesPerSecond = fast }
+                return
+            }
+            let work = DispatchWorkItem { [weak mv] in mv?.preferredFramesPerSecond = slow }
+            calm = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + PowerPolicy.touchLinger, execute: work)
         }
 
         @objc private func tapped(_ g: UITapGestureRecognizer) {
@@ -171,5 +208,37 @@ struct MapHook: UIViewRepresentable {
         }
 
         func gestureRecognizer(_: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer) -> Bool { true }
+    }
+
+    /// Says when a finger lands on the map and when the last one lifts.
+    /// It never recognizes, so it takes nothing from the map's gestures.
+    final class TouchWatch: UIGestureRecognizer {
+        private let changed: (Bool) -> Void
+        private var down = 0
+
+        init(_ changed: @escaping (Bool) -> Void) {
+            self.changed = changed
+            super.init(target: nil, action: nil)
+            cancelsTouchesInView = false
+            delaysTouchesBegan = false
+            delaysTouchesEnded = false
+        }
+
+        override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+            if down == 0 { changed(true) }
+            down += touches.count
+        }
+
+        override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { lift(touches.count) }
+        override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { lift(touches.count) }
+
+        private func lift(_ n: Int) {
+            down = max(0, down - n)
+            if down == 0 { changed(false); state = .failed }
+        }
+
+        override func reset() {
+            if down > 0 { down = 0; changed(false) }
+        }
     }
 }

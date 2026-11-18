@@ -382,7 +382,15 @@ class SourcesStore(context: Context) {
     /** Polls now, then every refreshS while the plugin answers, at the backed-off interval while it does not. */
     private fun schedule(src: FlareSource) {
         jobs[src.id]?.cancel()
-        jobs[src.id] = scope.launch { while (isActive) { if (Engine.awake()) poll(src); delay(backoff[src.id] ?: src.refreshS * 1000L) } }
+        // Plugin dots only draw on the map (spoken alerts come from the
+        // server): no polls with the screen off, and the rest on the
+        // shared beat with the map's other fetches (Power).
+        jobs[src.id] = scope.launch {
+            while (isActive) {
+                if (Engine.foreground.value) poll(src)
+                delay(backoff[src.id] ?: Power.untilNextBeat(System.currentTimeMillis(), Power.pluginEveryMs(src.refreshS)))
+            }
+        }
     }
 
     /** The plugin failed to answer: the next poll waits twice as long, up to ten minutes. */

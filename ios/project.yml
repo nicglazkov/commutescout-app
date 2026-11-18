@@ -154,6 +154,8 @@ targets:
       - path: CommuteScoutDrive/DayGlass/SettingsLogic.swift
       - path: CommuteScoutDrive/DayGlass/MoreLogic.swift
       - path: CommuteScoutDrive/Units.swift
+      - path: CommuteScoutDrive/PowerPolicy.swift
+      - path: CommuteScoutDrive/PerfProbe.swift
       - path: ../shared/voices.json
         buildPhase: resources
     settings:

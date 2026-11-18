@@ -284,7 +284,7 @@ class AlertsEngine(context: Context, prefs: Prefs) {
         freeDrive = true
         refreshJob = scope.launch {
             while (isActive) {
-                delay(REFRESH_MS)
+                delay(Power.untilNextBeat(System.currentTimeMillis(), REFRESH_MS))
                 if (Engine.awake()) refreshAround()
             }
         }
@@ -357,7 +357,7 @@ class AlertsEngine(context: Context, prefs: Prefs) {
         refreshJob = scope.launch {
             while (isActive) {
                 refresh()
-                delay(REFRESH_MS)
+                delay(Power.untilNextBeat(System.currentTimeMillis(), REFRESH_MS))
             }
         }
     }

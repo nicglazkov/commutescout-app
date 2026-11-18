@@ -32,6 +32,7 @@ enum Backend {
         if !query.isEmpty {
             comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
         }
+        PerfProbe.count("req.\(path)")
         let (data, response) = try await session.data(from: comps.url!)
         guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
             throw BackendError.status((response as? HTTPURLResponse)?.statusCode ?? 0)

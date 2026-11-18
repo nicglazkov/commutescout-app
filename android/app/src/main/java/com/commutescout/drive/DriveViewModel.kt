@@ -30,7 +30,6 @@ import com.stadiamaps.ferrostar.core.location.toAndroidLocation
 import com.stadiamaps.ferrostar.core.location.toUserLocation
 import com.stadiamaps.ferrostar.core.service.FerrostarForegroundServiceManager
 import com.stadiamaps.ferrostar.core.withJsonOptions
-import com.stadiamaps.ferrostar.googleplayservices.FusedNavigationLocationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -91,7 +90,8 @@ object Engine {
 
     val location: NavigationLocationProvider by lazy {
         NavigationLocationProvider(
-            liveProviding = FusedNavigationLocationProvider(app),
+            // Asks the GPS for only what the moment needs (Power.location).
+            liveProviding = LeanLocationProvider(app),
             simulatedProvider = SimulatedLocationProvider(
                 warpFactor = 3u,
                 initialLocation = UserLocation(
@@ -434,17 +434,24 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
 
     /**
      * One collector, never two: the activity calls this again after
-     * each recreate. Every second on screen or on a trip; off screen
-     * with no trip, a fix every fifteen seconds keeps the snapshot aimed
-     * without holding the GPS.
+     * each recreate. On screen or on a trip the GPS runs as
+     * Power.location says; off screen with no trip it stops, and the
+     * first fix back on screen aims the snapshot again.
      */
     fun setLocationPermission(granted: Boolean) {
         _hasPermission.value = granted
-        if (!granted) { locationJob?.cancel(); locationJob = null; return }
-        if (locationJob == null) viewModelScope.launch {
-            Engine.foreground.collect { collectLocation(if (it || Engine.tripActive) 1000L else 15_000L) }
+        if (!granted) { stopLocation(); return }
+        if (foregroundWatch == null) foregroundWatch = viewModelScope.launch {
+            Engine.foreground.collect { if (it || Engine.tripActive) collectLocation(1000L) else stopLocation() }
         }
-        collectLocation(if (Engine.awake()) 1000L else 15_000L)
+        if (Engine.awake()) collectLocation(1000L)
+    }
+
+    private var foregroundWatch: Job? = null
+
+    private fun stopLocation() {
+        locationJob?.cancel(); locationJob = null; locationIntervalMs = 0L
+        silenceJob?.cancel()
     }
 
     private fun collectLocation(intervalMs: Long) {
@@ -561,11 +568,45 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         if (speed >= 3) {                        // about 7 mph
             stillSince = 0L
             if (movingSince == 0L) movingSince = now
-            if (!_driving.value && now - movingSince >= 3000) { _driving.value = true; Log.i("DriveViewModel", "driving mode on") }
+            if (!_driving.value && now - movingSince >= 3000) { setDriving(true) }
         } else if (speed >= 0 && speed < 1) {
             movingSince = 0L
             if (stillSince == 0L) stillSince = now
-            if (_driving.value && now - stillSince >= 60_000) { _driving.value = false; Log.i("DriveViewModel", "driving mode off") }
+            if (_driving.value && now - stillSince >= 60_000) { setDriving(false) }
+        }
+        armSilence()
+    }
+
+    private fun setDriving(on: Boolean) {
+        _driving.value = on
+        Log.i("DriveViewModel", if (on) "driving mode on" else "driving mode off")
+        Power.apply(navigating = Engine.tripActive, driving = on)
+    }
+
+    private var lastRawSpeed = -1.0
+    private var lastRawFixAt = 0L
+    private var silenceJob: Job? = null
+
+    /**
+     * The GPS sends a fix only every few metres (Power.location), so a
+     * stopped car gets none. A car that went quiet at speed lost its
+     * signal and its speed is unknown; one that went quiet standing still
+     * is stopped, and a minute of that ends driving mode as a minute of
+     * standing fixes did.
+     */
+    private fun armSilence() {
+        lastRawSpeed = _speedMps.value
+        lastRawFixAt = System.currentTimeMillis()
+        silenceJob?.cancel()
+        silenceJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(6000)
+            if (lastRawSpeed >= 2) { _speedMps.value = -1.0; return@launch }
+            if (_speedMps.value > 0) _speedMps.value = 0.0
+            if (!_driving.value) return@launch
+            val still = if (stillSince != 0L) stillSince else lastRawFixAt
+            val left = 60_000L - (System.currentTimeMillis() - still)
+            if (left > 0) kotlinx.coroutines.delay(left)
+            setDriving(false)
         }
     }
 
@@ -589,7 +630,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
     }
 
     /**
-     * The limit on the road ahead, once a minute or every 500 m while
+     * The limit on the road ahead, once a minute or every kilometre while
      * moving with no trip (a trip's route carries its own). An unknown
      * answer clears the sign rather than leaving a stale one.
      */
@@ -597,7 +638,9 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         if (speed < 4 || course == null || !Connectivity.online.value) return
         val now = System.currentTimeMillis()
         val moved = limitAskedAtPoint?.let { AlertsEngine.meters(it, p) } ?: Double.MAX_VALUE
-        if (now - limitAskedAt < 45_000 && moved < 500) return
+        // A minute or a kilometre, whichever comes first: about once a
+        // minute at any speed, rather than every 17 seconds on a freeway.
+        if (now - limitAskedAt < 60_000 && moved < 1000) return
         limitAskedAt = now; limitAskedAtPoint = p
         viewModelScope.launch {
             val q = mapOf("lat" to Backend.num(p.lat), "lon" to Backend.num(p.lon), "heading" to Backend.num(course, 0))
@@ -763,6 +806,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         try {
             if (simulating.value) Engine.location.enableSimulationOn(route)
             Engine.tripActive = true
+            Power.apply(navigating = true, driving = _driving.value)
             Engine.core.startNavigation(route)
             Engine.tripPlace = place
             beginTripRecord(route, place)
@@ -787,6 +831,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         // The core stops first: switching the location provider while the
         // trip runs looks like a deviation and starts a reroute.
         Engine.tripActive = false
+        Power.apply(navigating = false, driving = _driving.value)
         Engine.tripPlace = null
         TripStore.clear()
         Engine.core.stopNavigation()

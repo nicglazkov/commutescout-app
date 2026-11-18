@@ -126,7 +126,12 @@ object Snapshot {
         if (center != null) runCatching { Engine.prefs.lastCenter = center }
         syncNow(wanted)
         if (ticker == null) ticker = scope.launch {
-            while (isActive) { delay(MAX_AGE_MS); if (Engine.awake()) syncNow(wanted) }
+            // Less often on the move, when the viewport fetch carries what
+            // is near the car, and on the shared beat (Power).
+            while (isActive) {
+                delay(Power.untilNextBeat(System.currentTimeMillis(), Power.snapshotEveryMs(Power.moving)))
+                if (Engine.foreground.value) syncNow(wanted)
+            }
         }
     }
 
@@ -201,6 +206,14 @@ object Snapshot {
 
     private class Loaded(val markers: List<RoadMarker>, val asOf: Long, val saved: Boolean)
 
+    /**
+     * The version of each bundle last read for the same area, so a
+     * refresh asks "anything newer?" and an unchanged file costs a few
+     * hundred bytes instead of half a megabyte and a five megabyte read.
+     */
+    private class Tag(val etag: String, val box: DoubleArray, val markers: List<RoadMarker>)
+    private val tags = java.util.concurrent.ConcurrentHashMap<Bundle, Tag>()
+
     // OkHttp asks for gzip and unwraps it, so a plain GET of a .gz
     // object hands back JSON. Reading it as a stream means the file is
     // never a 4 MB string in memory.
@@ -212,9 +225,16 @@ object Snapshot {
     private suspend fun load(b: Bundle, box: DoubleArray, allowSaved: Boolean): Loaded = withContext(Dispatchers.IO) {
         val file = OfflineStore.cache("snapshot-${b.name.lowercase()}.json.gz")
         try {
-            val req = Request.Builder().url("$BASE/${b.file}").header("Accept", "application/json").build()
-            Backend.http.newCall(req).execute().use { r ->
+            val tag = tags[b]?.takeIf { it.box === box }
+            val rb = Request.Builder().url("$BASE/${b.file}").header("Accept", "application/json")
+            if (tag != null) rb.header("If-None-Match", tag.etag).cacheControl(okhttp3.CacheControl.FORCE_NETWORK)
+            Backend.http.newCall(rb.build()).execute().use { r ->
+                if (r.code == 304 && tag != null) {
+                    Log.i(TAG, "${b.file}: unchanged")
+                    return@withContext Loaded(tag.markers, System.currentTimeMillis(), false)
+                }
                 if (!r.isSuccessful) throw BackendError("HTTP ${r.code} for ${b.file}", r.code)
+                val etag = r.header("ETag")
                 var found: List<RoadMarker> = emptyList()
                 OfflineStore.write(file) { raw ->
                     object : GZIPOutputStream(raw) { init { def.setLevel(Deflater.BEST_SPEED) } }.use { gz ->
@@ -223,6 +243,7 @@ object Snapshot {
                         tee.drain()
                     }
                 }
+                if (etag != null) tags[b] = Tag(etag, box, found) else tags.remove(b)
                 Loaded(found, System.currentTimeMillis(), false)
             }
         } catch (e: Exception) {
