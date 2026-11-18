@@ -27,6 +27,8 @@ final class PowerPolicyTests: XCTestCase {
 
     func testSilenceAtSpeedIsALostSignalSilenceStandingIsAStop() {
         XCTAssertTrue(PowerPolicy.speedUnknownAfterSilence(lastSpeed: 25))
+        // The last fix of a car braking for a light.
+        XCTAssertFalse(PowerPolicy.speedUnknownAfterSilence(lastSpeed: 5))
         XCTAssertFalse(PowerPolicy.speedUnknownAfterSilence(lastSpeed: 0))
         XCTAssertFalse(PowerPolicy.speedUnknownAfterSilence(lastSpeed: -1))
     }

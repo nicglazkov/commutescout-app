@@ -22,6 +22,12 @@ class PowerTest {
         assertTrue(idle.minDistanceM > drive.minDistanceM)
     }
 
+    @Test fun silenceAtSpeedIsALostSignalSilenceAfterBrakingIsAStop() {
+        assertTrue(Power.speedUnknownAfterSilence(25.0))
+        assertTrue(!Power.speedUnknownAfterSilence(5.0))
+        assertTrue(!Power.speedUnknownAfterSilence(-1.0))
+    }
+
     @Test fun mapDrawsAtThirtyUnlessTouched() {
         assertEquals(30, Power.mapFps(touching = false))
         assertNull(Power.mapFps(touching = true))

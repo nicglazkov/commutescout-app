@@ -39,6 +39,14 @@ object Power {
         else -> LocationSetting(Priority.PRIORITY_HIGH_ACCURACY, 2000L, 15f)
     }
 
+    /**
+     * With a distance filter a phone stopped at a light gets no fixes, so
+     * a silent GPS is not a lost one. A car braking to a stop sends its
+     * last fix at up to about 8 m/s; only one that went quiet faster than
+     * that (a tunnel) has an unknown speed.
+     */
+    fun speedUnknownAfterSilence(lastSpeed: Double): Boolean = lastSpeed > 8.0
+
     /** The map draws at 30 frames a second unless a finger is on it (null: the display's most). */
     const val CRUISING_FPS = 30
     fun mapFps(touching: Boolean): Int? = if (touching) null else CRUISING_FPS

@@ -42,9 +42,12 @@ enum PowerPolicy {
     }
 
     /// With a distance filter a phone stopped at a light gets no fixes,
-    /// so a silent GPS is not a lost one. Only a car that was moving and
-    /// then went quiet (a tunnel, a garage) has an unknown speed.
-    static func speedUnknownAfterSilence(lastSpeed: Double) -> Bool { lastSpeed >= 2 }
+    /// so a silent GPS is not a lost one. A car braking to a stop sends
+    /// its last fix at up to about 8 m/s (it covers the filter's 10 m in
+    /// under a second at that speed), so only a car that went quiet
+    /// faster than that (a tunnel, an underpass) has an unknown speed.
+    static let lostSignalAbove = 8.0
+    static func speedUnknownAfterSilence(lastSpeed: Double) -> Bool { lastSpeed > lostSignalAbove }
 
     // MARK: map
 

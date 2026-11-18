@@ -600,7 +600,7 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         silenceJob?.cancel()
         silenceJob = viewModelScope.launch {
             kotlinx.coroutines.delay(6000)
-            if (lastRawSpeed >= 2) { _speedMps.value = -1.0; return@launch }
+            if (Power.speedUnknownAfterSilence(lastRawSpeed)) { _speedMps.value = -1.0; return@launch }
             if (_speedMps.value > 0) _speedMps.value = 0.0
             if (!_driving.value) return@launch
             val still = if (stillSince != 0L) stillSince else lastRawFixAt
