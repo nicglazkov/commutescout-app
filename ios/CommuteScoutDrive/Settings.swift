@@ -404,6 +404,9 @@ private struct AboutPage: View {
                 DGDivider(inset: 14)
                 Link(destination: URL(string: "https://commutescout.com/privacy")!) { DGRow(title: "Privacy", chevron: false) { EmptyView() } }
                     .buttonStyle(DGRowPress())
+                DGDivider(inset: 14)
+                Link(destination: TermsConsent.termsURL) { DGRow(title: "Terms of Use", chevron: false) { EmptyView() } }
+                    .buttonStyle(DGRowPress())
             }
             .padding(.top, 8)
             DGFootnote("Routing and address lookup by Stadia Maps. Map data (c) OpenStreetMap contributors, drawn from files CommuteScout hosts and from OpenFreeMap. Road data from the agencies listed on commutescout.com. Not affiliated with any government agency. Verify before you drive.")

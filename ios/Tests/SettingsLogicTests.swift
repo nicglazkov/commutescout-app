@@ -191,4 +191,23 @@ final class SettingsLogicTests: XCTestCase {
         XCTAssertFalse(WelcomeStep.shouldShow(done: false, hasOtherPrefs: true))
         XCTAssertTrue(WelcomeStep.location.body.contains("any route in the US"))
     }
+
+    // MARK: terms at sign-in
+
+    func testTermsAgreementGatesSignInPerPhoneAndVersion() {
+        // The server's TERMS_VERSION; bump both together.
+        XCTAssertEqual(TermsConsent.version, "2026-11-19")
+        XCTAssertFalse(TermsConsent.canSignIn(stored: nil, ticked: false), "unticked: buttons disabled")
+        XCTAssertTrue(TermsConsent.canSignIn(stored: nil, ticked: true))
+        XCTAssertFalse(TermsConsent.canSignIn(stored: "2025-01-01", ticked: false), "a new version asks again")
+        XCTAssertTrue(TermsConsent.agreed(stored: TermsConsent.version))
+        XCTAssertTrue(TermsConsent.canSignIn(stored: TermsConsent.version, ticked: false), "agreed here: passive line")
+        XCTAssertEqual(TermsConsent.body["version"] as? String, TermsConsent.version)
+        XCTAssertEqual(TermsConsent.termsURL.absoluteString, "https://commutescout.com/terms")
+        XCTAssertEqual(TermsConsent.privacyURL.absoluteString, "https://commutescout.com/privacy")
+        for text in [TermsConsent.agreeText, TermsConsent.passiveText] {
+            XCTAssertTrue(text.contains("(https://commutescout.com/terms)") && text.contains("(https://commutescout.com/privacy)"))
+        }
+        XCTAssertTrue(TermsConsent.agreeText.hasPrefix("I agree to the [Terms of Use]"))
+    }
 }

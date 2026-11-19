@@ -363,3 +363,34 @@ enum WelcomeStep: Int, CaseIterable {
     /// an update, and counts as done.
     static func shouldShow(done: Bool, hasOtherPrefs: Bool) -> Bool { !done && !hasOtherPrefs }
 }
+
+// MARK: - Terms at sign-in
+
+/// The Terms of Use and Privacy Policy a person agrees to when signing
+/// in. Sign-in can create the account (Google and Apple both do on first
+/// use), and the app cannot tell a new account from a returning one until
+/// after it exists, so the agreement is asked per phone: an unticked box,
+/// with the sign-in buttons disabled until it is ticked. Once agreed on
+/// this phone it shows as a passive line instead. The account records the
+/// acceptance with POST /api/me/terms right after sign-in. Bump `version`
+/// with the server's TERMS_VERSION; a new version asks again.
+enum TermsConsent {
+    static let version = "2026-11-19"
+    static let storageKey = "cs.terms.accepted"
+    static let termsURL = URL(string: "https://commutescout.com/terms")!
+    static let privacyURL = URL(string: "https://commutescout.com/privacy")!
+
+    /// The checkbox's words, with both documents linked.
+    static let agreeText = "I agree to the [Terms of Use](https://commutescout.com/terms) and [Privacy Policy](https://commutescout.com/privacy)"
+    /// The passive line once this phone has agreed to the current version.
+    static let passiveText = "By continuing you agree to the [Terms of Use](https://commutescout.com/terms) and [Privacy Policy](https://commutescout.com/privacy)."
+
+    /// Whether this phone already agreed to the current version.
+    static func agreed(stored: String?) -> Bool { stored == version }
+
+    /// Sign-in buttons work once agreed here before, or ticked now.
+    static func canSignIn(stored: String?, ticked: Bool) -> Bool { agreed(stored: stored) || ticked }
+
+    /// The account endpoint's body.
+    static var body: [String: Any] { ["version": version] }
+}

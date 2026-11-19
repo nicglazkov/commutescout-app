@@ -285,7 +285,7 @@ final class CoverageUITests: XCTestCase {
         }
         back()
         openPage("about")
-        for label in ["About CommuteScout", "Privacy"] {
+        for label in ["About CommuteScout", "Privacy", "Terms of Use"] {
             let row = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
             XCTAssertTrue(reveal(row), label)
         }
@@ -304,6 +304,17 @@ final class CoverageUITests: XCTestCase {
             app.buttons["account-sign-in"].tap()
             XCTAssertTrue(app.buttons["Continue with Apple"].waitForExistence(timeout: 5))
             XCTAssertTrue(app.buttons["Continue with Google"].exists)
+            // First sign-in on this phone: an unticked "I agree", and the
+            // buttons wait for it. Agreed before: a passive line instead.
+            let agree = app.buttons["terms-agree"]
+            if agree.exists {
+                XCTAssertFalse(app.buttons["Continue with Apple"].isEnabled, "disabled until agreed")
+                XCTAssertFalse(app.buttons["Continue with Google"].isEnabled, "disabled until agreed")
+                agree.tap()
+                XCTAssertTrue(app.buttons["Continue with Apple"].isEnabled, "enabled once ticked")
+            } else {
+                XCTAssertTrue(app.descendants(matching: .any)["terms-passive"].exists, "agreed: the passive line")
+            }
             app.buttons["page-close"].firstMatch.tap()
         } else {
             XCTAssertTrue(app.buttons["account-sign-out"].exists, "signed in: Sign out offered")
