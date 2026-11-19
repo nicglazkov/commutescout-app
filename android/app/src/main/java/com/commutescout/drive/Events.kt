@@ -523,14 +523,14 @@ object EventText {
     }
 
     /**
-     * A Caltrans chain control: the level that applies now gets the
+     * A state chain control: the level that applies now gets the
      * bold panel, the others sit below as reference so the level has
      * meaning. A status that is not a level gets the whole legend.
      */
     fun chainPanel(status: String?): ChainPanel {
         val norm = chainLevel(status)
         val active = CHAIN_LEVELS.firstOrNull { it.first == norm }
-        return if (active != null) ChainPanel("Caltrans reports $norm here", active.second, CHAIN_LEVELS.filter { it.first != norm })
+        return if (active != null) ChainPanel("The state reports $norm here", active.second, CHAIN_LEVELS.filter { it.first != norm })
         else ChainPanel(null, null, CHAIN_LEVELS)
     }
 
@@ -696,7 +696,7 @@ data class EventCard(
                 title = (norm.ifEmpty { null } ?: m.status?.takeIf { it.isNotEmpty() } ?: "Chain control") +
                     (m.route?.takeIf { it.isNotEmpty() }?.let { " on $it" } ?: ""),
                 subtitle = m.label?.takeIf { it.isNotEmpty() },
-                footer = listOfNotNull(ago?.let { "Status set $it" }, "Source: Caltrans chain control feed"),
+                footer = listOfNotNull(ago?.let { "Status set $it" }, "Source: state transportation agency chain control feed"),
                 chain = EventText.chainPanel(m.status),
             )
         }

@@ -181,7 +181,7 @@ class EventsTest {
 
     @Test fun chainLegendLeadsWithTheLevelNow() {
         val p = EventText.chainPanel("R2")
-        assertEquals("Caltrans reports R-2 here", p.head)
+        assertEquals("The state reports R-2 here", p.head)
         assertEquals("Chains required on every vehicle, except 4WD/AWD with snow tires on all four wheels. Even those must carry chains.", p.text)
         assertEquals(listOf("R-1", "R-3"), p.legend.map { it.first })
         val none = EventText.chainPanel("Lifted")

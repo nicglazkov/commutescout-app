@@ -302,7 +302,7 @@ fun AskSheet(model: DriveViewModel, onClose: () -> Unit) {
     SheetLayer(onClose, snaps = listOf(.62f, .92f), modifier = Modifier.tag("ask-sheet")) { sheet ->
         SheetHead("Ask", sheet)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 22.dp)) {
-            if (answer.isEmpty() && !running) Text("Ask about closures, chain controls, fires or traffic anywhere in the country, for example \"Is I-70 open through the Eisenhower Tunnel?\", \"Any crashes on I-95 near Richmond?\" or \"Chains on US-2 over Stevens Pass?\"",
+            if (answer.isEmpty() && !running) Text("Ask about closures, chain controls, fires or traffic anywhere in the country, for example \"Is the highway ahead open?\", \"Any crashes on my route home?\" or \"Do I need chains over the pass?\"",
                 style = DGType.body, color = DG.sub)
             asked?.let { Text(it, style = DGType.row, color = DG.ink, modifier = Modifier.padding(bottom = 8.dp)) }
             if (status.isNotEmpty()) Text(status, style = DGType.small, color = DG.sub)

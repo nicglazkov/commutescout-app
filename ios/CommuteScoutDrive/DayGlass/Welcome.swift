@@ -51,8 +51,8 @@ struct WelcomeOverlay: View {
         HStack(spacing: 12) {
             DGDisc(kind: .crash, tone: .high, size: 36)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Home area: crash on US-101").font(DG.font(15, .semibold)).foregroundStyle(DG.ink)
-                Text("Right lane blocked at University Ave").font(DG.font(13)).foregroundStyle(DG.sub)
+                Text("Home area: crash on the highway").font(DG.font(15, .semibold)).foregroundStyle(DG.ink)
+                Text("Right lane blocked near the exit").font(DG.font(13)).foregroundStyle(DG.sub)
             }
             Spacer(minLength: 4)
             Text("now").font(DG.font(12)).foregroundStyle(DG.faint).frame(maxHeight: .infinity, alignment: .top)

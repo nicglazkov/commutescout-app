@@ -429,7 +429,7 @@ private struct ChainBox: View {
         VStack(alignment: .leading, spacing: 8) {
             if let active = levels.active {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Caltrans reports \(active.0) here").font(DG.T.rowTitle)
+                    Text("The state reports \(active.0) here").font(DG.T.rowTitle)
                     Text(active.1).font(DG.font(15)).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(12)

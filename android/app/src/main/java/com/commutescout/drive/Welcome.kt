@@ -145,8 +145,8 @@ fun WelcomeScreen(model: DriveViewModel, onDone: () -> Unit) {
                     Box(Modifier.size(40.dp).clip(CircleShape).background(DG.high), contentAlignment = Alignment.Center) { DGIcon("crash", Color.White, 22.dp) }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Home area: crash on US-101", style = DGType.row, color = DG.ink)
-                        Text("Right lane blocked at University Ave", style = DGType.meta, color = DG.sub)
+                        Text("Home area: crash on the highway", style = DGType.row, color = DG.ink)
+                        Text("Right lane blocked near the exit", style = DGType.meta, color = DG.sub)
                     }
                     Text("now", style = DGType.meta, color = DG.faint)
                 }
