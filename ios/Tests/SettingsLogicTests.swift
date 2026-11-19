@@ -160,6 +160,13 @@ final class SettingsLogicTests: XCTestCase {
         XCTAssertFalse(run(.voice, chipOff: true).enabled)
         XCTAssertTrue(run(.voice, plugin: true, chipOff: true).enabled)
         XCTAssertFalse(run(.voice, plugin: true, pluginOff: true).enabled)
+        // An unreviewed plugin without its acknowledgement does not alert at all.
+        let held = AlertChips.apply(enabled: true, speak: true, plugin: true, chipOff: false, pluginOff: false,
+                                    delivery: .voice, speakPlugins: true, pluginAllowed: false)
+        XCTAssertFalse(held.enabled)
+        // The acknowledgement says nothing about official alerts.
+        XCTAssertTrue(AlertChips.apply(enabled: true, speak: true, plugin: false, chipOff: false, pluginOff: false,
+                                       delivery: .voice, speakPlugins: false, pluginAllowed: false).enabled)
     }
 
     func testAheadSteps() {

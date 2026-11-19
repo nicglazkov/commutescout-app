@@ -50,8 +50,9 @@ class MarketTest {
     @Test fun detailsCopy() {
         assertEquals("Its alerts are on your map", Market.showSub(true))
         assertEquals("Off for now. Nothing is shown or asked for.", Market.showSub(false))
-        assertTrue(Market.inAlerts(cams).startsWith("Shown on your map. Spoken only if"))
-        assertTrue(Market.inAlerts(waze).startsWith("Not reviewed"))
+        assertTrue(Market.inAlerts(cams).startsWith("Shown on your map and alerts you while driving. Spoken only if"))
+        assertTrue(Market.inAlerts(waze).contains("stay off until you allow them"))
+        assertTrue(Market.inAlerts(waze, acked = true).contains("because you allowed it"))
         assertEquals("None", Market.alertsNow(0))
         assertEquals("1 alert", Market.alertsNow(1))
         assertEquals("1,207 alerts", Market.alertsNow(1207))

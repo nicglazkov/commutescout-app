@@ -289,9 +289,12 @@ enum AlertChips {
     /// the delivery picks voice, a chime or nothing. A plugin alert is
     /// spoken only with `speakPlugins`; otherwise it chimes where an
     /// official one would speak.
+    /// `speakPlugins` is this plugin's own voice switch, and
+    /// `pluginAllowed` says an unreviewed plugin's notice was acknowledged
+    /// (PluginConsent.mayAlert); without it a plugin alert is off.
     static func apply(enabled: Bool, speak: Bool, plugin: Bool, chipOff: Bool, pluginOff: Bool,
-                      delivery: AlertDelivery, speakPlugins: Bool) -> AlertOutcome {
-        let off = plugin ? pluginOff : chipOff
+                      delivery: AlertDelivery, speakPlugins: Bool, pluginAllowed: Bool = true) -> AlertOutcome {
+        let off = plugin ? (pluginOff || !pluginAllowed) : chipOff
         let voice = speak && delivery == .voice && (!plugin || speakPlugins)
         let chime: Bool
         switch delivery {

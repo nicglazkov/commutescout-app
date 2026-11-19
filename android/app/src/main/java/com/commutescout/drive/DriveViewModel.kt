@@ -213,7 +213,7 @@ object Engine {
         sources = SourcesStore(application)
         alerts.spoken = prefs.spokenAlerts
         alerts.announceAheadMeters = prefs.alertAheadMeters
-        alerts.rules = { m -> prefs.ruleFor(m) }
+        alerts.rules = { m -> prefs.ruleFor(m, sources.acked.value) }
         prefs.syncUnitStyle()
         alerts.shown = { m -> prefs.isShown(m.kind) && (m.kind != "plugin" || PluginStyle.sourceId(m) !in sources.hidden.value) }
         alerts.fallback = { markers.held() to markers.asOf.value }

@@ -237,4 +237,43 @@ final class MoreLogicTests: XCTestCase {
         XCTAssertEqual(SavedText.size(312_000_000), "312 MB")
         XCTAssertEqual(SavedText.size(512_000), "512 KB")
     }
+
+    // MARK: unreviewed plugins
+
+    func testUnreviewedPluginsAlertOnlyAfterTheNotice() {
+        XCTAssertEqual(PluginConsent.notice,
+                       "This plugin hasn't been reviewed by CommuteScout. Its alerts come from its operator, not from official sources.")
+        XCTAssertTrue(PluginConsent.needsAck(tier: "unreviewed"))
+        XCTAssertTrue(PluginConsent.needsAck(tier: nil), "no tier counts as unreviewed")
+        XCTAssertFalse(PluginConsent.needsAck(tier: "approved"))
+        XCTAssertFalse(PluginConsent.needsAck(tier: "private"))
+        XCTAssertFalse(PluginConsent.mayAlert(tier: "unreviewed", acked: false))
+        XCTAssertTrue(PluginConsent.mayAlert(tier: "unreviewed", acked: true))
+        XCTAssertTrue(PluginConsent.mayAlert(tier: "approved", acked: false))
+        XCTAssertTrue(PluginConsent.asksFirst(tier: "unreviewed", acked: false))
+        XCTAssertFalse(PluginConsent.asksFirst(tier: "unreviewed", acked: true))
+        XCTAssertFalse(PluginConsent.asksFirst(tier: "approved", acked: false))
+    }
+
+    func testEachPluginHasItsOwnVoiceSwitch() {
+        func speaks(_ id: String, _ tier: String, on: Set<String> = [], off: Set<String> = [], legacy: Bool = false) -> Bool {
+            PluginConsent.speaks(id: id, tier: tier, on: on, off: off, legacyAll: legacy)
+        }
+        XCTAssertFalse(speaks("a", "approved"), "voice is off until turned on")
+        XCTAssertFalse(speaks("u", "unreviewed"))
+        XCTAssertTrue(speaks("u", "unreviewed", on: ["u"]))
+        XCTAssertFalse(speaks("a", "approved", on: ["u"]), "one plugin's switch is not another's")
+        // The old all-plugins switch carries over for reviewed and private
+        // plugins only, until the plugin's own switch is set.
+        XCTAssertTrue(speaks("a", "approved", legacy: true))
+        XCTAssertTrue(speaks("p", "private", legacy: true))
+        XCTAssertFalse(speaks("u", "unreviewed", legacy: true))
+        XCTAssertFalse(speaks("a", "approved", off: ["a"], legacy: true))
+    }
+
+    func testInAlertsLineFollowsTheNotice() {
+        XCTAssertTrue(Market.inAlerts(tier: "unreviewed").contains("stay off until you allow them"))
+        XCTAssertTrue(Market.inAlerts(tier: "unreviewed", acked: true).contains("because you allowed it"))
+        XCTAssertTrue(Market.inAlerts(tier: "approved").contains("Spoken only if you turn that on"))
+    }
 }

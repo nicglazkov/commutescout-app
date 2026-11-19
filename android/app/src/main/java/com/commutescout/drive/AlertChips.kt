@@ -41,9 +41,11 @@ object AlertChips {
      * A plugin alert is spoken only with [speakPlugins]; otherwise it
      * chimes where an official one would speak.
      */
-    fun apply(base: Prefs.AlertRule, m: RoadMarker, delivery: AlertDelivery, chipsOff: Set<String>, pluginsOff: Set<String>, speakPlugins: Boolean): Prefs.AlertRule {
+    fun apply(base: Prefs.AlertRule, m: RoadMarker, delivery: AlertDelivery, chipsOff: Set<String>, pluginsOff: Set<String>, speakPlugins: Boolean,
+              pluginAllowed: Boolean = true): Prefs.AlertRule {
         val plugin = m.kind == "plugin"
-        val off = if (plugin) PluginStyle.sourceId(m) in pluginsOff else keyOf(m) in chipsOff
+        // pluginAllowed: an unreviewed plugin's notice was acknowledged (PluginConsent.mayAlert).
+        val off = if (plugin) PluginStyle.sourceId(m) in pluginsOff || !pluginAllowed else keyOf(m) in chipsOff
         val voice = base.speak && delivery == AlertDelivery.VOICE && (!plugin || speakPlugins)
         val chime = !voice && when (delivery) {
             AlertDelivery.SOUND -> true

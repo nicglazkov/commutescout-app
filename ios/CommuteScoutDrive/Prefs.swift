@@ -129,8 +129,13 @@ final class Prefs: ObservableObject {
     @AppStorage("cs.alerts.chips.off") var alertChipsOffRaw: String = AlertChips.offByDefault.sorted().joined(separator: ",")
     /// Plugins, by source id, whose alerts do not alert.
     @AppStorage("cs.alerts.plugins.off") var pluginAlertsOffRaw: String = ""
-    /// Plugin alerts are spoken too; off, they chime.
+    /// The old single switch for every plugin's voice. Read only as the
+    /// starting point for reviewed and private plugins (PluginConsent.speaks).
     @AppStorage("cs.alerts.plugins.speak") var speakPluginAlerts: Bool = false
+    /// Plugins, by source id, whose alerts are spoken, and those whose
+    /// voice was turned off; the rest follow PluginConsent.speaks.
+    @AppStorage("cs.alerts.plugins.voice.on") var pluginVoiceOnRaw: String = ""
+    @AppStorage("cs.alerts.plugins.voice.off") var pluginVoiceOffRaw: String = ""
     /// The first run is done or skipped.
     @AppStorage("cs.welcome.done") var welcomeDone: Bool = false
 
@@ -149,6 +154,29 @@ final class Prefs: ObservableObject {
         set { pluginAlertsOffRaw = newValue.sorted().joined(separator: ","); objectWillChange.send() }
     }
 
+    private static func set(_ raw: String) -> Set<String> { Set(raw.split(separator: ",").map(String.init)) }
+    private static func raw(_ set: Set<String>) -> String { set.sorted().joined(separator: ",") }
+
+    /// One plugin's voice switch.
+    func pluginSpeaks(_ id: String, tier: String?) -> Bool {
+        PluginConsent.speaks(id: id, tier: tier, on: Self.set(pluginVoiceOnRaw), off: Self.set(pluginVoiceOffRaw),
+                             legacyAll: speakPluginAlerts)
+    }
+
+    func setPluginSpeaks(_ id: String, _ on: Bool) {
+        var yes = Self.set(pluginVoiceOnRaw), no = Self.set(pluginVoiceOffRaw)
+        if on { yes.insert(id); no.remove(id) } else { no.insert(id); yes.remove(id) }
+        pluginVoiceOnRaw = Self.raw(yes); pluginVoiceOffRaw = Self.raw(no)
+        objectWillChange.send()
+    }
+
+    /// One plugin's alerts switch, as the person set it (the notice aside).
+    func setPluginAlerts(_ id: String, _ on: Bool) {
+        var s = pluginAlertsOff
+        if on { s.remove(id) } else { s.insert(id) }
+        pluginAlertsOff = s
+    }
+
     /// Whether the first run should show, decided once at launch: never
     /// on an install that was set up before it existed, and never in a
     /// test run ("-cs..." arguments) unless "-csWelcome" asks for it.
@@ -163,14 +191,17 @@ final class Prefs: ObservableObject {
 
     /// One marker's rule after the Alerts page: its kind's rule, then the
     /// chips, the plugin switches and the delivery.
-    func ruleFor(_ m: RoadMarker) -> AlertRule {
+    /// `acked`: the plugins whose unreviewed notice was acknowledged.
+    func ruleFor(_ m: RoadMarker, acked: Set<String> = []) -> AlertRule {
         var r = rule(for: Self.ruleKind(for: m))
         let plugin = m.kind == "plugin"
         let chip = plugin ? "" : AlertChips.key(forKind: DGKind(marker: m).rawValue)
+        let sid = plugin ? PluginStyle.sourceId(m) : ""
         let o = AlertChips.apply(enabled: r.enabled, speak: r.speak, plugin: plugin,
                                  chipOff: alertChipsOff.contains(chip),
-                                 pluginOff: plugin && pluginAlertsOff.contains(PluginStyle.sourceId(m)),
-                                 delivery: alertDelivery, speakPlugins: speakPluginAlerts)
+                                 pluginOff: plugin && pluginAlertsOff.contains(sid),
+                                 delivery: alertDelivery, speakPlugins: plugin && pluginSpeaks(sid, tier: m.tier),
+                                 pluginAllowed: !plugin || PluginConsent.mayAlert(tier: m.tier, acked: acked.contains(sid)))
         r.enabled = o.enabled; r.speak = o.speak; r.chime = o.chime
         return r
     }

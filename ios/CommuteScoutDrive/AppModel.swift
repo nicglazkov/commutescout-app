@@ -225,7 +225,7 @@ final class AppModel: ObservableObject {
         core.delegate = delegate
         alerts.spoken = prefs.spokenAlerts
         alerts.announceAheadMeters = prefs.alertAheadMeters
-        alerts.rules = { [prefs] m in prefs.ruleFor(m) }
+        alerts.rules = { [prefs, sources] m in prefs.ruleFor(m, acked: sources.acked) }
         alerts.fallback = { [weak self] in (self?.allMarkers ?? [], self?.markers.asOf) }
         location.startUpdating()
         // The live map asks the server for community plugin alerts
