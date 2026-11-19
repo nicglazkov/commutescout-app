@@ -37,6 +37,7 @@ final class MapOverlay {
     /// The alert the banner names, marked on the map: a pulsing ring in
     /// the kind's color around its marker, with the distance beside it.
     struct AlertRing {
+        var id = ""
         let coordinate: CLLocationCoordinate2D
         let tint: UIColor
         let label: String
@@ -79,7 +80,9 @@ final class MapOverlay {
                 let f = MLNPointFeature(coordinate: a.coordinate)
                 f.attributes = ["tint": a.tint.hex, "label": a.label]
                 source("cs-alert", in: style)?.shape = MLNShapeCollectionFeature(shapes: [f])
-                startPulse(in: style)
+                // A new alert breathes for a few seconds; the same alert
+                // drawing nearer (its label) does not start it again.
+                if a.id != applied.alert?.id { startPulse(in: style) }
             } else {
                 source("cs-alert", in: style)?.shape = MLNShapeCollectionFeature(shapes: [])
                 stopPulse()
@@ -107,21 +110,33 @@ final class MapOverlay {
     private var pulse: Timer?
     private var pulseOut = false
 
-    /// The ring breathes: its radius swings between two sizes, and the
-    /// style's own transition makes the swing smooth. Nothing runs when
-    /// there is no alert.
+    private var pulseStarted = Date.distantPast
+
+    /// The ring breathes when a new alert takes the banner: its radius
+    /// swings between two sizes, and the style's own transition makes the
+    /// swing smooth. After `PowerPolicy.ringPulseSeconds` it settles at
+    /// the small size and holds still, because every swing makes the
+    /// whole map draw again, frame after frame, for as long as it runs.
     private func startPulse(in style: MLNStyle) {
-        guard pulse == nil, let ring = style.layer(withIdentifier: "cs-alert-ring") as? MLNCircleStyleLayer else { return }
+        guard let ring = style.layer(withIdentifier: "cs-alert-ring") as? MLNCircleStyleLayer else { return }
         ring.circleRadiusTransition = MLNTransition(duration: 1.0, delay: 0)
         ring.circleOpacityTransition = MLNTransition(duration: 1.0, delay: 0)
+        pulseStarted = Date()
+        guard pulse == nil else { return }
         pulse = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self, let style = self.mapView?.style,
-                  let ring = style.layer(withIdentifier: "cs-alert-ring") as? MLNCircleStyleLayer else { return }
-            self.pulseOut.toggle()
-            ring.circleRadius = NSExpression(forConstantValue: self.pulseOut ? 34 : 18)
-            ring.circleOpacity = NSExpression(forConstantValue: self.pulseOut ? 0.15 : 0.5)
+            MainActor.assumeIsolated { self?.breathe() }
         }
         pulse?.fire()
+    }
+
+    private func breathe() {
+        guard let style = mapView?.style,
+              let ring = style.layer(withIdentifier: "cs-alert-ring") as? MLNCircleStyleLayer else { return }
+        let done = Date().timeIntervalSince(pulseStarted) >= PowerPolicy.ringPulseSeconds
+        pulseOut = done ? false : !pulseOut
+        ring.circleRadius = NSExpression(forConstantValue: pulseOut ? 34 : 18)
+        ring.circleOpacity = NSExpression(forConstantValue: pulseOut ? 0.15 : 0.5)
+        if done { stopPulse() }
     }
 
     private func stopPulse() {

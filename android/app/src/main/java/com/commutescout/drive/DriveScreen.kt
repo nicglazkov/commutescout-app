@@ -109,10 +109,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stadiamaps.ferrostar.composeui.config.NavigationViewComponentBuilder
@@ -158,6 +155,10 @@ import org.maplibre.compose.layers.RasterLayer
 import org.maplibre.compose.map.GestureOptions
 import org.maplibre.compose.map.MapOptions
 import org.maplibre.compose.map.OrnamentOptions
+import org.maplibre.compose.map.RenderOptions
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.animation.core.Animatable
 import org.maplibre.compose.sources.GeoJsonData
 import org.maplibre.compose.sources.TileSetOptions
 import org.maplibre.compose.sources.rememberGeoJsonSource
@@ -454,8 +455,23 @@ fun DriveScreen(model: DriveViewModel) {
             }
         }
 
+        // 30 frames a second while the map follows the car; the display's
+        // full rate while a finger is on it and for a moment after, for
+        // the fling (Power.mapFps). The watcher never consumes a touch.
+        var touching by remember { mutableStateOf(false) }
+        var fast by remember { mutableStateOf(false) }
+        LaunchedEffect(touching) {
+            if (touching) fast = true else { delay(Power.TOUCH_LINGER_MS); fast = false }
+        }
         DynamicallyOrientingNavigationView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent(PointerEventPass.Initial)
+                        touching = e.changes.any { it.pressed }
+                    }
+                }
+            },
             baseStyle = remember(prefs.mapStyle, model.isDark, usingLocal, mapManifest) { BaseStyle.Json(model.styleJson) },
             navigationMapState = mapState,
             navigationCameraOptions = navigationCameraOptions().let { base ->
@@ -488,6 +504,7 @@ fun DriveScreen(model: DriveViewModel) {
                 if (!uiState.isNavigating()) { model.dropPin(position.lat, position.lng); NavigationMapClickResult.Consume } else NavigationMapClickResult.Pass
             },
             mapOptions = MapOptions(
+                renderOptions = RenderOptions(maximumFps = Power.mapFps(touching = fast)),
                 gestureOptions = GestureOptions(isTiltEnabled = true, isRotateEnabled = true, isQuickZoomEnabled = true),
                 ornamentOptions = OrnamentOptions(isCompassEnabled = false, isScaleBarEnabled = false),
             ),
@@ -785,9 +802,19 @@ private fun ArrowPuck(here: LatLon, course: Double) {
 private fun AlertRing(item: Upcoming, along: Double) {
     val m = item.marker
     val color = if (m.kind == "plugin") PluginStyle.color(PluginStyle.sourceId(m)) else MarkerIcons.color(m.kind)
-    val pulse = rememberInfiniteTransition(label = "alert-ring")
-    val radius by pulse.animateFloat(18f, 34f, infiniteRepeatable(tween(1100, easing = LinearOutSlowInEasing), RepeatMode.Reverse), label = "r")
-    val alpha by pulse.animateFloat(0.5f, 0.15f, infiniteRepeatable(tween(1100, easing = LinearOutSlowInEasing), RepeatMode.Reverse), label = "a")
+    // A new alert breathes for a few seconds, then holds still: every
+    // breath redraws the whole map, and a ring breathing for as long as
+    // the alert is ahead kept the map drawing even at a red light.
+    val breath = remember(item.id) { Animatable(0f) }
+    LaunchedEffect(item.id) {
+        val until = System.currentTimeMillis() + Power.RING_PULSE_MS
+        while (System.currentTimeMillis() < until) {
+            breath.animateTo(1f, tween(1100, easing = LinearOutSlowInEasing))
+            breath.animateTo(0f, tween(1100, easing = LinearOutSlowInEasing))
+        }
+    }
+    val radius = 18f + 16f * breath.value
+    val alpha = 0.5f - 0.35f * breath.value
     val source = rememberGeoJsonSource(GeoJsonData.Features(FeatureCollection(
         Feature(geometry = Point(Position(m.lon, m.lat)), properties = buildJsonObject {
             put("label", JsonPrimitive(Units.distance(max(0.0, item.alongMeters - along))))

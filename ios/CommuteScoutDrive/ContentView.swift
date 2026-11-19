@@ -28,6 +28,7 @@ struct ContentView: View {
     @StateObject private var room = CameraRoomAnimator()
 
     var body: some View {
+        let _ = PerfProbe.count("body")
         ZStack(alignment: .top) {
             // The navigation view owns the safe area: the maneuver card
             // and the trip bar clear the island and the home indicator.
@@ -36,6 +37,9 @@ struct ContentView: View {
                 camera: $model.camera,
                 navigationCamera: model.navigationCamera,
                 navigationState: model.coreState,
+                // The app's own fixes for the dot: no second GPS client in the map.
+                locationManagerConfiguration: NavigationLocationManagerConfiguration(
+                    nonNavigatingLocationManager: model.mapFeed, navigatingLocationManager: model.navPuck),
                 isMuted: model.muted,
                 onTapMute: { model.toggleMute() },
                 onTapExit: { model.stop() },
@@ -77,7 +81,11 @@ struct ContentView: View {
                 },
                 onLongPress: { coord in if !isNavigating { model.dropPin(at: coord) } },
                 onView: { bounds, zoom, heading, center in
-                    model.heading = heading
+                    // The compass shows only off a trip; small turns are not
+                    // worth redrawing the whole screen for.
+                    if !isNavigating, PowerPolicy.headingWorthShowing(old: model.heading, new: heading) {
+                        model.heading = heading
+                    }
                     model.viewCenter = center
                     model.viewZoom = zoom
                     model.markers.view(bounds: bounds, zoom: zoom, kinds: model.prefs.apiKinds)
