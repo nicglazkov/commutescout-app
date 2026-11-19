@@ -472,7 +472,8 @@ fun AccountPage(model: DriveViewModel) {
     }
     accountError?.let { Text(it, Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp), style = PageType.foot, color = DG.highInk) }
     GroupFoot(if (signedIn) "Signing out clears your places, watch areas and plugin data from this phone. They stay in your account. You can always drive without signing in."
-        else "The same account as commutescout.com. You can always drive without signing in.")
+        else "The same account as commutescout.com. You can always drive without signing in." +
+            if (model.account.termsAgreedHere) " " + TermsConsent.PASSIVE else "")
     GroupHead("Your account adds")
     Group {
         val perks = listOf(
@@ -752,6 +753,8 @@ fun AboutPage(openVoiceLicenses: () -> Unit) {
         SRow("About CommuteScout", chevron = true, onClick = { open("$WEB/about") })
         RowDivider(18.dp)
         SRow("Privacy", chevron = true, onClick = { open("$WEB/privacy") })
+        RowDivider(18.dp)
+        SRow("Terms of Use", Modifier.tag("about-terms"), chevron = true, onClick = { open(TermsConsent.TERMS_URL) })
         RowDivider(18.dp)
         SRow("Voice licenses", Modifier.tag("about-voice-licenses"), chevron = true, onClick = openVoiceLicenses)
     }

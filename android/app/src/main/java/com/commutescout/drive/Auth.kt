@@ -44,6 +44,37 @@ class Account(context: Context) {
     val error = _error.asStateFlow()
     val available: Boolean get() = auth != null
 
+    // The Terms agreement (TermsConsent): kept on this phone, asked once per version.
+    private val termsPrefs = context.getSharedPreferences("cs.prefs", Context.MODE_PRIVATE)
+    val termsAgreedHere: Boolean get() = TermsConsent.agreed(termsPrefs.getString(TermsConsent.PREF_KEY, null))
+    private val _consentAsk = MutableStateFlow(false)
+    /** True while a sign-in waits for the Terms dialog's answer. */
+    val consentAsk = _consentAsk.asStateFlow()
+    private var consentReply: kotlinx.coroutines.CompletableDeferred<Boolean>? = null
+
+    /** The Terms dialog's answer: agreed and continue, or cancel. */
+    fun answerConsent(agreed: Boolean) {
+        if (agreed) termsPrefs.edit().putString(TermsConsent.PREF_KEY, TermsConsent.VERSION).apply()
+        consentReply?.complete(agreed)
+    }
+
+    /** Asks for the agreement when this phone has not given it for the current version. */
+    private suspend fun agreeFirst(): Boolean {
+        if (termsAgreedHere) return true
+        val reply = kotlinx.coroutines.CompletableDeferred<Boolean>()
+        consentReply?.complete(false)
+        consentReply = reply
+        _consentAsk.value = true
+        return try { reply.await() } finally { if (consentReply === reply) { consentReply = null; _consentAsk.value = false } }
+    }
+
+    /** The account records the agreement given on this phone; the server stamps the time. */
+    suspend fun recordTerms() {
+        if (!termsAgreedHere) return
+        val t = token() ?: return
+        runCatching { Backend.send("POST", "/api/me/terms", t, TermsConsent.body()) }
+    }
+
     init {
         auth?.addAuthStateListener { _user.value = it.currentUser }
     }
@@ -67,6 +98,8 @@ class Account(context: Context) {
 
     suspend fun signInWithGoogle(activity: Activity) {
         val auth = auth ?: run { _error.value = "Sign-in is not set up in this build."; return }
+        // Signing in may create the account: the agreement comes first.
+        if (!agreeFirst()) return
         _busy.value = true
         try {
             val option = GetGoogleIdOption.Builder()
@@ -79,6 +112,7 @@ class Account(context: Context) {
             if (cred is CustomCredential && cred.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val idToken = GoogleIdTokenCredential.createFrom(cred.data).idToken
                 auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null)).await()
+                recordTerms()
             } else {
                 _error.value = "That sign-in did not return a Google account."
             }

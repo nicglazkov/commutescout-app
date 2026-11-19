@@ -49,7 +49,10 @@ class MainActivity : ComponentActivity() {
             com.commutescout.drive.design.DayGlassTheme(scheme) {
                 // Debug builds name each test tag for UiAutomator too: the
                 // instrumented tests reach for it while a trip keeps the map busy.
-                Surface(if (BuildConfig.DEBUG) androidx.compose.ui.Modifier.semantics { testTagsAsResourceId = true } else androidx.compose.ui.Modifier) { DriveScreen(model) }
+                Surface(if (BuildConfig.DEBUG) androidx.compose.ui.Modifier.semantics { testTagsAsResourceId = true } else androidx.compose.ui.Modifier) {
+                    DriveScreen(model)
+                    TermsConsentDialog(model.account)
+                }
             }
         }
         // A rotation brings the same intent back: the alert was opened already.

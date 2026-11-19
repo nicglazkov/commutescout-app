@@ -83,7 +83,7 @@ object WelcomeSteps {
 
     val steps = listOf(
         Step("Know the road before you drive it", "Live crashes, closures, weather and more from official sources, on any route in the US.",
-            Ask.LOCATION, "Use your location while you use the app", "To show what is ahead on your route. It is never shared or sold.",
+            Ask.LOCATION, "Use your location while you use the app", "To show what is ahead on your route. It is sent to look up your route and road data, and is never sold.",
             "Allow while using", "Not now"),
         Step("Hear about your watch areas", "Get a notification when something happens near home, work or any area you watch, even when the app is closed.",
             Ask.NOTIFICATIONS, "Allow notifications", "Only for watch areas and trips you start. You can change this anytime.",

@@ -50,6 +50,7 @@ final class Account: NSObject, ObservableObject {
             guard let idToken = result.user.idToken?.tokenString else { throw AccountError.noToken }
             let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: result.user.accessToken.tokenString)
             try await Auth.auth().signIn(with: credential)
+            await recordTerms()
         } catch {
             if (error as NSError).code != GIDSignInError.canceled.rawValue { self.error = error.localizedDescription }
         }
@@ -78,9 +79,21 @@ final class Account: NSObject, ObservableObject {
             }
             let credential = OAuthProvider.appleCredential(withIDToken: idToken, rawNonce: raw, fullName: cred.fullName)
             try await Auth.auth().signIn(with: credential)
+            await recordTerms()
         } catch {
             if (error as? ASAuthorizationError)?.code != .canceled { self.error = error.localizedDescription }
         }
+    }
+
+    // MARK: Terms
+
+    /// The account records that the Terms of Use and Privacy Policy were
+    /// agreed to on this phone (the sign-in sheet's checkbox). The server
+    /// stamps the time and keeps the first acceptance of a version.
+    func recordTerms() async {
+        guard TermsConsent.agreed(stored: UserDefaults.standard.string(forKey: TermsConsent.storageKey)),
+              let token = await token() else { return }
+        _ = try? await Backend.send("POST", "api/me/terms", token: token, body: TermsConsent.body)
     }
 
     /// Runs before the Firebase user goes away, while a token can still be minted.
@@ -180,10 +193,23 @@ extension Backend {
 }
 
 /// The sign-in sheet: Google or Apple, the same account as the website.
+/// Signing in may create the account, so an unticked "I agree" comes
+/// first and both buttons stay disabled until it is ticked; on a phone
+/// that already agreed to this version it is a passive line instead.
 struct SignInSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(TermsConsent.storageKey) private var agreedVersion = ""
+    @State private var ticked = false
     let reason: String
+
+    private var canSignIn: Bool { TermsConsent.canSignIn(stored: agreedVersion, ticked: ticked) }
+
+    private func start(_ signIn: @escaping () async -> Void) {
+        guard canSignIn else { return }
+        agreedVersion = TermsConsent.version
+        Task { await signIn(); if model.account.signedIn { dismiss() } }
+    }
 
     var body: some View {
         NavigationStack {
@@ -191,20 +217,44 @@ struct SignInSheet: View {
                 VStack(spacing: 14) {
                     Text(reason).font(DG.font(16)).multilineTextAlignment(.center).foregroundStyle(DG.sub)
                         .fixedSize(horizontal: false, vertical: true)
+                    if TermsConsent.agreed(stored: agreedVersion) {
+                        Text(LocalizedStringKey(TermsConsent.passiveText))
+                            .font(DG.font(13)).foregroundStyle(DG.sub).multilineTextAlignment(.center)
+                            .tint(DG.inkColor(.low))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("terms-passive")
+                    } else {
+                        HStack(alignment: .top, spacing: 10) {
+                            Button { ticked.toggle() } label: {
+                                Image(systemName: ticked ? "checkmark.square.fill" : "square")
+                                    .font(.system(size: 22)).foregroundStyle(ticked ? DG.inkColor(.low) : DG.sub)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("I agree to the Terms of Use and Privacy Policy")
+                            .accessibilityValue(ticked ? "Checked" : "Unchecked")
+                            .accessibilityAddTraits(.isToggle)
+                            .accessibilityIdentifier("terms-agree")
+                            Text(LocalizedStringKey(TermsConsent.agreeText))
+                                .font(DG.font(14)).foregroundStyle(DG.ink).tint(DG.inkColor(.low))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(.horizontal, 4)
+                    }
                     Button {
-                        Task { await model.account.signInWithApple(); if model.account.signedIn { dismiss() } }
+                        start { await model.account.signInWithApple() }
                     } label: { Label("Continue with Apple", systemImage: "apple.logo") }
                     .buttonStyle(.dgPrimary)
+                    .disabled(!canSignIn).opacity(canSignIn ? 1 : 0.5)
                     Button {
-                        Task { await model.account.signInWithGoogle(); if model.account.signedIn { dismiss() } }
+                        start { await model.account.signInWithGoogle() }
                     } label: { Label("Continue with Google", systemImage: "g.circle") }
                     .buttonStyle(.dgGlass)
+                    .disabled(!canSignIn).opacity(canSignIn ? 1 : 0.5)
                     if model.account.busy { ProgressView() }
                     Text("Same account as commutescout.com. Reports carry a pseudonym, never your name or email.")
                         .font(DG.font(13)).foregroundStyle(DG.sub).multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
-                    Link("Privacy", destination: URL(string: "https://commutescout.com/privacy")!)
-                        .font(DG.font(13, .semibold)).foregroundStyle(DG.inkColor(.low))
                 }
                 .frame(maxWidth: .infinity).padding(.top, 8)
             }
@@ -212,6 +262,6 @@ struct SignInSheet: View {
                 Button("OK") { model.account.error = nil }
             } message: { Text(model.account.error ?? "") }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
     }
 }

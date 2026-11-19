@@ -77,7 +77,7 @@ struct WelcomeOverlay: View {
             Group {
                 switch step {
                 case .location:
-                    ask("location.fill", "Use your location while you use the app", "To show what is ahead on your route. It is never shared or sold.")
+                    ask("location.fill", "Use your location while you use the app", "To show what is ahead on your route. It is sent to look up your route and road data, and is never sold.")
                 case .notifications:
                     ask("bell.fill", "Allow notifications", "Only for watch areas and trips you start. You can change this anytime.")
                 case .account:
