@@ -232,7 +232,6 @@ struct SignInSheet: View {
                             .buttonStyle(.plain)
                             .accessibilityLabel("I agree to the Terms of Use and Privacy Policy")
                             .accessibilityValue(ticked ? "Checked" : "Unchecked")
-                            .accessibilityAddTraits(.isToggle)
                             .accessibilityIdentifier("terms-agree")
                             Text(LocalizedStringKey(TermsConsent.agreeText))
                                 .font(DG.font(14)).foregroundStyle(DG.ink).tint(DG.inkColor(.low))
