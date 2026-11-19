@@ -156,7 +156,7 @@ struct EventContent: Equatable {
                                 + (nonEmpty(m.route).map { " on " + $0 } ?? ""),
                              subtitle: nonEmpty(m.label) ?? nonEmpty(m.location))
         c.chain = ChainLevels(active: active, others: chainLevels.filter { $0.0 != norm })
-        c.foot = [updated.map { "Status set " + $0 }, "Source: Caltrans chain control feed"].compactMap { $0 }
+        c.foot = [updated.map { "Status set " + $0 }, "Source: state transportation agency chain control feed"].compactMap { $0 }
         return c
     }
 

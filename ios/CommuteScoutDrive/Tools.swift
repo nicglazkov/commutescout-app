@@ -262,7 +262,7 @@ struct AskView: View {
                 DGPage(title: "Ask", identifier: "page-ask", backSymbol: "xmark") {
                     VStack(alignment: .leading, spacing: 10) {
                         if answer.isEmpty, !running {
-                            Text("Ask about closures, chain controls, fires or traffic anywhere in the country, for example \"Is I-70 open through the Eisenhower Tunnel?\", \"Any crashes on I-95 near Richmond?\" or \"Chains on US-2 over Stevens Pass?\"")
+                            Text("Ask about closures, chain controls, fires or traffic anywhere in the country, for example \"Is the highway ahead open?\", \"Any crashes on my route home?\" or \"Do I need chains over the pass?\"")
                                 .font(DG.font(15)).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
                         }
                         if !status.isEmpty { Text(status).font(DG.T.rowSub).foregroundStyle(DG.sub) }
