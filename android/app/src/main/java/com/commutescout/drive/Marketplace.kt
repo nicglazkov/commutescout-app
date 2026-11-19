@@ -121,6 +121,8 @@ fun MarketplaceSheet(model: DriveViewModel, onClose: () -> Unit) {
     var filter by remember { mutableStateOf(Market.Filter.ALL) }
     var detailsOf by remember { mutableStateOf<String?>(null) }
     var listFailed by remember { mutableStateOf(false) }
+    val acked by model.sources.acked.collectAsStateWithLifecycle()
+    var notice by remember { mutableStateOf<FlareSource?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val shown = remember { Animatable(0f) }
@@ -128,6 +130,11 @@ fun MarketplaceSheet(model: DriveViewModel, onClose: () -> Unit) {
     fun close() { if (!leaving) { leaving = true; scope.launch { shown.animateTo(0f, tween(220, easing = DG.hideEase)); onClose() } } }
     LaunchedEffect(Unit) { listFailed = !model.sources.loadCatalog() }
     LaunchedEffect(Unit) { shown.animateTo(1f, DG.soft()) }
+    notice?.let { s ->
+        UnreviewedNoticeDialog(s, "Install", onConfirm = {
+            model.sources.addPlugin(s.id, acknowledged = true); model.markers.refresh(true)
+        }, onDismiss = { notice = null })
+    }
 
     DGLayer(onBack = ::close) {
         // While a plugin's page is up, the market steps aside so its map shows.
@@ -156,6 +163,8 @@ fun MarketplaceSheet(model: DriveViewModel, onClose: () -> Unit) {
                 }
                 itemsIndexed(list, key = { _, s -> "${filter.name}:${s.id}" }) { i, s ->
                     PluginCard(s, Market.isAdded(s.id, hidden, paused), i, onOpen = { detailsOf = s.id }) { on ->
+                        // Unreviewed: the notice and its checkbox come first.
+                        if (on && PluginConsent.asksFirst(s.tier, s.id in acked)) { notice = s; return@PluginCard }
                         if (on) model.sources.addPlugin(s.id) else model.sources.removePlugin(s.id)
                         model.markers.refresh(true)
                     }
@@ -257,7 +266,20 @@ fun PluginStatusSheet(model: DriveViewModel, sourceId: String, onClose: () -> Un
     var checkedAt by remember { mutableStateOf<Long?>(null) }
     var reach by remember { mutableStateOf<String?>(null) }
     var step by remember { mutableStateOf(Market.RemoveStep.IDLE) }
+    val acked by model.sources.acked.collectAsStateWithLifecycle()
+    var notice by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    fun install(s: FlareSource) {
+        if (PluginConsent.asksFirst(s.tier, s.id in acked)) { notice = true; return }
+        model.sources.addPlugin(s.id); model.markers.refresh(true)
+        if (step == Market.RemoveStep.REMOVED) step = Market.RemoveStep.IDLE
+    }
+    if (notice) (live ?: last)?.let { s ->
+        UnreviewedNoticeDialog(s, "Install", onConfirm = {
+            model.sources.addPlugin(s.id, acknowledged = true); model.markers.refresh(true)
+            if (step == Market.RemoveStep.REMOVED) step = Market.RemoveStep.IDLE
+        }, onDismiss = { notice = false })
+    }
 
     SheetLayer(onClose, snaps = listOf(.70f, .91f), modifier = Modifier.tag("plugin-status"),
         above = {
@@ -305,7 +327,7 @@ fun PluginStatusSheet(model: DriveViewModel, sourceId: String, onClose: () -> Un
             Group {
                 SRow("On the map", sub = Market.purpose(s), lead = { SoftTile("map") })
                 RowDivider()
-                SRow("In alerts", sub = Market.inAlerts(s), lead = { SoftTile("bell") })
+                SRow("In alerts", sub = Market.inAlerts(s, s.id in acked), lead = { SoftTile("bell") })
                 RowDivider()
                 SRow("Its marker", sub = "Plugins are rounded squares. Official alerts are round.", lead = { SoftTile("eye") }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -382,7 +404,7 @@ fun PluginStatusSheet(model: DriveViewModel, sourceId: String, onClose: () -> Un
                     }, Modifier.weight(1f).tag("plugin-remove-yes"), style = BtnStyle.DANGER_SOLID)
                 }
                 added -> DGButton("Remove plugin", { step = Market.RemoveStep.CONFIRM }, Modifier.weight(1f).tag("plugin-remove"), style = BtnStyle.DANGER, icon = "trash")
-                else -> DGButton("Add plugin", { model.sources.addPlugin(s.id); model.markers.refresh(true) }, Modifier.weight(1f).tag("plugin-add"), style = BtnStyle.BLUE, icon = "plus")
+                else -> DGButton("Add plugin", { install(s) }, Modifier.weight(1f).tag("plugin-add"), style = BtnStyle.BLUE, icon = "plus")
             }
         }
     }

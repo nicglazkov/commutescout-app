@@ -56,10 +56,11 @@ object Market {
 
     fun showSub(on: Boolean) = if (on) "Its alerts are on your map" else "Off for now. Nothing is shown or asked for."
 
-    /** The "In alerts" line: no plugin speaks unless the person says so, reviewed or not. */
-    fun inAlerts(s: FlareSource): String = when {
-        s.tier == "approved" || s.tier == "private" -> "Shown on your map. Spoken only if you turn that on in Settings > Alerts."
-        else -> "Not reviewed: shown on your map, spoken only if you turn that on in Settings > Alerts."
+    /** The "In alerts" line: no plugin speaks unless the person turns that on for it, and an unreviewed one alerts only once allowed. */
+    fun inAlerts(s: FlareSource, acked: Boolean = false): String = when {
+        !PluginConsent.needsAck(s.tier) -> "Shown on your map and alerts you while driving. Spoken only if you turn that on in Settings > Alerts."
+        acked -> "Not reviewed: alerts you because you allowed it. Turn its alerts or voice off anytime in Settings > Alerts."
+        else -> "Not reviewed: shown on your map only. Its alerts stay off until you allow them."
     }
 
     data class Use(val title: String, val sub: String, val allowed: Boolean)
@@ -124,4 +125,38 @@ object Market {
 
     /** The Remove button's steps, in place. */
     enum class RemoveStep { IDLE, CONFIRM, REMOVED }
+}
+
+/**
+ * An unreviewed plugin may alert, but only after the person acknowledged,
+ * at install, that nobody reviewed it (docs/flare.md, "Unreviewed plugins
+ * and alerts"). The acknowledgement is kept with the plugin subscription
+ * (SourcesStore.acked, the account's plugins.ack). After it, each plugin
+ * has an alerts switch and a separate voice switch in Settings > Alerts.
+ */
+object PluginConsent {
+    /** The words the person acknowledges; the server serves the same text. */
+    const val NOTICE = "This plugin hasn't been reviewed by CommuteScout. Its alerts come from its operator, not from official sources."
+    const val AGREE = "I understand. Send me its alerts."
+
+    /** Only unreviewed plugins wait; an unknown tier counts as unreviewed. */
+    fun needsAck(tier: String?) = tier != "approved" && tier != "private"
+
+    /** Whether its alerts may alert at all, before the person's switches. */
+    fun mayAlert(tier: String?, acked: Boolean) = !needsAck(tier) || acked
+
+    /** Installing it, or turning its alerts on, shows the notice first. */
+    fun asksFirst(tier: String?, acked: Boolean) = needsAck(tier) && !acked
+
+    /**
+     * The plugin's own voice switch. Off until the person turns it on for
+     * that plugin; a phone that had the old "Speak plugin alerts" switch on
+     * keeps voice for reviewed and private plugins until it says otherwise,
+     * never for an unreviewed one.
+     */
+    fun speaks(id: String, tier: String?, on: Set<String>, off: Set<String>, legacyAll: Boolean) = when (id) {
+        in on -> true
+        in off -> false
+        else -> legacyAll && !needsAck(tier)
+    }
 }

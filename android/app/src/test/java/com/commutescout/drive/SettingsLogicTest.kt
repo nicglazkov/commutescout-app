@@ -220,6 +220,9 @@ class SettingsLogicTest {
         assertTrue(AlertChips.apply(base, plugin, AlertDelivery.VOICE, setOf("police", "crash"), emptySet(), false).enabled)
         // A per-kind rule that does not speak stays quiet under Voice.
         AlertChips.apply(base.copy(speak = false), crash, AlertDelivery.VOICE, emptySet(), emptySet(), false).let { assertFalse(it.speak || it.chime) }
+        // An unreviewed plugin without its acknowledgement does not alert at all; official alerts are untouched.
+        assertFalse(AlertChips.apply(base, plugin, AlertDelivery.VOICE, emptySet(), emptySet(), true, pluginAllowed = false).enabled)
+        assertTrue(AlertChips.apply(base, crash, AlertDelivery.VOICE, emptySet(), emptySet(), false, pluginAllowed = false).enabled)
     }
 
     // MARK: first run

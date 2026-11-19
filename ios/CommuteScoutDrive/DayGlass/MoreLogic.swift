@@ -68,14 +68,16 @@ enum Market {
         on ? "Its alerts are on your map" : "Off for now. Nothing is shown or asked for."
     }
 
-    /// The "In alerts" line: reviewed plugins may speak; the others only
-    /// if the person says so.
-    static func inAlerts(tier: String) -> String {
-        switch tier {
-        case "approved": return "Its alerts can be spoken while you drive, like official ones."
-        case "private": return "Shown on your map. Spoken only if you turn that on in Settings > Alerts."
-        default: return "Not reviewed: shown on your map, spoken only if you turn that on in Settings > Alerts."
+    /// The "In alerts" line. No plugin speaks unless the person turns
+    /// that on for it; an unreviewed one alerts only once its notice was
+    /// acknowledged (PluginConsent).
+    static func inAlerts(tier: String, acked: Bool = false) -> String {
+        if PluginConsent.needsAck(tier: tier) {
+            return acked
+                ? "Not reviewed: alerts you because you allowed it. Turn its alerts or voice off anytime in Settings > Alerts."
+                : "Not reviewed: shown on your map only. Its alerts stay off until you allow them."
         }
+        return "Shown on your map and alerts you while driving. Spoken only if you turn that on in Settings > Alerts."
     }
 
     struct Use: Equatable { let title: String; let sub: String; let allowed: Bool }
@@ -381,5 +383,38 @@ enum PMTilesMath {
         if flags & 2 != 0 { i += 2 }
         guard i < b.count - 8 else { return nil }
         return try? (Data(b[i ..< b.count - 8]) as NSData).decompressed(using: .zlib) as Data
+    }
+}
+
+// MARK: - Unreviewed plugins
+
+/// An unreviewed plugin may alert, but only after the person
+/// acknowledged, at install, that nobody reviewed it (docs/flare.md,
+/// "Unreviewed plugins and alerts"). The acknowledgement is kept with
+/// the plugin subscription (SourcesStore.acked, the account's
+/// plugins.ack). After it, each plugin has an alerts switch and a
+/// separate voice switch, both in Settings > Alerts.
+enum PluginConsent {
+    /// The words the person acknowledges; the server serves the same text.
+    static let notice = "This plugin hasn't been reviewed by CommuteScout. Its alerts come from its operator, not from official sources."
+    static let agree = "I understand. Send me its alerts."
+
+    /// Only unreviewed plugins wait; an unknown tier counts as unreviewed.
+    static func needsAck(tier: String?) -> Bool { tier != "approved" && tier != "private" }
+
+    /// Whether its alerts may alert at all, before the person's switches.
+    static func mayAlert(tier: String?, acked: Bool) -> Bool { !needsAck(tier: tier) || acked }
+
+    /// Installing it, or turning its alerts on, shows the notice first.
+    static func asksFirst(tier: String?, acked: Bool) -> Bool { needsAck(tier: tier) && !acked }
+
+    /// The plugin's own voice switch. Voice is off until the person turns
+    /// it on for that plugin; a phone that had the old "Speak plugin
+    /// alerts" switch on keeps voice for reviewed and private plugins
+    /// until it says otherwise, never for an unreviewed one.
+    static func speaks(id: String, tier: String?, on: Set<String>, off: Set<String>, legacyAll: Bool) -> Bool {
+        if on.contains(id) { return true }
+        if off.contains(id) { return false }
+        return legacyAll && !needsAck(tier: tier)
     }
 }

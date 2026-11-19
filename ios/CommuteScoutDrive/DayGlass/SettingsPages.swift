@@ -199,6 +199,18 @@ private struct AlertsContent: View {
 
     private static let plug = DG.hex(0x7c5cf0)
     private static let plugInk = DG.hex(0x5a3cc8)
+    /// An unreviewed plugin whose alerts are being turned on: its notice first.
+    @State private var notice: FlareSource?
+
+    private func alertsOn(_ p: FlareSource) -> Bool {
+        !prefs.pluginAlertsOff.contains(p.id) && PluginConsent.mayAlert(tier: p.tier, acked: sources.isAcked(p.id))
+    }
+
+    private func alertsSub(_ p: FlareSource) -> String? {
+        if PluginConsent.asksFirst(tier: p.tier, acked: sources.isAcked(p.id)) { return "Not reviewed. Its alerts are off until you allow them." }
+        if PluginConsent.needsAck(tier: p.tier) { return "Not reviewed. Alerts come from its operator." }
+        return p.kinds.isEmpty ? nil : p.kindsLabel.prefix(1).uppercased() + p.kindsLabel.dropFirst()
+    }
 
     /// The plugins whose alerts can reach this driver: the installed ones.
     private var plugins: [FlareSource] {
@@ -258,23 +270,28 @@ private struct AlertsContent: View {
                         .font(DG.font(14)).foregroundStyle(DG.sub).padding(14).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 ForEach(plugins) { p in
-                    DGSwitchRow(title: p.name, sub: p.kinds.isEmpty ? nil : p.kindsLabel.prefix(1).uppercased() + p.kindsLabel.dropFirst(),
-                                isOn: Binding(get: { !prefs.pluginAlertsOff.contains(p.id) },
-                                              set: { on in var s = prefs.pluginAlertsOff; if on { s.remove(p.id) } else { s.insert(p.id) }; prefs.pluginAlertsOff = s }),
+                    DGSwitchRow(title: p.name, sub: alertsSub(p),
+                                isOn: Binding(get: { alertsOn(p) }, set: { on in
+                                    if on && PluginConsent.asksFirst(tier: p.tier, acked: sources.isAcked(p.id)) { notice = p; return }
+                                    prefs.setPluginAlerts(p.id, on)
+                                }),
                                 identifier: "plugin-alerts-\(p.id)") {
                         PluginBadge(sourceId: p.id, category: p.oneCategory, size: 30)
                     }
+                    DGSwitchRow(title: "Speak its alerts", sub: alertsOn(p) ? "Spoken instead of a chime" : "Turn its alerts on first",
+                                isOn: Binding(get: { alertsOn(p) && prefs.pluginSpeaks(p.id, tier: p.tier) },
+                                              set: { prefs.setPluginSpeaks(p.id, $0) }),
+                                identifier: "plugin-voice-\(p.id)") {
+                        DGTile(symbol: "speaker.wave.2.fill", color: Self.plug, size: 30)
+                    }
+                    .tint(Self.plug)
+                    .disabled(!alertsOn(p)).opacity(alertsOn(p) ? 1 : 0.5)
+                    .padding(.leading, 18)
                     DGDivider()
                 }
-                DGSwitchRow(title: "Speak plugin alerts", sub: "Off by default. Plugin alerts chime instead.",
-                            isOn: Binding(get: { prefs.speakPluginAlerts }, set: { prefs.speakPluginAlerts = $0; prefs.objectWillChange.send() }),
-                            identifier: "speak-plugin-alerts") {
-                    DGTile(symbol: "speaker.wave.2.fill", color: Self.plug, size: 30)
-                }
-                .tint(Self.plug)
             }
             .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Self.plug.opacity(0.18), lineWidth: 1))
-            DGFootnote("Plugin alerts appear as badges in the plugin's own color, never in the official colors, so you can always tell them apart.")
+            DGFootnote("Each plugin has its own switch for alerts and another for voice, which stays off until you turn it on. An unreviewed plugin alerts only after you allow it. Plugin alerts appear as badges in the plugin's own color, never in the official colors, so you can always tell them apart.")
 
             DGGroup {
                 NavigationLink { AdvancedAlertsView() } label: {
@@ -287,6 +304,12 @@ private struct AlertsContent: View {
             .padding(.top, 20)
         }
         .task { await sources.loadCatalog() }
+        .sheet(item: $notice) { p in
+            UnreviewedNoticeSheet(source: p, action: "Allow alerts") {
+                sources.setAcked(p.id, true)
+                prefs.setPluginAlerts(p.id, true)
+            }
+        }
     }
 
     static func tone(_ tier: Int) -> DGTone { tier == 0 ? .high : tier == 1 ? .mid : .low }

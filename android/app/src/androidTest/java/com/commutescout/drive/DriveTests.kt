@@ -296,7 +296,6 @@ class DriveTests {
         openSettingsPage("Navigation")
         flip("Avoid tolls", "Avoid highways", "Avoid ferries", "Show speed limit", "Keep the screen on")
         openSettingsPage("Alerts")
-        flip("Speak plugin alerts")
         scrollTo(tag("alerts-per-kind")).performClick()
         waitFor { tagExists("advanced-alerts") }
         scrollTo(tag("switch-Set alerts per kind")).performClick()

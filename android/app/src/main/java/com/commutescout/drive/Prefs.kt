@@ -84,6 +84,7 @@ class Prefs(context: Context) {
         advancedAlerts = false; alertRulesRaw = ""; distanceUnit = DistanceChoice.MILES
         clockUnit = ClockChoice.AUTO; tempUnit = TempChoice.AUTO
         alertDelivery = AlertDelivery.VOICE; alertChipsOff = AlertChips.offByDefault; pluginAlertsOff = emptySet(); speakPluginAlerts = false
+        pluginVoiceOn = emptySet(); pluginVoiceOff = emptySet()
         // UI tests start on the map, not on the first-run screen.
         welcomeDone = true
         voiceName = ""; voiceEngine = ""; voiceRate = 1f; voicePitch = 1f
@@ -127,8 +128,11 @@ class Prefs(context: Context) {
     var alertChipsOff by state(p.getStringSet("alerts.chips.off", null)?.toSet() ?: AlertChips.offByDefault) { p.edit().putStringSet("alerts.chips.off", it).apply() }
     /** Plugins, by source id, whose alerts do not alert. Their markers stay on the map. */
     var pluginAlertsOff by state(p.getStringSet("alerts.plugins.off", null)?.toSet() ?: emptySet()) { p.edit().putStringSet("alerts.plugins.off", it).apply() }
-    /** Plugin alerts are spoken too; off, they chime. */
+    /** The old single switch for every plugin's voice; now only the starting point for reviewed and private plugins (PluginConsent.speaks). */
     var speakPluginAlerts by state(p.getBoolean("alerts.plugins.speak", false)) { p.edit().putBoolean("alerts.plugins.speak", it).apply() }
+    /** Plugins, by source id, whose alerts are spoken, and those whose voice was turned off. */
+    var pluginVoiceOn by state(p.getStringSet("alerts.plugins.voice.on", null)?.toSet() ?: emptySet()) { p.edit().putStringSet("alerts.plugins.voice.on", it).apply() }
+    var pluginVoiceOff by state(p.getStringSet("alerts.plugins.voice.off", null)?.toSet() ?: emptySet()) { p.edit().putStringSet("alerts.plugins.voice.off", it).apply() }
     /** The first-run screen is done (or skipped). */
     var welcomeDone by state(p.getBoolean("welcome.done", false) || upgraded) { p.edit().putBoolean("welcome.done", it).apply() }
     var alertAheadMeters by state(p.getFloat("alertahead", 1500f).toDouble()) { p.edit().putFloat("alertahead", it.toFloat()).apply() }
@@ -252,10 +256,28 @@ class Prefs(context: Context) {
     /**
      * The rule the engine uses for one marker: the per-kind rule, then
      * the alert chips, the plugin switches and how alerts reach the
-     * driver (voice, a chime or silent). Plugin alerts chime unless
-     * Speak plugin alerts is on.
+     * driver (voice, a chime or silent). A plugin alert chimes unless its
+     * own voice switch is on, and an unreviewed plugin's alerts are off
+     * until its notice was acknowledged ([acked]).
      */
-    fun ruleFor(m: RoadMarker): AlertRule = AlertChips.apply(rule(ruleKind(m)), m, alertDelivery, alertChipsOff, pluginAlertsOff, speakPluginAlerts)
+    fun ruleFor(m: RoadMarker, acked: Set<String> = emptySet()): AlertRule {
+        val plugin = m.kind == "plugin"
+        val sid = if (plugin) PluginStyle.sourceId(m) else ""
+        return AlertChips.apply(rule(ruleKind(m)), m, alertDelivery, alertChipsOff, pluginAlertsOff,
+            speakPlugins = plugin && pluginSpeaks(sid, m.tier),
+            pluginAllowed = !plugin || PluginConsent.mayAlert(m.tier, sid in acked))
+    }
+
+    /** One plugin's voice switch (PluginConsent.speaks). */
+    fun pluginSpeaks(id: String, tier: String?) = PluginConsent.speaks(id, tier, pluginVoiceOn, pluginVoiceOff, speakPluginAlerts)
+
+    fun setPluginSpeaks(id: String, on: Boolean) {
+        pluginVoiceOn = if (on) pluginVoiceOn + id else pluginVoiceOn - id
+        pluginVoiceOff = if (on) pluginVoiceOff - id else pluginVoiceOff + id
+    }
+
+    /** One plugin's alerts switch, as the person set it (the notice aside). */
+    fun setPluginAlerts(id: String, on: Boolean) { pluginAlertsOff = if (on) pluginAlertsOff - id else pluginAlertsOff + id }
 
     fun setRule(kind: String, r: AlertRule) { alertRules = alertRules + (kind to r) }
 

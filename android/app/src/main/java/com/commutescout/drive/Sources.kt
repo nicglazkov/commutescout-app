@@ -171,6 +171,19 @@ class SourcesStore(context: Context) {
     // map and not asked, yet still in the person's list. Kept on this phone.
     private val _paused = MutableStateFlow(p.getStringSet("paused", emptySet())!!.toSet())
     val paused = _paused.asStateFlow()
+    // Unreviewed plugins whose notice the person acknowledged at install
+    // (PluginConsent): only these may alert. Kept with the subscription: on
+    // the phone, and on the account as plugins.ack.
+    private val _acked = MutableStateFlow(p.getStringSet("acked", emptySet())!!.toSet())
+    val acked = _acked.asStateFlow()
+    fun isAcked(id: String) = id in _acked.value
+
+    /** The person acknowledged (or withdrew) the unreviewed notice for a plugin. */
+    fun setAcked(id: String, on: Boolean, push: Boolean = true) {
+        _acked.value = if (on) _acked.value + id else _acked.value - id
+        p.edit().putStringSet("acked", _acked.value).apply()
+        if (push) pushToAccount()
+    }
     private val _direct = MutableStateFlow<List<RoadMarker>>(emptyList())
     val directMarkers = _direct.asStateFlow()
     // Catalog plugins polled by this phone for the signed-in person's own
@@ -209,10 +222,15 @@ class SourcesStore(context: Context) {
     /** In this person's list: shown, or switched off for now. */
     fun isAdded(id: String) = Market.isAdded(id, _hidden.value, _paused.value)
     /** Add from the marketplace: in the list and on the map. */
-    fun addPlugin(id: String) { setPaused(id, false); setOn(id, true) }
+    fun addPlugin(id: String, acknowledged: Boolean = false) {
+        if (acknowledged) setAcked(id, true, push = false)
+        setPaused(id, false); setOn(id, true)
+    }
     /** Remove: out of the list and off the map. A private plugin is forgotten. */
     fun removePlugin(id: String) {
         setPaused(id, false)
+        // The acknowledgement goes with it: installing again asks again.
+        setAcked(id, false, push = false)
         _mine.value.firstOrNull { it.id == id }?.let { remove(it) } ?: setOn(id, false)
     }
     /** "Show on my map": off keeps the plugin in the list but asks it nothing. */
@@ -222,6 +240,9 @@ class SourcesStore(context: Context) {
     var tokenProvider: (suspend () -> String?)? = null
     @Serializable private data class MePlugins(val plugins: MeInner = MeInner())
     @Serializable private data class MeInner(val off: List<String> = emptyList(), val private: List<MeMine> = emptyList())
+    @Serializable private data class MePluginsAck(val plugins: MeAck = MeAck())
+    @Serializable private data class MeAck(val ack: Map<String, kotlinx.serialization.json.JsonElement>? = null)
+    @Serializable private data class MeInnerOut(val off: List<String>, val private: List<MeMine>, val ack: List<String>)
     @Serializable private data class MeMine(val id: String, val name: String? = null, val base: String, val token: String? = null, val refresh_s: Int? = null)
 
     /** On sign-in: the account's switches replace this phone's, and the
@@ -233,6 +254,14 @@ class SourcesStore(context: Context) {
         val me = runCatching { Backend.json.decodeFromString<MePlugins>(text) }.getOrNull() ?: return
         _hidden.value = me.plugins.off.toSet()
         p.edit().putStringSet("hidden", _hidden.value).apply()
+        // Acknowledged on the account or on this phone before signing in:
+        // both count, and the account learns what only this phone knew.
+        runCatching { Backend.json.decodeFromString<MePluginsAck>(text) }.getOrNull()?.plugins?.ack?.keys?.let { server ->
+            val local = _acked.value
+            _acked.value = local + server
+            p.edit().putStringSet("acked", _acked.value).apply()
+            if (!server.containsAll(local)) pushToAccount()
+        }
         val known = _mine.value.map { it.id }.toSet()
         val added = me.plugins.private.filter { it.id !in known }.map {
             FlareSource(it.id, it.name ?: it.id, it.base, it.token, max(15, it.refresh_s ?: 60), trust = "private", tier = "private")
@@ -260,6 +289,8 @@ class SourcesStore(context: Context) {
         _mine.value = emptyList()
         _hidden.value = emptySet()
         _paused.value = emptySet()
+        _acked.value = emptySet()
+        p.edit().putStringSet("acked", emptySet()).apply()
         p.edit().putStringSet("paused", emptySet()).apply()
         save()
         p.edit().putStringSet("hidden", emptySet()).apply()
@@ -272,7 +303,7 @@ class SourcesStore(context: Context) {
         scope.launch {
             val token = tokenProvider?.invoke() ?: return@launch
             val mineWire = _mine.value.mapNotNull { s -> s.base?.let { MeMine(s.id, s.name, it, s.token, s.refreshS) } }
-            val body = Backend.json.encodeToString(MeInner(_hidden.value.sorted(), mineWire))
+            val body = Backend.json.encodeToString(MeInnerOut(_hidden.value.sorted(), mineWire, _acked.value.sorted()))
             runCatching { Backend.send("PUT", "/api/me/plugins", token, body) }
         }
     }

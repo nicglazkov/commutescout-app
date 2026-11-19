@@ -115,6 +115,7 @@ struct MarketplaceView: View {
     @State private var filter: Market.Filter = .all
     @State private var open: FlareSource?
     @State private var showAdd = false
+    @State private var notice: FlareSource?
     private var sources: SourcesStore { model.sources }
 
     private var all: [FlareSource] {
@@ -173,6 +174,12 @@ struct MarketplaceView: View {
             if let s = open { PluginDetailView(sourceId: s.id) }
         }
         .sheet(isPresented: $showAdd) { AddPluginSheet() }
+        .sheet(item: $notice) { s in
+            UnreviewedNoticeSheet(source: s, action: "Install") {
+                sources.addPlugin(s.id, acknowledged: true)
+                model.markers.refresh(force: true)
+            }
+        }
     }
 
     private func card(_ s: FlareSource) -> some View {
@@ -191,6 +198,9 @@ struct MarketplaceView: View {
                         // asks first, on its page.
                         if s.tier == "private" { open = s; return }
                         sources.removePlugin(s.id)
+                    } else if PluginConsent.asksFirst(tier: s.tier, acked: sources.isAcked(s.id)) {
+                        // Unreviewed: the notice and its checkbox come first.
+                        notice = s; return
                     } else {
                         sources.addPlugin(s.id)
                     }
@@ -294,8 +304,17 @@ struct PluginDetailView: View {
     @State private var step: Step = .idle
     @State private var checking = false
     @State private var reach: String?
+    @State private var notice = false
 
     enum Step { case idle, confirm, removed }
+
+    /// Install, through the unreviewed notice when the plugin needs one.
+    private func install(_ s: FlareSource) {
+        if PluginConsent.asksFirst(tier: s.tier, acked: sources.isAcked(s.id)) { notice = true; return }
+        sources.addPlugin(s.id)
+        if step == .removed { step = .idle }
+        model.markers.refresh(force: true)
+    }
 
     private var sources: SourcesStore { model.sources }
     private var source: FlareSource? { sources.catalog.first { $0.id == sourceId } ?? sources.mine.first { $0.id == sourceId } }
@@ -330,6 +349,15 @@ struct PluginDetailView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $notice) {
+            if let s = source {
+                UnreviewedNoticeSheet(source: s, action: "Install") {
+                    sources.addPlugin(s.id, acknowledged: true)
+                    if step == .removed { step = .idle }
+                    model.markers.refresh(force: true)
+                }
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("plugin-page")
     }
@@ -425,7 +453,8 @@ struct PluginDetailView: View {
         DGGroup(radius: 20) {
             DGSwitchRow(title: "Show on my map", sub: Market.showSub(shown),
                         isOn: Binding(get: { shown }, set: { on in
-                            if step == .removed { sources.addPlugin(s.id); step = .idle } else { sources.setShown(s.id, on) }
+                            if step == .removed { install(s); return }
+                            sources.setShown(s.id, on)
                             model.markers.refresh(force: true)
                         }),
                         identifier: "plugin-installed")
@@ -460,7 +489,7 @@ struct PluginDetailView: View {
         DGGroup(radius: 20) {
             DGRow(title: "On the map", sub: s.marketPurpose, chevron: false) { iconTile("map") }
             DGDivider(inset: 0)
-            DGRow(title: "In alerts", sub: Market.inAlerts(tier: s.tier), chevron: false) { iconTile("bell") }
+            DGRow(title: "In alerts", sub: Market.inAlerts(tier: s.tier, acked: sources.isAcked(s.id)), chevron: false) { iconTile("bell") }
             DGDivider(inset: 0)
             DGRow(title: "Its marker", sub: "Plugins are rounded squares. Official alerts are round.", chevron: false) {
                 iconTile("eye")
@@ -561,8 +590,7 @@ struct PluginDetailView: View {
                     .buttonStyle(DangerButtonStyle(solid: false)).accessibilityIdentifier("plugin-remove")
                 } else {
                     Button {
-                        sources.addPlugin(s.id)
-                        model.markers.refresh(force: true)
+                        install(s)
                     } label: {
                         Label { Text("Add plugin") } icon: { DGMoreIcon(name: "plus", size: 19, stroke: 2.4) }
                     }
@@ -592,6 +620,60 @@ struct PluginDetailView: View {
                 reach = "No"
             }
         }
+    }
+}
+
+// MARK: - Unreviewed notice
+
+/// What an unreviewed plugin needs before it may alert: the notice, a
+/// checkbox the person must tick, and the action (Install, or Allow
+/// alerts from Settings > Alerts) disabled until it is ticked.
+struct UnreviewedNoticeSheet: View {
+    let source: FlareSource
+    let action: String
+    let onConfirm: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var ticked = false
+
+    var body: some View {
+        NavigationStack {
+            DGPage(title: "Not reviewed", identifier: "plugin-notice", backSymbol: "xmark") {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 12) {
+                        MarketBadge(source: source)
+                        Text(source.name).font(DG.font(18, .bold)).foregroundStyle(DG.ink).lineLimit(2)
+                    }
+                    Text(PluginConsent.notice)
+                        .font(DG.font(16, .semibold)).foregroundStyle(DG.ink).lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(DataTag.pluginWash.opacity(0.1), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .accessibilityIdentifier("plugin-notice-text")
+                    Text("You can turn its alerts, and whether they are spoken, on or off anytime in Settings > Alerts.")
+                        .font(DG.font(14)).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
+                    Button { ticked.toggle() } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: ticked ? "checkmark.square.fill" : "square")
+                                .font(.system(size: 22)).foregroundStyle(ticked ? DG.path : DG.sub)
+                            Text(PluginConsent.agree).font(DG.font(15, .medium)).foregroundStyle(DG.ink)
+                                .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityValue(ticked ? "Checked" : "Unchecked")
+                    .accessibilityIdentifier("plugin-notice-agree")
+                    Button(action) { onConfirm(); dismiss() }
+                        .buttonStyle(.dgBlue).disabled(!ticked).opacity(ticked ? 1 : 0.5)
+                        .accessibilityIdentifier("plugin-notice-confirm")
+                    Button("Cancel") { dismiss() }
+                        .buttonStyle(.dgGlass).accessibilityIdentifier("plugin-notice-cancel")
+                }
+                .padding(.top, 8)
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

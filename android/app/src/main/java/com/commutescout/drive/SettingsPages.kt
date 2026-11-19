@@ -171,7 +171,15 @@ fun AlertsPage(model: DriveViewModel) {
     val nav = LocalSettingsNav.current
     val catalog by model.sources.catalog.collectAsStateWithLifecycle()
     val hidden by model.sources.hidden.collectAsStateWithLifecycle()
+    val acked by model.sources.acked.collectAsStateWithLifecycle()
+    // An unreviewed plugin whose alerts are being turned on: its notice first.
+    var notice by remember { mutableStateOf<FlareSource?>(null) }
     LaunchedEffect(Unit) { model.sources.loadCatalog() }
+    notice?.let { p ->
+        UnreviewedNoticeDialog(p, "Allow alerts", onConfirm = {
+            model.sources.setAcked(p.id, true); prefs.setPluginAlerts(p.id, true)
+        }, onDismiss = { notice = null })
+    }
     Group(Modifier.padding(top = 4.dp)) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             Text("Alerts reach you by", style = PageType.rowLabel, color = DG.ink)
@@ -220,22 +228,33 @@ fun AlertsPage(model: DriveViewModel) {
     GroupHead("Plugin alerts", trailing = { Tag("Not official", TagLook.PLUGIN, icon = "puzzle") })
     Group(plugin = true) {
         plugins.forEach { p ->
-            val on = p.id !in prefs.pluginAlertsOff
-            SRow(p.name, Modifier.tag("plugin-alerts-${p.id}"), sub = if (p.kinds.isEmpty()) "Community alerts" else p.kindsLabel.replaceFirstChar { it.uppercase() },
-                lead = { PluginBadge(p.id, PluginStyle.oneCategory(p.kinds), 32.dp) },
-                onClick = { prefs.pluginAlertsOff = if (on) prefs.pluginAlertsOff + p.id else prefs.pluginAlertsOff - p.id }) {
-                com.commutescout.drive.design.DGSwitch(on, { prefs.pluginAlertsOff = if (it) prefs.pluginAlertsOff - p.id else prefs.pluginAlertsOff + p.id })
+            val isAcked = p.id in acked
+            val on = p.id !in prefs.pluginAlertsOff && PluginConsent.mayAlert(p.tier, isAcked)
+            val asks = PluginConsent.asksFirst(p.tier, isAcked)
+            fun set(v: Boolean) { if (v && asks) notice = p else prefs.setPluginAlerts(p.id, v) }
+            val sub = when {
+                asks -> "Not reviewed. Its alerts are off until you allow them."
+                PluginConsent.needsAck(p.tier) -> "Not reviewed. Alerts come from its operator."
+                p.kinds.isEmpty() -> "Community alerts"
+                else -> p.kindsLabel.replaceFirstChar { it.uppercase() }
             }
+            SRow(p.name, Modifier.tag("plugin-alerts-${p.id}"), sub = sub,
+                lead = { PluginBadge(p.id, PluginStyle.oneCategory(p.kinds), 32.dp) },
+                onClick = { set(!on) }) {
+                com.commutescout.drive.design.DGSwitch(on, { set(it) })
+            }
+            val speaks = on && prefs.pluginSpeaks(p.id, p.tier)
+            SwitchRow("Speak its alerts", speaks, { prefs.setPluginSpeaks(p.id, it) }, Modifier.padding(start = 18.dp),
+                icon = "speaker", tileColor = DG.plug, sub = if (on) "Spoken instead of a chime" else "Turn its alerts on first",
+                tag = "plugin-voice-${p.id}", enabled = on)
             RowDivider(58.dp, plugin = true)
         }
         if (plugins.isEmpty()) {
             Text("No plugin is on. Plugins you install appear here.", Modifier.padding(16.dp), style = PageType.rowSub, color = DG.sub)
             RowDivider(0.dp, plugin = true)
         }
-        SwitchRow("Speak plugin alerts", prefs.speakPluginAlerts, { prefs.speakPluginAlerts = it }, sub = "Off by default. Plugin alerts chime instead.",
-            tag = "switch-Speak plugin alerts")
     }
-    GroupFoot("Plugin alerts appear as badges in the plugin’s own color, never in the official colors, so you can always tell them apart.")
+    GroupFoot("Each plugin has its own switch for alerts and another for voice, which stays off until you turn it on. An unreviewed plugin alerts only after you allow it. Plugin alerts appear as badges in the plugin’s own color, never in the official colors, so you can always tell them apart.")
     Spacer(Modifier.height(14.dp))
     Group {
         SRow("Set warnings for each kind", Modifier.tag("alerts-per-kind"), icon = "gear", tileColor = DG.faint,

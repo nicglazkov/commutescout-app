@@ -168,11 +168,16 @@ final class SourcesStore: ObservableObject {
     // the map and not asked, yet still in the person's list. Kept on this
     // phone; the account only knows on and off.
     @Published private(set) var paused: Set<String> = []
+    // Unreviewed plugins whose notice the person acknowledged at install
+    // (PluginConsent): only these may alert. Kept with the subscription:
+    // on the phone, and on the account as plugins.ack.
+    @Published private(set) var acked: Set<String> = []
     @Published var error: String?
 
     private let mineKey = "cs.flare.mine.v1"
     private let hiddenKey = "cs.flare.hidden.v1"
     private let pausedKey = "cs.flare.paused.v1"
+    private let ackedKey = "cs.flare.acked.v1"
     // A private plugin's bearer token lives in the keychain under this
     // prefix plus the plugin id; the rest of the record stays in defaults.
     private let tokenPrefix = "plugin-token:"
@@ -198,6 +203,7 @@ final class SourcesStore: ObservableObject {
         }
         hidden = Set(UserDefaults.standard.stringArray(forKey: hiddenKey) ?? [])
         paused = Set(UserDefaults.standard.stringArray(forKey: pausedKey) ?? [])
+        acked = Set(UserDefaults.standard.stringArray(forKey: ackedKey) ?? [])
         Task { await loadCatalog() }
         for s in mine { schedule(s) }
     }
@@ -219,12 +225,28 @@ final class SourcesStore: ObservableObject {
     /// In this person's list: shown, or switched off for now.
     func isAdded(_ id: String) -> Bool { Market.isAdded(id, hidden: hidden, paused: paused) }
 
-    /// Add from the marketplace: in the list and on the map.
-    func addPlugin(_ id: String) { setPaused(id, false); setOn(id, true) }
+    /// Add from the marketplace: in the list and on the map. An unreviewed
+    /// plugin is added with `acknowledged` once the person ticked the
+    /// notice, which is what lets its alerts through.
+    func addPlugin(_ id: String, acknowledged: Bool = false) {
+        if acknowledged { setAcked(id, true, push: false) }
+        setPaused(id, false); setOn(id, true)
+    }
 
-    /// Remove: out of the list and off the map. A private plugin is forgotten.
+    /// The person acknowledged (or withdrew) the unreviewed notice for a plugin.
+    func setAcked(_ id: String, _ on: Bool, push: Bool = true) {
+        if on { acked.insert(id) } else { acked.remove(id) }
+        UserDefaults.standard.set(Array(acked), forKey: ackedKey)
+        if push { pushToAccount() }
+    }
+
+    func isAcked(_ id: String) -> Bool { acked.contains(id) }
+
+    /// Remove: out of the list and off the map. A private plugin is
+    /// forgotten. The acknowledgement goes with it: installing again asks again.
     func removePlugin(_ id: String) {
         setPaused(id, false)
+        setAcked(id, false, push: false)
         if let s = mine.first(where: { $0.id == id }) { setOn(id, true); remove(s) } else { setOn(id, false) }
     }
 
@@ -236,7 +258,8 @@ final class SourcesStore: ObservableObject {
     /// Set by the app model: the signed-in account's ID token, or nil.
     var tokenProvider: (() async -> String?)?
     private struct MePlugins: Decodable {
-        struct P: Decodable { let off: [String]?; let `private`: [Mine]? }
+        struct P: Decodable { let off: [String]?; let `private`: [Mine]?; let ack: [String: Ack]? }
+        struct Ack: Decodable { let at: String? }
         struct Mine: Decodable { let id: String; let name: String?; let base: String; let token: String?; let refresh_s: Int? }
         let plugins: P
     }
@@ -249,6 +272,14 @@ final class SourcesStore: ObservableObject {
               status == 200, let me = try? JSONDecoder().decode(MePlugins.self, from: data) else { return }
         hidden = Set(me.plugins.off ?? [])
         UserDefaults.standard.set(Array(hidden), forKey: hiddenKey)
+        // Acknowledged on the account or on this phone before signing in:
+        // both count, and the account learns what only this phone knew.
+        if let ack = me.plugins.ack {
+            let local = acked
+            acked = local.union(ack.keys)
+            UserDefaults.standard.set(Array(acked), forKey: ackedKey)
+            if !local.isSubset(of: Set(ack.keys)) { pushToAccount() }
+        }
         var added = 0
         for m in me.plugins.private ?? [] where !mine.contains(where: { $0.id == m.id }) {
             let src = FlareSource(id: m.id, name: m.name ?? m.id, base: m.base, token: m.token,
@@ -276,6 +307,8 @@ final class SourcesStore: ObservableObject {
         mine = []
         hidden = []
         paused = []
+        acked = []
+        UserDefaults.standard.removeObject(forKey: ackedKey)
         UserDefaults.standard.removeObject(forKey: mineKey)
         UserDefaults.standard.removeObject(forKey: hiddenKey)
         UserDefaults.standard.removeObject(forKey: pausedKey)
@@ -286,6 +319,7 @@ final class SourcesStore: ObservableObject {
     /// private plugins, tokens included, so the next device has them too.
     private func pushToAccount() {
         let off = Array(hidden).sorted()
+        let ack = Array(acked).sorted()
         let mineWire: [[String: Any]] = mine.compactMap { s in
             guard let base = s.base else { return nil }
             var d: [String: Any] = ["id": s.id, "name": s.name, "base": base, "refresh_s": s.refreshS]
@@ -294,7 +328,7 @@ final class SourcesStore: ObservableObject {
         }
         Task {
             guard let token = await tokenProvider?() else { return }
-            _ = try? await Backend.send("PUT", "api/me/plugins", token: token, body: ["off": off, "private": mineWire])
+            _ = try? await Backend.send("PUT", "api/me/plugins", token: token, body: ["off": off, "private": mineWire, "ack": ack])
         }
     }
 
