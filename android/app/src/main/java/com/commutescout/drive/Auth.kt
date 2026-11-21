@@ -30,9 +30,12 @@ import kotlinx.coroutines.withContext
 class Account(context: Context) {
     companion object {
         private const val TAG = "Account"
-        // The web client id from google-services.json (client_type 3): the
-        // audience Firebase expects on Android ID tokens.
-        const val WEB_CLIENT_ID = "15002631928-mkrc3g1n231pec0k9fvlabuaf2ja7mkh.apps.googleusercontent.com"
+        // The Web application client from google-services.json (client_type 3):
+        // the audience Firebase expects on Android ID tokens. Credential
+        // Manager only accepts a Web client here; the iOS client id (the
+        // app's GIDClientID) fails every sign-in with [28444] "Developer
+        // console is not set up correctly".
+        const val WEB_CLIENT_ID = "15002631928-uuvbtr9in3qnj2nlk9s72e75mcna2s5u.apps.googleusercontent.com"
     }
 
     private val auth = runCatching { FirebaseAuth.getInstance() }.getOrNull()

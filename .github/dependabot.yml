@@ -2,7 +2,10 @@
 # ecosystem groups its minor and patch bumps into one PR; a major bump
 # comes on its own, since those need a look. Ferrostar pins the same
 # version on both platforms and its bumps are taken by hand together,
-# so it is left out here.
+# so it is left out here. iOS packages are declared in ios/project.yml
+# (XcodeGen), which Dependabot cannot read (its swift ecosystem needs a
+# Package.swift and failed every week with "No files found in /ios"), so
+# they are bumped by hand.
 version: 2
 updates:
   - package-ecosystem: gradle
@@ -18,16 +21,6 @@ updates:
       # MapLibre Compose moves with Ferrostar, whose map UI is compiled
       # against one exact version of it; taken by hand together.
       - dependency-name: "org.maplibre.compose:*"
-  - package-ecosystem: swift
-    directory: /ios
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 3
-    groups:
-      ios-minor:
-        update-types: ["minor", "patch"]
-    ignore:
-      - dependency-name: "ferrostar"
   - package-ecosystem: github-actions
     directory: /
     schedule:
