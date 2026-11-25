@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.height
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.commutescout.drive.design.AheadRail
+import com.commutescout.drive.design.EndTripBar
 import com.commutescout.drive.design.RailMark
 import com.commutescout.drive.design.TripChangeBar
 import com.commutescout.drive.design.AlertMore
@@ -169,6 +170,15 @@ fun BoxScope.NavChrome(
     val stops by model.stops.collectAsStateWithLifecycle()
     val destination = (model.state.collectAsStateWithLifecycle().value as? DriveState.Navigating)?.place
     val progress = ui.progress
+    // End asks first, for five seconds, then the trip carries on.
+    var ending by remember { mutableStateOf(false) }
+    var endsIn by remember { androidx.compose.runtime.mutableIntStateOf(5) }
+    LaunchedEffect(ending) {
+        if (!ending) return@LaunchedEffect
+        endsIn = 5
+        while (endsIn > 0) { kotlinx.coroutines.delay(1000); endsIn-- }
+        ending = false
+    }
     // A route on offer closes the sheet that asked for it: the map shows it.
     LaunchedEffect(change != null) { if (change != null) sheet = null }
 
@@ -199,6 +209,9 @@ fun BoxScope.NavChrome(
     Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
         val c = change
         when {
+            ending && sheet == null && c == null -> Box(Modifier.safeDrawingPadding().padding(start = 10.dp, end = 10.dp, bottom = 6.dp)) {
+                EndTripBar(destination?.shortName ?: "your destination", endsIn, onKeep = { ending = false }, onEnd = { ending = false; model.stopNavigation() })
+            }
             c != null -> Box(Modifier.safeDrawingPadding().padding(start = 10.dp, end = 10.dp, bottom = 6.dp)) {
                 TripChangeBar(secondsOf(c.route), TripPlan.cost(c.addedSeconds), TripPlan.line(c.stops.map { it.shortName }, c.destination.shortName),
                     if (c.added != null) "Add stop" else "Go here", onCancel = { model.cancelTripChange() }, onConfirm = { model.applyTripChange() })
@@ -210,7 +223,7 @@ fun BoxScope.NavChrome(
             sheet == NavSheet.TRIP && destination != null -> TripSheet(model, destination, progress?.let { arriveClock(it.durationRemaining) }, is3D,
                 onChangeDestination = { sheet = NavSheet.DESTINATION }, onAddStop = { sheet = NavSheet.STOP }, onClose = { sheet = null })
             else -> Box(Modifier.safeDrawingPadding().padding(start = 10.dp, end = 10.dp, bottom = 6.dp)) {
-                TripBar(progress?.durationRemaining, progress?.distanceRemaining, onEnd = { model.stopNavigation() },
+                TripBar(progress?.durationRemaining, progress?.distanceRemaining, onEnd = { onOpen(false); ending = true },
                     onAddStop = { onOpen(false); sheet = NavSheet.STOP }, onRoute = { onOpen(false); sheet = NavSheet.TRIP }, onReport = onReport)
             }
         }
