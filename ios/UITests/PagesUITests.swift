@@ -100,6 +100,20 @@ final class PagesUITests: XCTestCase {
             shot("alerts-advanced", 1)
             back()
         }
+        let notices = app.buttons["alerts-notices"].firstMatch
+        XCTAssertTrue(notices.waitForExistence(timeout: 3), "the notices page hangs off Alerts")
+        notices.tap()
+        let speeding = app.switches["notice-speeding"]
+        XCTAssertTrue(speeding.waitForExistence(timeout: 5))
+        XCTAssertEqual(speeding.value as? String, "0", "Over the limit starts off")
+        XCTAssertEqual(app.switches["notice-reroute"].value as? String, "1", "the rest start on")
+        XCTAssertFalse(app.textFields["speed-over-field"].exists, "no threshold until it is on")
+        shot("notices", 1)
+        speeding.switches.firstMatch.tap()
+        XCTAssertTrue(app.textFields["speed-over-field"].waitForExistence(timeout: 5), "switching it on offers the threshold")
+        shot("notices-speed", 1)
+        speeding.switches.firstMatch.tap()
+        back()
         back()
         page("route-options")
         XCTAssertTrue(app.switches["Avoid tolls"].waitForExistence(timeout: 5))

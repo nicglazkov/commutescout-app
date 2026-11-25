@@ -750,7 +750,7 @@ struct NoticesView: View {
                             Text("Tell me when I am over by more than").font(DG.font(15, .medium)).foregroundStyle(DG.ink)
                             DGSegmented(options: SystemNotes.overSteps.map { ($0, $0 == 0 ? "0" : "+\($0)", nil) },
                                         selection: step, identifier: "speed-over")
-                            TextField("Or type your own, in \(unit) over", text: $typed)
+                            TextField("", text: $typed, prompt: Text("Or type your own, in \(unit) over").foregroundColor(DG.sub))
                                 .keyboardType(.numberPad).focused($typing)
                                 .font(DG.font(16)).foregroundStyle(DG.ink)
                                 .padding(.horizontal, 14).padding(.vertical, 12)
