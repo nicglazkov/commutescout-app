@@ -58,7 +58,7 @@ final class DriveUITests: XCTestCase {
         start.tap()
         // Navigation: the trip bar has an exit button; the search bar is gone.
         XCTAssertTrue(app.textFields["search"].waitForNonExistence(timeout: 10), "search hidden while navigating")
-        // The trip bar: End, Add stop, Route, Report. 2D and 3D live in "Your trip".
+        // The trip bar: End, Add stop, Route. Report, 2D and 3D live in "Your trip".
         XCTAssertTrue(app.buttons["add-stop"].waitForExistence(timeout: 5))
         app.buttons["add-stop"].tap()
         XCTAssertTrue(app.buttons["quick-Gas"].waitForExistence(timeout: 5), "the stop sheet offers quick searches")
@@ -67,6 +67,7 @@ final class DriveUITests: XCTestCase {
         app.buttons["trip-route"].tap()
         let perspective = app.buttons["perspective"]
         XCTAssertTrue(perspective.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["trip-report"].exists, "reporting moved into Your trip")
         perspective.tap()
         perspective.tap()
         XCTAssertTrue(app.buttons["change-destination"].exists)

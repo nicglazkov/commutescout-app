@@ -56,6 +56,7 @@ struct DriveNoteSlot: View {
             i.confirmAgo = c.marker.reported.flatMap { EventContent.ago($0, now: now) }.map { "Reported \($0), just behind you" }
         }
         i.watch = model.parkedAlertNote(now: now)
+        i.show = model.prefs.noticeSwitches
         return SystemNotes.pick(i)
     }
 

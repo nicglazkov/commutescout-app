@@ -13,9 +13,42 @@ final class SystemNotesTests: XCTestCase {
         XCTAssertNil(SystemNotes.pick(input { $0.speed = 65; $0.limit = 65; $0.fixAge = 3 }))
     }
 
+    func testSpeedingIsOffUntilSwitchedOn() {
+        XCTAssertNil(SystemNotes.pick(input { $0.speed = 90; $0.limit = 65 }))
+        XCTAssertFalse(SystemNotes.Switches().speeding)
+    }
+
+    func testSpeedingWaitsForTheChosenAmount() {
+        XCTAssertNil(SystemNotes.pick(input { $0.show.speeding = true; $0.show.overBy = 15; $0.speed = 80; $0.limit = 65 }))
+        XCTAssertEqual(SystemNotes.pick(input { $0.show.speeding = true; $0.show.overBy = 15; $0.speed = 81; $0.limit = 65 })?.id, .speeding)
+        XCTAssertEqual(SystemNotes.pick(input { $0.show.speeding = true; $0.show.overBy = 0; $0.speed = 66; $0.limit = 65 })?.id, .speeding)
+        XCTAssertNil(SystemNotes.pick(input { $0.show.speeding = true; $0.show.overBy = 0; $0.speed = 65; $0.limit = 65 }))
+    }
+
+    func testEachNoticeHasItsOwnSwitch() {
+        XCTAssertNil(SystemNotes.pick(input { $0.show.reroute = false; $0.rerouting = true }))
+        XCTAssertNil(SystemNotes.pick(input { $0.show.gps = false; $0.fixAge = 60 }))
+        XCTAssertNil(SystemNotes.pick(input { $0.show.offline = false; $0.online = false }))
+        XCTAssertNil(SystemNotes.pick(input { $0.show.confirm = false; $0.confirmKind = .crash }))
+        // A switched-off notice lets the next one through.
+        XCTAssertEqual(SystemNotes.pick(input { $0.show.offline = false; $0.online = false; $0.rerouting = true })?.id, .reroute)
+        // Arriving is not a notice to switch off.
+        XCTAssertEqual(SystemNotes.pick(input { $0.arrivedAt = "Home" })?.id, .arrive)
+    }
+
+    func testATypedAmountMustBeAWholeNumberInRange() {
+        XCTAssertEqual(SystemNotes.typedOver(" 12 "), 12)
+        XCTAssertEqual(SystemNotes.typedOver("0"), 0)
+        XCTAssertNil(SystemNotes.typedOver(""))
+        XCTAssertNil(SystemNotes.typedOver("7.5"))
+        XCTAssertNil(SystemNotes.typedOver("200"))
+        XCTAssertEqual(SystemNotes.overLabel(10, unit: "mph"), "More than 10 mph over the limit")
+        XCTAssertEqual(SystemNotes.overLabel(0, unit: "km/h"), "Any speed over the limit")
+    }
+
     func testSpeedingNeedsMoreThanFiveOver() {
-        XCTAssertNil(SystemNotes.pick(input { $0.speed = 70; $0.limit = 65 }))
-        let n = SystemNotes.pick(input { $0.speed = 72; $0.limit = 65 })
+        XCTAssertNil(SystemNotes.pick(input { $0.show.speeding = true; $0.speed = 70; $0.limit = 65 }))
+        let n = SystemNotes.pick(input { $0.show.speeding = true; $0.speed = 72; $0.limit = 65 })
         XCTAssertEqual(n?.id, .speeding)
         XCTAssertEqual(n?.detail, "72 in a 65")
         XCTAssertEqual(n?.tone, .high)
@@ -24,7 +57,7 @@ final class SystemNotesTests: XCTestCase {
 
     func testLostSignalAfterTwelveSeconds() {
         XCTAssertNil(SystemNotes.pick(input { $0.fixAge = 12 }))
-        let n = SystemNotes.pick(input { $0.fixAge = 13; $0.speed = 90; $0.limit = 65 })
+        let n = SystemNotes.pick(input { $0.show.speeding = true; $0.fixAge = 13; $0.speed = 90; $0.limit = 65 })
         XCTAssertEqual(n?.id, .gps, "a lost signal outranks speeding: the speed is stale")
         XCTAssertEqual(n?.tone, .clear)
     }

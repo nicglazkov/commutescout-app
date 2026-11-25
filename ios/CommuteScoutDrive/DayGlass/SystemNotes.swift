@@ -47,11 +47,39 @@ enum SystemNotes {
         var confirmKind: DGKind?
         var confirmAgo: String?         // "Reported 4 min ago, 0.1 mi behind you"
         var watch: SystemNote?          // a watch alert tapped during this trip
+        var show = Switches()           // which notices the driver left switched on
+    }
+
+    /// One switch per notice, from the Notices page. Arriving is not
+    /// one of them: it ends the trip. Only the speed notice starts off.
+    struct Switches: Equatable {
+        var speeding = false
+        var overBy = SystemNotes.overBy  // past the limit by more than this, in the display unit
+        var confirm = true
+        var reroute = true
+        var gps = true
+        var offline = true
+        var watch = true
+    }
+
+    /// The amounts over the limit offered as one-tap choices.
+    static let overSteps = [0, 5, 10, 15, 20]
+    static let maxOver = 60
+
+    /// A typed amount over the limit, or nil when it is not a whole number from 0 to `maxOver`.
+    static func typedOver(_ text: String) -> Int? {
+        guard let n = Int(text.trimmingCharacters(in: .whitespaces)), (0...maxOver).contains(n) else { return nil }
+        return n
+    }
+
+    /// "More than 5 mph over the limit", or "Any speed over the limit" for zero.
+    static func overLabel(_ by: Int, unit: String) -> String {
+        by <= 0 ? "Any speed over the limit" : "More than \(by) \(unit) over the limit"
     }
 
     /// Seconds without a location before the signal counts as lost.
     static let lostAfter: TimeInterval = 12
-    /// How far over the posted limit counts as speeding, in the display unit.
+    /// How far over the posted limit counts as speeding until the driver picks, in the display unit.
     static let overBy = 5
 
     static func pick(_ i: Input) -> SystemNote? {
@@ -59,24 +87,24 @@ enum SystemNotes {
         if let place = i.arrivedAt {
             return SystemNote(id: .arrive, icon: "arrive", title: "You have arrived", detail: place, primary: "Done")
         }
-        if !i.online {
+        if !i.online, i.show.offline {
             if let w = i.offlineWords { return SystemNote(id: .offline, icon: "offline", title: w.title, detail: w.detail) }
             return offline(since: i.offlineSince)
         }
-        if i.rerouting {
+        if i.rerouting, i.show.reroute {
             return SystemNote(id: .reroute, icon: "reroute", title: "Rerouting", detail: "Finding a new route from here.")
         }
-        if i.fixAge > lostAfter {
+        if i.fixAge > lostAfter, i.show.gps {
             return SystemNote(id: .gps, icon: "gps", title: "GPS signal lost", detail: "Following the route from your last position")
         }
-        if let s = i.speed, let l = i.limit, l > 0, s > l + overBy {
+        if i.show.speeding, let s = i.speed, s > 0, let l = i.limit, l > 0, s > l + i.show.overBy {
             return SystemNote(id: .speeding, icon: "speed", title: "Over the limit", detail: "\(s) in a \(l)")
         }
-        if let k = i.confirmKind {
+        if i.show.confirm, let k = i.confirmKind {
             return SystemNote(id: .confirm, icon: "confirm", title: confirmTitle(k),
                               detail: i.confirmAgo ?? "Reported just behind you", primary: "Still there", secondary: "Gone")
         }
-        return i.watch
+        return i.show.watch ? i.watch : nil
     }
 
     /// A watch alert tapped on a trip: what it was about, and that it

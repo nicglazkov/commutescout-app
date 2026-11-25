@@ -76,8 +76,7 @@ struct ContentView: View {
                                   onCancel: { model.cancelTripChange() }, onConfirm: { model.applyTripChange() })
                 } else {
                     TripBar(state: state, onExit: { model.alertMore = false; endingTrip = true }, onAddStop: { model.alertMore = false; navSheet = .stop },
-                            onRoute: { model.alertMore = false; navSheet = .trip },
-                            onReport: { if model.reportCoordinate != nil { showReport = true } })
+                            onRoute: { model.alertMore = false; navSheet = .trip })
                 }
             }
             .navigationViewCurrentRoadView { _ in EmptyView() }
@@ -250,7 +249,14 @@ struct ContentView: View {
                     if let d = tripDestination {
                         YourTripSheet(destination: d,
                                   arrive: model.coreState?.currentProgress.map { Date().addingTimeInterval($0.durationRemaining).formatted(date: .omitted, time: .shortened) },
-                                  onChangeDestination: { navSheet = .destination }, onAddStop: { navSheet = .stop }, onClose: { navSheet = nil })
+                                  onChangeDestination: { navSheet = .destination }, onAddStop: { navSheet = .stop },
+                                  onReport: {
+                                      // One sheet at a time: let this one leave before the report sheet comes up.
+                                      navSheet = nil
+                                      guard model.reportCoordinate != nil else { return }
+                                      DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showReport = true }
+                                  },
+                                  onClose: { navSheet = nil })
                     }
                 }
             }

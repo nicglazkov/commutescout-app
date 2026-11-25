@@ -259,6 +259,54 @@ fun AlertsPage(model: DriveViewModel) {
     Group {
         SRow("Set warnings for each kind", Modifier.tag("alerts-per-kind"), icon = "gear", tileColor = DG.faint,
             value = if (prefs.advancedAlerts) "On" else "Off", chevron = true, onClick = { nav?.push(SettingsPage.ALERT_KINDS) })
+        RowDivider()
+        SRow("Notices while driving", Modifier.tag("alerts-notices"), icon = "speed", tileColor = DG.low,
+            value = if (prefs.noticeSpeeding) "Speed on" else "Speed off", chevron = true, onClick = { nav?.push(SettingsPage.NOTICES) })
+    }
+}
+
+/** The small notices over the map on a trip: one switch each, and how far over the limit counts. */
+@Composable
+fun NoticesPage(model: DriveViewModel) {
+    val prefs = model.prefs
+    val unit = if (prefs.useMiles) "mph" else "km/h"
+    var typed by remember { mutableStateOf(if (prefs.speedOverBy in TripNotices.steps) "" else prefs.speedOverBy.toString()) }
+    Column(Modifier.tag("notices-page")) {
+        Group(Modifier.padding(top = 4.dp)) {
+            SwitchRow("Over the limit", prefs.noticeSpeeding, { prefs.noticeSpeeding = it }, icon = "speed", tileColor = DG.high,
+                sub = if (prefs.noticeSpeeding) TripNotices.overLabel(prefs.speedOverBy, unit) else "Off", tag = "switch-Over the limit")
+            if (prefs.noticeSpeeding) {
+                RowDivider(0.dp)
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp)) {
+                    Text("Tell me when I am over by more than", style = PageType.rowLabel, color = DG.ink)
+                    Spacer(Modifier.height(10.dp))
+                    Segmented(TripNotices.steps.map { if (it == 0) "0" else "+$it" }, TripNotices.steps.indexOf(prefs.speedOverBy),
+                        { prefs.speedOverBy = TripNotices.steps[it]; typed = "" }, tagPrefix = "speed-over")
+                }
+                DGField("Or type your own, in $unit over the limit", typed, { t ->
+                    typed = t.filter { it.isDigit() }.take(2)
+                    TripNotices.typedOver(typed)?.let { prefs.speedOverBy = it }
+                }, Modifier.padding(bottom = 14.dp), placeholder = prefs.speedOverBy.toString(), tag = "speed-over-field")
+            }
+        }
+        GroupFoot("Uses the posted limit for the road you are on, where one is known. It shows on screen only and makes no sound.")
+        GroupHead("Trip status")
+        Group {
+            SwitchRow("Rerouting", prefs.noticeReroute, { prefs.noticeReroute = it }, icon = "reroute", tileColor = DG.low,
+                sub = "While a new route is being found", tag = "switch-Rerouting")
+            RowDivider()
+            SwitchRow("GPS signal lost", prefs.noticeGps, { prefs.noticeGps = it }, icon = "gps", tileColor = DG.faint,
+                sub = "When your position stops updating", tag = "switch-GPS signal lost")
+            RowDivider()
+            SwitchRow("No connection", prefs.noticeOffline, { prefs.noticeOffline = it }, icon = "offline", tileColor = DG.faint,
+                sub = "When live road data cannot refresh", tag = "switch-No connection")
+        }
+        GroupHead("Questions")
+        Group {
+            SwitchRow("Is it still there?", prefs.noticeConfirm, { prefs.noticeConfirm = it }, icon = "confirm", tileColor = DG.mid,
+                sub = "Asks after you pass a driver's report", tag = "switch-Is it still there?")
+        }
+        GroupFoot("Switching a notice off only hides it. Navigation, rerouting and alerts for what is ahead keep working.")
     }
 }
 

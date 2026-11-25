@@ -300,6 +300,13 @@ private struct AlertsContent: View {
                 }
                 .buttonStyle(DGRowPress())
                 .accessibilityIdentifier("advanced-alerts")
+                DGDivider()
+                NavigationLink { NoticesView() } label: {
+                    DGRow(title: "Notices while driving", sub: "Over the limit, rerouting, lost signal and more",
+                          value: prefs.noticeSpeeding ? "Speed on" : "Speed off") { EmptyView() }
+                }
+                .buttonStyle(DGRowPress())
+                .accessibilityIdentifier("alerts-notices")
             }
             .padding(.top, 20)
         }
@@ -705,5 +712,90 @@ private struct AccountContent: View {
             Text(label).font(DG.font(13)).foregroundStyle(DG.sub).fixedSize(horizontal: false, vertical: true)
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+
+/// The small notices over the map on a trip: one switch each, and how far over the limit counts.
+struct NoticesView: View {
+    @EnvironmentObject var model: AppModel
+    private var prefs: Prefs { model.prefs }
+    @State private var typed = ""
+    @FocusState private var typing: Bool
+
+    private var unit: String { Units.useMiles ? "mph" : "km/h" }
+
+    private func flag(_ key: ReferenceWritableKeyPath<Prefs, Bool>) -> Binding<Bool> {
+        Binding(get: { prefs[keyPath: key] }, set: { prefs[keyPath: key] = $0; prefs.objectWillChange.send() })
+    }
+
+    /// The one-tap choice, or -1 when the driver typed an amount of their own.
+    private var step: Binding<Int> {
+        Binding(get: { SystemNotes.overSteps.contains(prefs.speedOverBy) ? prefs.speedOverBy : -1 },
+                set: { prefs.speedOverBy = $0; typed = ""; typing = false; prefs.objectWillChange.send() })
+    }
+
+    var body: some View {
+        DGPage(title: "Notices while driving", identifier: "page-notices") {
+            VStack(alignment: .leading, spacing: 0) {
+                DGGroup {
+                    DGSwitchRow(title: "Over the limit",
+                                sub: prefs.noticeSpeeding ? SystemNotes.overLabel(prefs.speedOverBy, unit: unit) : "Off",
+                                isOn: flag(\.noticeSpeeding), identifier: "notice-speeding") {
+                        DGTile(symbol: "speedometer", color: DG.hex(0xd0453a))
+                    }
+                    if prefs.noticeSpeeding {
+                        DGDivider()
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Tell me when I am over by more than").font(DG.font(15, .medium)).foregroundStyle(DG.ink)
+                            DGSegmented(options: SystemNotes.overSteps.map { ($0, $0 == 0 ? "0" : "+\($0)", nil) },
+                                        selection: step, identifier: "speed-over")
+                            TextField("", text: $typed, prompt: Text("Or type your own, in \(unit) over").foregroundColor(DG.sub))
+                                .keyboardType(.numberPad).focused($typing)
+                                .font(DG.font(16)).foregroundStyle(DG.ink)
+                                .padding(.horizontal, 14).padding(.vertical, 12)
+                                .background(DG.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .accessibilityIdentifier("speed-over-field")
+                                .onChange(of: typed) { new in
+                                    let digits = String(new.filter(\.isNumber).prefix(2))
+                                    if digits != new { typed = digits }
+                                    if let n = SystemNotes.typedOver(digits) { prefs.speedOverBy = n; prefs.objectWillChange.send() }
+                                }
+                        }
+                        .padding(.horizontal, 14).padding(.vertical, 14)
+                    }
+                }
+                .padding(.top, 8)
+                DGFootnote("Uses the posted limit for the road you are on, where one is known. It shows on screen only and makes no sound.")
+
+                DGSectionLabel("Trip status")
+                DGGroup {
+                    DGSwitchRow(title: "Rerouting", sub: "While a new route is being found", isOn: flag(\.noticeReroute), identifier: "notice-reroute") {
+                        DGTile(symbol: "arrow.triangle.turn.up.right.diamond.fill", color: DG.hex(0x1a63d6))
+                    }
+                    DGDivider()
+                    DGSwitchRow(title: "GPS signal lost", sub: "When your position stops updating", isOn: flag(\.noticeGps), identifier: "notice-gps") {
+                        DGTile(symbol: "location.slash.fill", color: DG.hex(0x8a94a6))
+                    }
+                    DGDivider()
+                    DGSwitchRow(title: "No connection", sub: "When live road data cannot refresh", isOn: flag(\.noticeOffline), identifier: "notice-offline") {
+                        DGTile(symbol: "wifi.slash", color: DG.hex(0x8a94a6))
+                    }
+                }
+
+                DGSectionLabel("Questions and watch areas")
+                DGGroup {
+                    DGSwitchRow(title: "Is it still there?", sub: "Asks after you pass a driver's report", isOn: flag(\.noticeConfirm), identifier: "notice-confirm") {
+                        DGTile(symbol: "hand.thumbsup.fill", color: DG.hex(0xc98a12))
+                    }
+                    DGDivider()
+                    DGSwitchRow(title: "Watch alerts on a trip", sub: "A watch alert you tap while driving", isOn: flag(\.noticeWatch), identifier: "notice-watch") {
+                        DGTile(symbol: "bell.fill", color: DG.hex(0x1a63d6))
+                    }
+                }
+                DGFootnote("Switching a notice off only hides it. Navigation, rerouting and alerts for what is ahead keep working.")
+            }
+        }
+        .onAppear { if !SystemNotes.overSteps.contains(prefs.speedOverBy) { typed = String(prefs.speedOverBy) } }
     }
 }

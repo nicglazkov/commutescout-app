@@ -221,10 +221,10 @@ fun BoxScope.NavChrome(
             sheet == NavSheet.DESTINATION -> PlacePickSheet("Change destination", "Your stops stay on the trip", model, quick = false,
                 exclude = listOfNotNull(destination), onPick = { model.previewDestination(it) }, onClose = { sheet = null })
             sheet == NavSheet.TRIP && destination != null -> TripSheet(model, destination, progress?.let { arriveClock(it.durationRemaining) }, is3D,
-                onChangeDestination = { sheet = NavSheet.DESTINATION }, onAddStop = { sheet = NavSheet.STOP }, onClose = { sheet = null })
+                onChangeDestination = { sheet = NavSheet.DESTINATION }, onAddStop = { sheet = NavSheet.STOP }, onReport = { sheet = null; onReport() }, onClose = { sheet = null })
             else -> Box(Modifier.safeDrawingPadding().padding(start = 10.dp, end = 10.dp, bottom = 6.dp)) {
                 TripBar(progress?.durationRemaining, progress?.distanceRemaining, onEnd = { onOpen(false); ending = true },
-                    onAddStop = { onOpen(false); sheet = NavSheet.STOP }, onRoute = { onOpen(false); sheet = NavSheet.TRIP }, onReport = onReport)
+                    onAddStop = { onOpen(false); sheet = NavSheet.STOP }, onRoute = { onOpen(false); sheet = NavSheet.TRIP })
             }
         }
     }

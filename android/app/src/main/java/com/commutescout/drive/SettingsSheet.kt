@@ -82,7 +82,7 @@ import kotlinx.coroutines.launch
 /** The pages of Settings; the home page is the empty stack. */
 enum class SettingsPage(val title: String) {
     ACCOUNT("Account"), MAP_STYLE("Map style"), UNITS("Units and region"), VOICE("Voice"), ALERTS("Alerts"),
-    ALERT_KINDS("Set warnings for each kind"), ROUTE("Route options"), SOURCES("Data sources"), LAYERS("Map layers"),
+    ALERT_KINDS("Set warnings for each kind"), NOTICES("Notices while driving"), ROUTE("Route options"), SOURCES("Data sources"), LAYERS("Map layers"),
     PLUGINS("Plugins"), OFFLINE("Offline maps"), PLACES("Saved places"), PLACE_PICKER("Find a place"),
     HELP("Help and feedback"), ABOUT("About and privacy"), VOICE_LICENSES("Voice licenses"), TESTING("Testing");
 
@@ -165,6 +165,7 @@ fun SettingsSheet(model: DriveViewModel, start: SettingsPage? = null, pageOnly: 
                                 SettingsPage.VOICE -> VoicePage(model) { push(SettingsPage.VOICE_LICENSES) }
                                 SettingsPage.ALERTS -> AlertsPage(model)
                                 SettingsPage.ALERT_KINDS -> AlertKindsPage(model)
+                                SettingsPage.NOTICES -> NoticesPage(model)
                                 SettingsPage.ROUTE -> RoutePage(model)
                                 SettingsPage.SOURCES -> DataSourcesPage()
                                 SettingsPage.LAYERS -> LayersContent(model)
