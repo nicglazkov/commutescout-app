@@ -339,51 +339,6 @@ struct DriveAlert: View {
     }
 }
 
-/// When you arrive, how long, how far, and the way out.
-struct TripBar: View {
-    let state: NavigationState?
-    let onExit: (() -> Void)?
-
-    var body: some View {
-        let p = state?.currentProgress
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(arrival(p)).font(DG.T.eta).foregroundStyle(DG.ink).monospacedDigit()
-                Text(meta(p)).font(DG.T.meta).foregroundStyle(DG.sub).lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            Button { onExit?() } label: {
-                DGIconView(name: "close", size: 22, stroke: 2.6)
-                    .foregroundStyle(DGTone.high.ink)
-                    .frame(width: 52, height: 52)
-                    .background(DGTone.high.color.opacity(0.13), in: Circle())
-                    .overlay(Circle().strokeBorder(DGTone.high.color.opacity(0.25), lineWidth: 0.5))
-            }
-            .buttonStyle(DGPressStyle())
-            .accessibilityLabel("End trip")
-            .accessibilityIdentifier("end-trip")
-        }
-        .padding(.leading, 22).padding(.trailing, 12)
-        .frame(height: 76)
-        .dgGlass(radius: DG.R.trip)
-        .padding(.horizontal, 14)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("trip-bar")
-    }
-
-    private func arrival(_ p: TripProgress?) -> String {
-        guard let p else { return "--" }
-        return Date().addingTimeInterval(p.durationRemaining).formatted(date: .omitted, time: .shortened)
-    }
-
-    private func meta(_ p: TripProgress?) -> String {
-        guard let p else { return "" }
-        let min = Int((p.durationRemaining / 60).rounded())
-        let t = min >= 60 ? "\(min / 60) h \(min % 60) min" : "\(max(1, min)) min"
-        return "\(t) · \(Units.distance(p.distanceRemaining))"
-    }
-}
-
 /// Speed in a glass disc, the posted limit as a sign on its shoulder.
 /// The number turns red when over.
 struct SpeedDisc: View {

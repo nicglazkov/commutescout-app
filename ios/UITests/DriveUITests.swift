@@ -58,10 +58,20 @@ final class DriveUITests: XCTestCase {
         start.tap()
         // Navigation: the trip bar has an exit button; the search bar is gone.
         XCTAssertTrue(app.textFields["search"].waitForNonExistence(timeout: 10), "search hidden while navigating")
+        // The trip bar: End, Add stop, Route, Report. 2D and 3D live in "Your trip".
+        XCTAssertTrue(app.buttons["add-stop"].waitForExistence(timeout: 5))
+        app.buttons["add-stop"].tap()
+        XCTAssertTrue(app.buttons["quick-Gas"].waitForExistence(timeout: 5), "the stop sheet offers quick searches")
+        app.buttons["place-pick-close"].tap()
+        XCTAssertTrue(app.buttons["trip-route"].waitForExistence(timeout: 5))
+        app.buttons["trip-route"].tap()
         let perspective = app.buttons["perspective"]
         XCTAssertTrue(perspective.waitForExistence(timeout: 5))
         perspective.tap()
         perspective.tap()
+        XCTAssertTrue(app.buttons["change-destination"].exists)
+        app.buttons["trip-sheet-close"].tap()
+        XCTAssertTrue(perspective.waitForNonExistence(timeout: 5))
         // Ferrostar's exit control is the X in the trip bar.
         let exit = app.buttons.matching(NSPredicate(format: "identifier == 'end-trip' OR label CONTAINS[c] 'exit' OR label CONTAINS[c] 'stop' OR label CONTAINS[c] 'close'")).firstMatch
         if exit.waitForExistence(timeout: 5) {
