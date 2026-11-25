@@ -36,6 +36,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.height
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.commutescout.drive.design.AheadRail
+import com.commutescout.drive.design.RailMark
+import com.commutescout.drive.design.TripChangeBar
 import com.commutescout.drive.design.AlertMore
 import com.commutescout.drive.design.AlertTuck
 import com.commutescout.drive.design.AlertWords
@@ -43,9 +48,7 @@ import com.commutescout.drive.design.DG
 import com.commutescout.drive.design.GlassRound
 import com.commutescout.drive.design.HorizonChip
 import com.commutescout.drive.design.ManeuverCard
-import com.commutescout.drive.design.ModeToggle
 import com.commutescout.drive.design.Note
-import com.commutescout.drive.design.ReportButton
 import com.commutescout.drive.design.SpeedDisc
 import com.commutescout.drive.design.Tone
 import com.commutescout.drive.design.TripBar
@@ -75,8 +78,8 @@ internal fun reportedOf(m: RoadMarker): String? = runCatching {
 
 /**
  * Everything over the map on a trip: the maneuver card, the alert
- * tucked under it (or the app's own message), the side buttons, the
- * speed disc and the trip bar. [open] is the see-more state, hoisted so
+ * tucked under it (or the app's own message), the ahead line, the
+ * speed disc and the trip bar with the sheets it opens. [open] is the see-more state, hoisted so
  * the map camera can make room for it.
  */
 @Composable
@@ -154,29 +157,70 @@ fun BoxScope.NavChrome(
                 if (note != null) last.value = note
                 last.value?.let { n -> Note(n.icon, n.tone, n.title, n.body, Modifier.fillMaxWidth(), n.action, n.onAction, n.secondary, n.onSecondary, n.inline, tag = "note-${n.id}") }
             }
-            ManeuverCard(ui, Modifier.onSizeChanged { cardH = it.height })
+            ManeuverCard(ui, Modifier.onSizeChanged { cardH = it.height }, muted = ui.isMuted == true, onMute = { model.toggleMute() })
         }
     }
 
-    // The side column: 2D and 3D, recenter when the map was moved, report.
-    Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = DG.gutter, bottom = 102.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        // An opened alert reaches down here: the small buttons step aside.
-        if (!mapState.isTrackingUser && !open) GlassRound("locate", "Recenter", { mapState.recenter(isNavigating = true) }, Modifier.taggedAs("recenter"))
-        val muted = ui.isMuted == true
-        if (!open) GlassRound("mute", if (muted) "Unmute" else "Mute", { model.toggleMute() }, Modifier.taggedAs("mute"),
-            tint = if (muted) DG.faint else DG.ink, size = 44.dp, iconSize = 20.dp)
-        ModeToggle(is3D, { model.toggle3D() }, Modifier.taggedAs("perspective"))
-        ReportButton(onReport, Modifier.taggedAs("report"))
+    // What the bottom of the screen is doing: the trip bar, a sheet, or a change on offer.
+    var sheet by remember { mutableStateOf<NavSheet?>(null) }
+    val change by model.tripChange.collectAsStateWithLifecycle()
+    val ahead by model.alerts.ahead.collectAsStateWithLifecycle()
+    val dismissed by model.alerts.dismissed.collectAsStateWithLifecycle()
+    val stops by model.stops.collectAsStateWithLifecycle()
+    val destination = (model.state.collectAsStateWithLifecycle().value as? DriveState.Navigating)?.place
+    val progress = ui.progress
+    // A route on offer closes the sheet that asked for it: the map shows it.
+    LaunchedEffect(change != null) { if (change != null) sheet = null }
+
+    // The ahead line, down the left between the card and the trip bar.
+    val conf = androidx.compose.ui.platform.LocalConfiguration.current
+    val railH = (conf.screenHeightDp * .40f).dp.coerceIn(200.dp, 360.dp)
+    AnimatedVisibility(sheet == null && change == null && !open && progress != null && conf.screenHeightDp >= 560,
+        Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = DG.gutter, bottom = 172.dp),
+        enter = fadeIn(tween(260)), exit = fadeOut(tween(160))) {
+        val marks = remember(ahead, dismissed, (along / 50).toInt()) {
+            ahead.filter { it.alongMeters > along + 30 && it.id !in dismissed }.take(6).map { u ->
+                val w = AlertWords.of(u.marker, u.alongMeters - along, speedMps)
+                RailMark(u.id, w.look.icon, w.look.tone, w.distance ?: "", w.title.removeSuffix(" ahead"), u.alongMeters - along)
+            }
+        }
+        AheadRail(marks, destination?.shortName ?: "Destination", progress?.let { Units.distance(it.distanceRemaining) },
+            progress?.distanceRemaining ?: 0.0, onMark = { m -> ahead.firstOrNull { it.id == m.id }?.let { model.alerts.say(it.marker); model.showMarker(it.marker) } },
+            modifier = Modifier.height(railH).fillMaxWidth(), stops = stops.size)
     }
-    if (model.prefs.showSpeedLimit && speedMps >= 0) {
-        Box(Modifier.align(Alignment.BottomStart).safeDrawingPadding().padding(start = DG.gutter, bottom = 92.dp)) {
-            SpeedDisc(speedMps, model.limitKmh(ui))
+
+    // Recenter shows only after the map was moved. Everything else lives in the trip bar.
+    Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(end = DG.gutter, bottom = 172.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.End) {
+        if (!mapState.isTrackingUser && !open && sheet == null) GlassRound("locate", "Recenter", { mapState.recenter(isNavigating = true) }, Modifier.taggedAs("recenter"))
+        if (model.prefs.showSpeedLimit && speedMps >= 0 && sheet == null && change == null) SpeedDisc(speedMps, model.limitKmh(ui))
+    }
+
+    Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+        val c = change
+        when {
+            c != null -> Box(Modifier.safeDrawingPadding().padding(start = 10.dp, end = 10.dp, bottom = 6.dp)) {
+                TripChangeBar(secondsOf(c.route), TripPlan.cost(c.addedSeconds), TripPlan.line(c.stops.map { it.shortName }, c.destination.shortName),
+                    if (c.added != null) "Add stop" else "Go here", onCancel = { model.cancelTripChange() }, onConfirm = { model.applyTripChange() })
+            }
+            sheet == NavSheet.STOP -> PlacePickSheet("Add a stop", "On the way to ${destination?.shortName ?: "your destination"}", model, quick = true,
+                exclude = listOfNotNull(destination) + stops, onPick = { model.previewStop(it, progress?.durationRemaining) }, onClose = { sheet = null })
+            sheet == NavSheet.DESTINATION -> PlacePickSheet("Change destination", "Your stops stay on the trip", model, quick = false,
+                exclude = listOfNotNull(destination), onPick = { model.previewDestination(it) }, onClose = { sheet = null })
+            sheet == NavSheet.TRIP && destination != null -> TripSheet(model, destination, progress?.let { arriveClock(it.durationRemaining) }, is3D,
+                onChangeDestination = { sheet = NavSheet.DESTINATION }, onAddStop = { sheet = NavSheet.STOP }, onClose = { sheet = null })
+            else -> Box(Modifier.safeDrawingPadding().padding(start = 10.dp, end = 10.dp, bottom = 6.dp)) {
+                TripBar(progress?.durationRemaining, progress?.distanceRemaining, onEnd = { model.stopNavigation() },
+                    onAddStop = { onOpen(false); sheet = NavSheet.STOP }, onRoute = { onOpen(false); sheet = NavSheet.TRIP }, onReport = onReport)
+            }
         }
     }
-    Box(Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(start = 10.dp, end = 10.dp, bottom = 6.dp)) {
-        TripBar(ui, onEnd = { model.stopNavigation() })
-    }
 }
+
+/** The sheets the trip bar opens. */
+private enum class NavSheet { STOP, DESTINATION, TRIP }
+
+private fun arriveClock(secondsLeft: Double): String = java.time.LocalTime.now().plusSeconds(secondsLeft.toLong())
+    .format(java.time.format.DateTimeFormatter.ofPattern(UnitStyle.clockPattern, java.util.Locale.US))
 
 internal fun Modifier.taggedAs(t: String): Modifier = testTag(t)

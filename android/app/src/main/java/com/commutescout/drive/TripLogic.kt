@@ -249,3 +249,61 @@ object ReportKinds {
         return "Report $noun here" + (bound?.let { ", $it" } ?: "")
     }
 }
+
+/**
+ * The ahead line: where each thing on the route sits on the rail. The
+ * rail runs from the driver (bottom) to the destination (top). Distance
+ * is drawn on a square-root scale, so the next mile gets most of the
+ * room, and marks never crowd each other or the two ends.
+ */
+object Rail {
+    data class Slot(val index: Int, val y: Float)
+
+    /**
+     * [gaps] are metres ahead, nearest first; [total] is metres to the
+     * destination; [span] is the track's length. Returns each kept
+     * mark's distance from the top of the track, in the same unit as
+     * [span]. Marks past the destination or with no room left are dropped.
+     */
+    fun slots(gaps: List<Double>, total: Double, span: Float, minGap: Float = 60f, max: Int = 3): List<Slot> {
+        if (total <= 0 || span < minGap * 2) return emptyList()
+        val out = mutableListOf<Slot>()
+        var floor = span - minGap
+        for ((i, g) in gaps.withIndex()) {
+            if (out.size >= max || g < 0 || g >= total) continue
+            val y = (span - Math.sqrt(g / total).toFloat() * span).coerceAtMost(floor)
+            if (y < minGap) break
+            out += Slot(i, y)
+            floor = y - minGap
+        }
+        return out
+    }
+}
+
+/** A trip changed mid-drive: a stop on the way, or somewhere else to go. */
+object TripPlan {
+    /** The places to route through, in order: the stops already planned, the new one, then the destination. */
+    fun <T> through(stops: List<T>, add: T?, destination: T, same: (T, T) -> Boolean): List<T> {
+        val via = stops.filterNot { same(it, destination) }.toMutableList()
+        if (add != null && !same(add, destination) && via.none { same(it, add) }) via += add
+        return via + destination
+    }
+
+    /** What the change costs, for the bar that offers it: "+4 min", "2 min faster", "No extra time". */
+    fun cost(addedSeconds: Double?): String? {
+        val s = addedSeconds ?: return null
+        val min = Math.round(Math.abs(s) / 60.0).toInt()
+        return when {
+            min == 0 -> "No extra time"
+            s > 0 -> "+$min min"
+            else -> "$min min faster"
+        }
+    }
+
+    /** "Peet's Coffee, then SJC Airport". */
+    fun line(stops: List<String>, destination: String): String =
+        if (stops.isEmpty()) destination else stops.joinToString(", ") + ", then " + destination
+
+    /** How many of [planned] stops are still ahead, given the waypoints the trip has left (the destination is one). */
+    fun stopsLeft(planned: Int, remainingWaypoints: Int): Int = (remainingWaypoints - 1).coerceIn(0, planned)
+}

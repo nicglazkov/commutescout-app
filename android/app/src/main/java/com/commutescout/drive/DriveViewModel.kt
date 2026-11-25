@@ -849,8 +849,136 @@ class DriveViewModel : DefaultNavigationViewModel(Engine.core, valhallaExtendedO
         }
         Engine.alerts.startFreeDrive()
         Neural.tripEnded()
+        changeJob?.cancel(); _tripChange.value = null; _tripChanging.value = false; _stops.value = emptyList()
         endTripRecord()
         _state.value = DriveState.Browsing
+    }
+
+    // trip changes: a stop on the way, or somewhere else to go, mid-drive.
+
+    /** A changed trip, shown on the map before the driver takes it. */
+    data class TripChange(val stops: List<Place>, val added: Place?, val destination: Place, val route: Route, val addedSeconds: Double?)
+    private val _stops = MutableStateFlow<List<Place>>(emptyList())
+    /** Stops still ahead on this trip, in order. */
+    val stops = _stops.asStateFlow()
+    private val _tripChange = MutableStateFlow<TripChange?>(null)
+    val tripChange = _tripChange.asStateFlow()
+    private val _tripChanging = MutableStateFlow(false)
+    val tripChanging = _tripChanging.asStateFlow()
+    private var changeJob: Job? = null
+    private var changeSeq = 0
+    private var changedAt = 0L
+
+    private fun samePlace(a: Place, b: Place) = AlertsEngine.meters(LatLon(a.lat, a.lon), LatLon(b.lat, b.lon)) < 30
+
+    /** Offer [stop] on the way: the route through it lands in [tripChange]. */
+    fun previewStop(stop: Place, remainingSeconds: Double?) {
+        val dest = (_state.value as? DriveState.Navigating)?.place ?: return
+        if (samePlace(stop, dest) || _stops.value.any { samePlace(it, stop) }) { toast("That is already on this trip."); return }
+        planTrip(_stops.value, stop, dest, remainingSeconds, offer = true)
+    }
+
+    /** Offer [place] as the new destination, keeping the stops. */
+    fun previewDestination(place: Place) {
+        if (_state.value !is DriveState.Navigating) return
+        planTrip(_stops.value, null, place, null, offer = true)
+    }
+
+    /** Drop a stop and take the new route at once. */
+    fun removeStop(stop: Place) {
+        val dest = (_state.value as? DriveState.Navigating)?.place ?: return
+        planTrip(_stops.value.filterNot { it.id == stop.id }, null, dest, null, offer = false)
+    }
+
+    private fun planTrip(stops: List<Place>, add: Place?, dest: Place, remaining: Double?, offer: Boolean) {
+        // Mid-trip the start is where the trip has the driver, which is also right for a scripted drive.
+        val nav = Engine.core.state.value.tripState as? uniffi.ferrostar.TripState.Navigating
+        val from = nav?.userLocation?.coordinates?.let { LatLon(it.lat, it.lng) } ?: routeFrom()
+        if (from == null) { toast("Waiting for your location."); return }
+        val via = TripPlan.through(stops, add, dest, ::samePlace)
+        changeJob?.cancel()
+        val mine = ++changeSeq
+        _tripChanging.value = true
+        changeJob = viewModelScope.launch {
+            try {
+                val found = withContext(Dispatchers.IO) {
+                    Engine.core.getRoutes(
+                        UserLocation(GeographicCoordinate(from.lat, from.lon), 6.0, null, Instant.now(), null),
+                        via.map { Waypoint(GeographicCoordinate(it.lat, it.lon), WaypointKind.BREAK) },
+                    )
+                }
+                val route = found.firstOrNull() ?: throw BackendError("No route found. Try a different place.")
+                val change = TripChange(via.dropLast(1), add, dest, route, remaining?.let { secondsOf(route) - it })
+                if (mine != changeSeq || _state.value !is DriveState.Navigating) return@launch
+                if (offer) _tripChange.value = change else take(change)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("DriveViewModel", "trip change failed: $e")
+                if (mine == changeSeq) toast(when {
+                    e is BackendError && e.code == 0 && !e.message.isNullOrBlank() -> e.message!!
+                    !Connectivity.online.value || Connectivity.isOffline(e) -> OfflineText.ROUTES
+                    else -> "Could not get a route. Try again in a moment."
+                })
+            } finally {
+                if (mine == changeSeq) _tripChanging.value = false
+            }
+        }
+    }
+
+    fun cancelTripChange() {
+        changeSeq++
+        changeJob?.cancel(); changeJob = null
+        _tripChange.value = null
+        _tripChanging.value = false
+    }
+
+    /** Take the offered change: the trip carries on along the new route. */
+    fun applyTripChange() { _tripChange.value?.let { take(it) } }
+
+    private fun take(c: TripChange) {
+        _tripChange.value = null
+        if (_state.value !is DriveState.Navigating || !Engine.tripActive) return
+        try {
+            if (simulating.value) Engine.location.enableSimulationOn(c.route)
+            Engine.core.replaceRoute(c.route)
+            changedAt = System.currentTimeMillis()
+            _stops.value = c.stops
+            Engine.tripPlace = c.destination
+            TripStore.save(c.route, c.destination)
+            setDestination(c.destination.shortName)
+            Engine.alerts.start(c.route.geometry.map { LatLon(it.lat, it.lng) })
+            runCatching { Neural.prerenderRoute(c.route, prefs) }.onFailure { Log.w("DriveViewModel", "prerender: $it") }
+            (c.added ?: c.destination).let { Engine.places.noteRecent(it.name, it.lat, it.lon) }
+            val was = (_state.value as? DriveState.Navigating)?.place
+            if (was == null || !samePlace(was, c.destination)) _state.value = DriveState.Navigating(c.destination)
+            toast(when {
+                c.added != null -> "Stop added: ${c.added.shortName}"
+                was != null && !samePlace(was, c.destination) -> "Now going to ${c.destination.shortName}"
+                else -> "Trip updated"
+            })
+        } catch (e: Exception) {
+            Log.e("DriveViewModel", "trip change failed to apply", e)
+            toast("Could not change the trip. Try again.")
+        }
+    }
+
+    init {
+        // A stop the trip has passed comes off the list. The first
+        // seconds after a change are skipped: a state from the old
+        // route can still be on its way.
+        viewModelScope.launch {
+            Engine.core.state.collect { s ->
+                val nav = s.tripState as? uniffi.ferrostar.TripState.Navigating ?: return@collect
+                val planned = _stops.value
+                if (planned.isEmpty() || System.currentTimeMillis() - changedAt < 4000) return@collect
+                val left = TripPlan.stopsLeft(planned.size, nav.remainingWaypoints.size)
+                if (left < planned.size) {
+                    toast("Stop reached: ${planned.first().shortName}")
+                    _stops.value = planned.takeLast(left)
+                }
+            }
+        }
     }
 
     override fun toggleMute() {

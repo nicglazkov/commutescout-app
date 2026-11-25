@@ -96,7 +96,7 @@ private fun laneIcon(dir: String?): String {
 
 /** The next turn: arrow, distance, road, what comes after, and the lanes. */
 @Composable
-fun ManeuverCard(ui: NavigationUiState, modifier: Modifier = Modifier) {
+fun ManeuverCard(ui: NavigationUiState, modifier: Modifier = Modifier, muted: Boolean = false, onMute: (() -> Unit)? = null) {
     val vi = ui.visualInstruction
     val primary = vi?.primaryContent
     val (num, unit) = splitDistance(ui.progress?.distanceToNextManeuver ?: 0.0)
@@ -118,6 +118,9 @@ fun ManeuverCard(ui: NavigationUiState, modifier: Modifier = Modifier) {
                 Spacer(Modifier.height(4.dp))
                 Text(primary?.text ?: ui.currentStepRoadName ?: "", style = DGType.maneuverRoad, color = DG.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            // The voice, where the words it speaks are.
+            if (onMute != null) GhostRound("mute", if (muted) "Unmute" else "Mute", onMute, Modifier.align(Alignment.Top).testTag("mute"),
+                size = 40.dp, tint = if (muted) DG.high else DG.ink)
         }
         if (then != null) {
             Spacer(Modifier.height(12.dp))
@@ -322,25 +325,6 @@ fun SpeedDisc(speedMps: Double, limitKmh: Double?, modifier: Modifier = Modifier
         }
         if (limit != null) Box(Modifier.align(Alignment.TopEnd).size(32.dp).clip(CircleShape).background(Color.White).border(2.5.dp, DG.high, CircleShape),
             contentAlignment = Alignment.Center) { Text("$limit", style = DGType.label.copy(fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold), color = DG.ink) }
-    }
-}
-
-/** Arrival time, what is left, and the one way to end the trip. */
-@Composable
-fun TripBar(ui: NavigationUiState, onEnd: () -> Unit, modifier: Modifier = Modifier) {
-    val p = ui.progress
-    val eta = p?.let { LocalTime.now().plusSeconds(it.durationRemaining.toLong()).format(DateTimeFormatter.ofPattern(UnitStyle.clockPattern, java.util.Locale.US)) } ?: "--"
-    Row(modifier.fillMaxWidth().height(76.dp).glass(RoundedCornerShape(30.dp), elevation = 20.dp, strong = true)
-        .padding(start = 20.dp, end = 12.dp).testTag("trip-bar"), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(eta, style = DGType.eta, color = DG.ink)
-            Spacer(Modifier.height(4.dp))
-            p?.let { Text("${Units.duration(it.durationRemaining)}   ${Units.distance(it.distanceRemaining)}", style = DGType.meta, color = DG.sub, maxLines = 1) }
-        }
-        Box(Modifier.size(52.dp).clip(CircleShape).background(DG.high.tint(.12f)).border(0.5.dp, DG.high.copy(alpha = .25f), CircleShape)
-            .clickable(onClick = onEnd).testTag("end-trip"), contentAlignment = Alignment.Center) {
-            DGIcon("close", DG.high, 22.dp, stroke = 2.4f, contentDescription = "End trip")
-        }
     }
 }
 

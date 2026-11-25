@@ -211,6 +211,7 @@ import kotlin.math.max
 fun DriveScreen(model: DriveViewModel) {
     val prefs = model.prefs
     val state by model.state.collectAsStateWithLifecycle()
+    val tripChange by model.tripChange.collectAsStateWithLifecycle()
     val error by model.error.collectAsStateWithLifecycle()
     val uiState by model.navigationUiState.collectAsStateWithLifecycle()
     val here by model.here.collectAsStateWithLifecycle()
@@ -513,6 +514,8 @@ fun DriveScreen(model: DriveViewModel) {
             MarkerLayers(mapMarkers) { key -> model.showMarker(key) }
             (state as? DriveState.Found)?.let { PinLayer(it.place) }
             if (state is DriveState.Choosing) chosenRoute?.let { RouteLine(it) }
+            // A stop or a new destination on offer mid-trip: its route, before it is taken.
+            tripChange?.let { c -> RouteLine(c.route); c.added?.let { PinLayer(it) } }
             // Moving with no trip: the dot becomes the same arrow a trip shows.
             if (driving && !isNavigating) here?.let { h -> ArrowPuck(h, course ?: 0.0) }
             // The alert the banner names: a breathing ring around its marker.
