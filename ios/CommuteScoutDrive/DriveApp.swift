@@ -31,10 +31,13 @@ struct DriveApp: App {
 
     var body: some Scene {
         WindowGroup {
-            root
-                .environmentObject(model)
-                .preferredColorScheme(model.prefs.theme.colorScheme)
-                .task { await AutoDrive.runIfAsked(model) }
+            // "Dark after sunset" follows the sun at the driver's position, checked each minute.
+            TimelineView(.periodic(from: .now, by: 60)) { tick in
+                root
+                    .environmentObject(model)
+                    .preferredColorScheme(model.prefs.theme.scheme(here: model.here, at: tick.date))
+            }
+            .task { await AutoDrive.runIfAsked(model) }
         }
         .onChange(of: scenePhase) { phase in
             DriveLog.note("app \(phase == .active ? "active" : phase == .background ? "background" : "inactive")")

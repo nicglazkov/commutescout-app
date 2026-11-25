@@ -43,9 +43,13 @@ struct MapStylePage: View {
             .padding(.top, 6)
             DGFootnote("The map above shows the style you pick. Alerts, your route and the car look the same in every style.")
             DGSectionLabel("Light and dark")
-            DGSegmented(options: [(Prefs.Theme.system, "Match my phone", nil), (.light, "Light", nil), (.dark, "Dark", nil)],
-                        selection: Binding(get: { prefs.theme }, set: { prefs.theme = $0 }), identifier: "theme")
-            DGFootnote("Positron, the default style, turns dark when the app is dark.")
+            DGGroup {
+                ForEach(Array(Prefs.Theme.allCases.enumerated()), id: \.element) { i, t in
+                    if i > 0 { DGDivider(inset: 14) }
+                    DGRadioRow(title: t.label, sub: t.sub, on: prefs.theme == t, identifier: t.label) { prefs.theme = t }
+                }
+            }
+            DGFootnote("Positron, the default style, turns dark when the app is dark. Dark after sunset goes by the sun where you are, or by the clock when your location is not known.")
         }
         .onAppear { withAnimation(DG.spring) { detent = SettingsSheet.peek } }
         .onDisappear { withAnimation(DG.spring) { detent = .large } }

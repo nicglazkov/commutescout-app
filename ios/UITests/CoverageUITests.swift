@@ -190,8 +190,8 @@ final class CoverageUITests: XCTestCase {
     func testMapStylePickerAndTheme() {
         openSettings()
         openPage("map-style")
-        // Light and dark is a segmented control.
-        for label in ["Dark", "Light", "Match my phone"] {
+        // Light and dark is a list of four, the last one following the sun.
+        for label in ["Dark", "Light", "Dark after sunset", "Match my phone"] {
             let seg = app.buttons[label].firstMatch
             XCTAssertTrue(reveal(seg), label)
             seg.tap()

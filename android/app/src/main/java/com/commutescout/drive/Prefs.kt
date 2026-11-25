@@ -17,7 +17,18 @@ class Prefs(context: Context) {
     /** A phone that had this app before the first-run screen counts as past it. */
     private val upgraded = p.all.isNotEmpty() && !p.contains("welcome.done")
 
-    enum class Theme(val label: String) { SYSTEM("Match my phone"), LIGHT("Light"), DARK("Dark") }
+    enum class Theme(val label: String, val sub: String? = null) {
+        SYSTEM("Match my phone"), LIGHT("Light"), DARK("Dark"),
+        /** Light by day and dark by night, by the sun where the driver is (see [Daylight]). */
+        DAYLIGHT("Dark after sunset", "Light by day, dark at night where you are");
+
+        fun isDark(systemDark: Boolean, here: LatLon?, epochMs: Long): Boolean = when (this) {
+            SYSTEM -> systemDark
+            LIGHT -> false
+            DARK -> true
+            DAYLIGHT -> !Daylight.isDay(here, epochMs)
+        }
+    }
     /**
      * The four looks the app offers, in order. Positron and Bright are
      * OpenFreeMap's styles, read from its tiles while online; without a

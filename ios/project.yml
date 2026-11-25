@@ -157,6 +157,7 @@ targets:
       - path: CommuteScoutDrive/Units.swift
       - path: CommuteScoutDrive/PowerPolicy.swift
       - path: CommuteScoutDrive/PerfProbe.swift
+      - path: CommuteScoutDrive/Daylight.swift
       - path: ../shared/voices.json
         buildPhase: resources
     settings:

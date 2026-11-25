@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import CoreLocation
 
 /// Everything a driver can set. Stored per device in UserDefaults; the
 /// keys are stable so nothing is lost across updates.
@@ -8,9 +9,20 @@ import SwiftUI
 final class Prefs: ObservableObject {
     enum Theme: String, CaseIterable, Identifiable {
         case system, light, dark
+        /// Light by day and dark by night, by the sun where the driver is (see `Daylight`).
+        case daylight
         var id: String { rawValue }
-        var label: String { switch self { case .system: "System"; case .light: "Light"; case .dark: "Dark" } }
-        var colorScheme: ColorScheme? { switch self { case .system: nil; case .light: .light; case .dark: .dark } }
+        var label: String { switch self { case .system: "Match my phone"; case .light: "Light"; case .dark: "Dark"; case .daylight: "Dark after sunset" } }
+        var sub: String? { self == .daylight ? "Light by day, dark at night where you are" : nil }
+        /// The appearance to force, or nil to follow the phone.
+        func scheme(here: CLLocationCoordinate2D?, at date: Date) -> ColorScheme? {
+            switch self {
+            case .system: nil
+            case .light: .light
+            case .dark: .dark
+            case .daylight: Daylight.isDay(here: here, at: date) ? .light : .dark
+            }
+        }
     }
 
     /// The same base maps the website offers, in its order. Positron and
