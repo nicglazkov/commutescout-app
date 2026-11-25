@@ -110,11 +110,11 @@ private fun clock(secondsFromNow: Double): String =
 
 private val barShape = RoundedCornerShape(30.dp)
 
-/** Arrival time, what is left, and the four things to do mid-trip. */
+/** Arrival time, what is left, and the three things to do mid-trip. Reporting lives in the Your trip sheet. */
 @Composable
 fun TripBar(
     secondsLeft: Double?, metersLeft: Double?,
-    onEnd: () -> Unit, onAddStop: () -> Unit, onRoute: () -> Unit, onReport: () -> Unit, modifier: Modifier = Modifier,
+    onEnd: () -> Unit, onAddStop: () -> Unit, onRoute: () -> Unit, modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxWidth().background(Color.White.copy(alpha = .55f), barShape).glass(barShape, elevation = 20.dp, strong = true)
         .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp).testTag("trip-bar")) {
@@ -129,7 +129,6 @@ fun TripBar(
             TripButton("stop", "End", onEnd, Modifier.weight(1f).testTag("end-trip"), danger = true)
             TripButton("pinl", "Add stop", onAddStop, Modifier.weight(1f).testTag("add-stop"))
             TripButton("route", "Route", onRoute, Modifier.weight(1f).testTag("trip-route"))
-            TripButton("report", "Report", onReport, Modifier.weight(1f).testTag("report"), iconTint = DG.low)
         }
     }
 }

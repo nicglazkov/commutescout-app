@@ -189,6 +189,7 @@ struct YourTripSheet: View {
     let arrive: String?
     let onChangeDestination: () -> Void
     let onAddStop: () -> Void
+    var onReport: () -> Void = {}
     let onClose: () -> Void
 
     var body: some View {
@@ -242,6 +243,23 @@ struct YourTripSheet: View {
                     .buttonStyle(DGButtonStyle(kind: .glass, height: 52))
                     .padding(.horizontal, 16).padding(.top, 10)
                     .accessibilityIdentifier("trip-add-stop")
+
+                Text("On the road").font(DG.T.section).foregroundStyle(DG.sub).padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 8)
+                Button(action: onReport) {
+                    HStack(spacing: 14) {
+                        DGIconView(name: "report", size: 22).foregroundStyle(DG.path).frame(width: 32, height: 32)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Report something").font(DG.T.rowTitle).foregroundStyle(DG.ink)
+                            Text("A crash, a hazard or a slowdown where you are").font(DG.T.rowSub).foregroundStyle(DG.sub)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, 14).padding(.trailing, 16).padding(.vertical, 8).frame(minHeight: 60)
+                    .background(DG.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                }
+                .buttonStyle(DGPressStyle()).padding(.horizontal, 16)
+                .accessibilityIdentifier("trip-report")
 
                 Text("Map").font(DG.T.section).foregroundStyle(DG.sub).padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 8)
                 HStack {

@@ -78,6 +78,18 @@ final class Prefs: ObservableObject {
     @AppStorage("cs.alertahead") var alertAheadMeters: Double = 1500
     @AppStorage("cs.speedlimit") var showSpeedLimit: Bool = true
     @AppStorage("cs.keepawake") var keepAwake: Bool = true
+    // The notices over the map on a trip, one switch each (SystemNotes.Switches). Only the speed one starts off.
+    @AppStorage("cs.notice.speeding") var noticeSpeeding: Bool = false
+    @AppStorage("cs.notice.speeding.over") var speedOverBy: Int = SystemNotes.overBy
+    @AppStorage("cs.notice.confirm") var noticeConfirm: Bool = true
+    @AppStorage("cs.notice.reroute") var noticeReroute: Bool = true
+    @AppStorage("cs.notice.gps") var noticeGps: Bool = true
+    @AppStorage("cs.notice.offline") var noticeOffline: Bool = true
+    @AppStorage("cs.notice.watch") var noticeWatch: Bool = true
+    var noticeSwitches: SystemNotes.Switches {
+        SystemNotes.Switches(speeding: noticeSpeeding, overBy: speedOverBy, confirm: noticeConfirm, reroute: noticeReroute,
+                             gps: noticeGps, offline: noticeOffline, watch: noticeWatch)
+    }
     @AppStorage("cs.avoid.tolls") var avoidTolls: Bool = false
     @AppStorage("cs.avoid.highways") var avoidHighways: Bool = false
     @AppStorage("cs.avoid.ferries") var avoidFerries: Bool = false

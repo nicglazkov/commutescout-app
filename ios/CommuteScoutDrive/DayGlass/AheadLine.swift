@@ -105,13 +105,12 @@ private func clock(_ secondsFromNow: Double) -> String {
     Date().addingTimeInterval(secondsFromNow).formatted(date: .omitted, time: .shortened)
 }
 
-/// Arrival time, what is left, and the four things to do mid-trip.
+/// Arrival time, what is left, and the three things to do mid-trip. Reporting lives in the Your trip sheet.
 struct TripBar: View {
     let state: NavigationState?
     let onExit: (() -> Void)?
     var onAddStop: () -> Void = {}
     var onRoute: () -> Void = {}
-    var onReport: () -> Void = {}
 
     var body: some View {
         let p = state?.currentProgress
@@ -129,7 +128,6 @@ struct TripBar: View {
                     .accessibilityLabel("End trip").accessibilityIdentifier("end-trip")
                 TripButton(icon: "mappin", label: "Add stop", action: onAddStop).accessibilityIdentifier("add-stop")
                 TripButton(icon: "arrow.triangle.branch", label: "Route", action: onRoute).accessibilityIdentifier("trip-route")
-                TripButton(icon: "report", label: "Report", tint: DG.path, action: onReport).accessibilityIdentifier("report")
             }
         }
         .padding(12)

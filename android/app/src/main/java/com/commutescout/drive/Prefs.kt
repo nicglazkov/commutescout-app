@@ -88,6 +88,7 @@ class Prefs(context: Context) {
         // UI tests start on the map, not on the first-run screen.
         welcomeDone = true
         voiceName = ""; voiceEngine = ""; voiceRate = 1f; voicePitch = 1f
+        noticeSpeeding = false; speedOverBy = TripNotices.defaultOver; noticeConfirm = true; noticeReroute = true; noticeGps = true; noticeOffline = true
     }
 
     // A name dropped in an update must not be a crash loop at launch.
@@ -138,6 +139,14 @@ class Prefs(context: Context) {
     var alertAheadMeters by state(p.getFloat("alertahead", 1500f).toDouble()) { p.edit().putFloat("alertahead", it.toFloat()).apply() }
     var showSpeedLimit by state(p.getBoolean("speedlimit", true)) { p.edit().putBoolean("speedlimit", it).apply() }
     var keepAwake by state(p.getBoolean("keepawake", true)) { p.edit().putBoolean("keepawake", it).apply() }
+    /** The notices over the map on a trip, one switch each (see [TripNotices]). Only the speed one starts off. */
+    var noticeSpeeding by state(p.getBoolean("notice.speeding", false)) { p.edit().putBoolean("notice.speeding", it).apply() }
+    /** How far past the limit before the speed notice shows, in the display unit. */
+    var speedOverBy by state(p.getInt("notice.speeding.over", TripNotices.defaultOver)) { p.edit().putInt("notice.speeding.over", it).apply() }
+    var noticeConfirm by state(p.getBoolean("notice.confirm", true)) { p.edit().putBoolean("notice.confirm", it).apply() }
+    var noticeReroute by state(p.getBoolean("notice.reroute", true)) { p.edit().putBoolean("notice.reroute", it).apply() }
+    var noticeGps by state(p.getBoolean("notice.gps", true)) { p.edit().putBoolean("notice.gps", it).apply() }
+    var noticeOffline by state(p.getBoolean("notice.offline", true)) { p.edit().putBoolean("notice.offline", it).apply() }
     var avoidTolls by state(p.getBoolean("avoid.tolls", false)) { p.edit().putBoolean("avoid.tolls", it).apply() }
     var avoidHighways by state(p.getBoolean("avoid.highways", false)) { p.edit().putBoolean("avoid.highways", it).apply() }
     var avoidFerries by state(p.getBoolean("avoid.ferries", false)) { p.edit().putBoolean("avoid.ferries", it).apply() }

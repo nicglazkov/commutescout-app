@@ -353,11 +353,11 @@ fun DriveScreen(model: DriveViewModel) {
     val limitShown = limitNow?.let { (if (Units.useMiles) it / 1.609344 else it).roundToInt() }
     val navNote: SysNote? = when {
         tripDone -> null // the arrive sheet says it
-        offlineNotice != null -> SysNote("offline", "offline", Tone.CLEAR, offlineNotice.first, offlineNotice.second)
-        online && uiState.isCalculatingNewRoute == true -> SysNote("reroute", "reroute", Tone.LOW, "Rerouting", "Finding a new route from here.")
-        fixAge > 12 -> SysNote("gps", "gps", Tone.CLEAR, "GPS signal lost", "Following the route from your last position")
-        limitShown != null && speedMps > 0 && speedNow > limitShown + 5 -> SysNote("speeding", "speed", Tone.HIGH, "Over the limit", "$speedNow in a $limitShown")
-        confirmAsk != null -> confirmAsk!!.let { c ->
+        prefs.noticeOffline && offlineNotice != null -> SysNote("offline", "offline", Tone.CLEAR, offlineNotice.first, offlineNotice.second)
+        prefs.noticeReroute && online && uiState.isCalculatingNewRoute == true -> SysNote("reroute", "reroute", Tone.LOW, "Rerouting", "Finding a new route from here.")
+        prefs.noticeGps && fixAge > 12 -> SysNote("gps", "gps", Tone.CLEAR, "GPS signal lost", "Following the route from your last position")
+        TripNotices.speeding(prefs.noticeSpeeding, speedNow, limitShown, prefs.speedOverBy, speedMps > 0) -> SysNote("speeding", "speed", Tone.HIGH, "Over the limit", "$speedNow in a $limitShown")
+        prefs.noticeConfirm && confirmAsk != null -> confirmAsk!!.let { c ->
             SysNote("confirm", "confirm", Tone.MID, "Is the ${AlertWords.of(c.marker, null, 0.0).title.removeSuffix(" ahead").removeSuffix(" reported").lowercase()} still there?",
                 "Reported ${reportedOf(c.marker) ?: "earlier"}, just behind you",
                 action = "Still there", onAction = { model.vote(c.marker, "up"); model.alerts.dismiss(c.id); confirmAsk = null },

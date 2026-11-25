@@ -191,7 +191,7 @@ internal fun PlacePickSheet(
 @Composable
 internal fun TripSheet(
     model: DriveViewModel, destination: Place, arrive: String?, is3D: Boolean,
-    onChangeDestination: () -> Unit, onAddStop: () -> Unit, onClose: () -> Unit,
+    onChangeDestination: () -> Unit, onAddStop: () -> Unit, onReport: () -> Unit, onClose: () -> Unit,
 ) {
     val stops by model.stops.collectAsStateWithLifecycle()
     val busy by model.tripChanging.collectAsStateWithLifecycle()
@@ -218,6 +218,17 @@ internal fun TripSheet(
                 }
             }
             DGButton("Add a stop", onAddStop, Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp).fillMaxWidth().height(52.dp).testTag("trip-add-stop"), icon = "pinl")
+            SheetLabel("On the road")
+            Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(DG.wash)
+                .clickable(role = Role.Button, onClick = onReport).heightIn(min = 60.dp).padding(start = 14.dp, end = 16.dp, top = 8.dp, bottom = 8.dp).testTag("trip-report"),
+                verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) { DGIcon("report", DG.low, 22.dp, stroke = 2f) }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Report something", style = DGType.row, color = DG.ink)
+                    Text("A crash, a hazard or a slowdown where you are", style = PageType.rowSub, color = DG.sub)
+                }
+            }
             SheetLabel("Map")
             Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(DG.wash).padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically) {
