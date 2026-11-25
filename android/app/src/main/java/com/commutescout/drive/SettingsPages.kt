@@ -101,10 +101,10 @@ fun MapStylePage(model: DriveViewModel) {
     Group {
         Prefs.Theme.entries.forEachIndexed { i, t ->
             if (i > 0) RowDivider(18.dp)
-            RadioRow(t.label, prefs.theme == t, "theme-${t.name.lowercase()}") { prefs.theme = t }
+            RadioRow(t.label, prefs.theme == t, "theme-${t.name.lowercase()}", sub = t.sub) { prefs.theme = t }
         }
     }
-    GroupFoot("In the dark theme, Positron dims for night driving. Bright, Slate and Gray keep their colors.")
+    GroupFoot("In the dark theme, Positron dims for night driving. Bright, Slate and Gray keep their colors. Dark after sunset goes by the sun where you are, or by the clock when your location is not known.")
 }
 
 // MARK: units and region

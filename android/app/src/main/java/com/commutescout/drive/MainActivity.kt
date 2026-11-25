@@ -18,6 +18,11 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.graphics.Color
@@ -34,11 +39,14 @@ class MainActivity : ComponentActivity() {
             model.setLocationPermission(true)
         }
         setContent {
-            val dark = when (model.prefs.theme) {
-                Prefs.Theme.SYSTEM -> isSystemInDarkTheme()
-                Prefs.Theme.LIGHT -> false
-                Prefs.Theme.DARK -> true
+            // "Dark after sunset" follows the sun at the driver's position, checked each minute.
+            val here by model.here.collectAsStateWithLifecycle()
+            var clock by remember { mutableStateOf(System.currentTimeMillis()) }
+            val theme = model.prefs.theme
+            if (theme == Prefs.Theme.DAYLIGHT) LaunchedEffect(Unit) {
+                while (true) { clock = System.currentTimeMillis(); delay(60_000) }
             }
+            val dark = theme.isDark(isSystemInDarkTheme(), here ?: model.prefs.lastCenter, clock)
             val scheme = if (dark) darkColorScheme(primary = Color(0xFF8AB4F8), surface = Color(0xFF16181C), background = Color(0xFF16181C))
                          else lightColorScheme(primary = Color(0xFF1F5FCF))
             SideEffect { model.isDark = dark }

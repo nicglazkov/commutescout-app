@@ -290,7 +290,7 @@ class DriveTests {
         openSettingsPage("Map style")
         for (s in listOf("bright", "slate", "outdoors", "positron")) scrollTo(tag("basemap-$s")).performClick()
         assertTrue("exactly four looks", !tagExists("basemap-dark") && !tagExists("basemap-light"))
-        for (t in listOf("dark", "light", "system")) scrollTo(tag("theme-$t")).performClick()
+        for (t in listOf("dark", "light", "daylight", "system")) scrollTo(tag("theme-$t")).performClick()
         openSettingsPage("Units")
         for (u in listOf("km", "miles", "auto")) scrollTo(tag("unit-distance-$u")).performClick()
         openSettingsPage("Navigation")
