@@ -50,12 +50,15 @@ import kotlin.math.sin
  */
 
 /** A hatch color: the stripe and its background. */
-enum class Hatch(val stripe: Color, val back: Color) {
+enum class Hatch(val stripe: Color, private val pale: Color) {
     HI(Color(0xFFE5484D), Color(0xFFFDE6E6)),
     MID(Color(0xFFEE8B0C), Color(0xFFFDF0DC)),
     LO(Color(0xFF2F7CF6), Color(0xFFE4EEFE)),
     OK(Color(0xFF14A35A), Color(0xFFE1F4E9)),
-    ICE(Color(0xFF4F95D6), Color(0xFFE3EFFA)),
+    ICE(Color(0xFF4F95D6), Color(0xFFE3EFFA));
+
+    /** The pale ground behind the stripes; a tint of the stripe at night. */
+    val back: Color get() = if (DG.dark) stripe.tint(.14f) else pale
 }
 
 /** What to draw on the road. Every distance is the design's px, drawn as dp. */
@@ -65,7 +68,7 @@ data class RoadSpec(
     val sh: Float = .32f,
     val padT: Float = 8f, val padB: Float = 10f, val padL: Float = 8f, val padR: Float = 8f,
     val scale: Float = 1f,
-    val surface: Color = Color.White,
+    val surface: Color = DG.surface,
     val lanesFill: Color = DG.laneFill,
     val tint: List<Pair<Int, Hatch>> = emptyList(),
     val frost: List<Pair<Float, Float>> = emptyList(),
@@ -125,12 +128,12 @@ fun DrawScope.drawRoad(spec: RoadSpec, progress: Float = 1f, text: TextMeasurer?
         drawPath(quad(0f, n, 0f, 1f), o.lanesFill)
         for ((lane, t) in o.tint) drawPath(quad(lane.toFloat(), lane + 1f, 0f, 1f), t.back)
         for ((f0, f1) in o.frost) hatchFill(quad(0f, n, f0, f1), Hatch.ICE, .9f)
-        drawLine(Color.White, p(0f, 0f), p(0f, 1f), 1.8f * s)
-        drawLine(Color.White, p(n, 0f), p(n, 1f), 1.8f * s)
+        drawLine(DG.laneLine, p(0f, 0f), p(0f, 1f), 1.8f * s)
+        drawLine(DG.laneLine, p(n, 0f), p(n, 1f), 1.8f * s)
         for (i in 1 until o.n) {
             var v = 0f
             while (v < 1f) {
-                drawLine(Color.White, p(i.toFloat(), v), p(i.toFloat(), min(1f, v + .05f)), 1.6f * s, StrokeCap.Round)
+                drawLine(DG.laneLine, p(i.toFloat(), v), p(i.toFloat(), min(1f, v + .05f)), 1.6f * s, StrokeCap.Round)
                 v += .1f
             }
         }
@@ -203,7 +206,7 @@ fun DrawScope.drawRoad(spec: RoadSpec, progress: Float = 1f, text: TextMeasurer?
             val pt = p(-o.sh, t.v)
             drawLine(Color(0xFFAAB3BE), Offset(pt.x - 5, pt.y), Offset(pt.x + 1, pt.y), 1.2f)
             val style = TextStyle(fontFamily = Onest, fontSize = 12.sp, fontWeight = if (t.strong) FontWeight(650) else FontWeight.Medium,
-                color = if (t.strong) DG.ink else Color(0xFF6B7684))
+                color = if (t.strong) DG.ink else DG.sub)
             val lay = text.measure(t.text, style)
             // The text measurer works in px; undo the dp scale for it.
             scale(1 / density, 1 / density, Offset(pt.x - 9, pt.y)) {
@@ -264,7 +267,7 @@ object Drawings {
         DrawKind.POLICE -> RoadSpec(sh = .7f, marks = listOf(RoadSpec.Mark(4.35f, .66f, "police", Hatch.LO)), you = 3f, path = RoadSpec.LanePath(3f, 2f, .2f, .5f))
         DrawKind.JAM -> RoadSpec(cars = listOf(0 to .5f, 0 to .7f, 1 to .44f, 1 to .64f, 1 to .84f, 2 to .52f, 2 to .72f, 3 to .46f, 3 to .66f, 3 to .86f),
             you = 2f, path = RoadSpec.LanePath(2f, 2f, v1 = .36f))
-        DrawKind.CHAIN -> RoadSpec(across = listOf(.6f to Hatch.HI), marks = listOf(RoadSpec.Mark(2f, .76f, "chain", Hatch.HI)), surface = Color(0xFFF4F7FA),
+        DrawKind.CHAIN -> RoadSpec(across = listOf(.6f to Hatch.HI), marks = listOf(RoadSpec.Mark(2f, .76f, "chain", Hatch.HI)), surface = if (DG.dark) DG.surface else Color(0xFFF4F7FA),
             you = 2f, path = RoadSpec.LanePath(2f, 2f, v1 = .5f))
         DrawKind.ICE -> RoadSpec(frost = listOf(.45f to 1f), marks = listOf(RoadSpec.Mark(2f, .7f, "ice", Hatch.MID)), you = 1f, path = RoadSpec.LanePath(1f, 1f))
         DrawKind.CAMERA -> RoadSpec(sh = .7f, marks = listOf(RoadSpec.Mark(4.35f, .62f, "camera", Hatch.LO)), you = 2f, path = RoadSpec.LanePath(2f, 2f))
@@ -339,7 +342,7 @@ object Drawings {
     fun cleared(layout: LaneLayout?): RoadSpec {
         val n = layout?.total ?: 4
         val l = (layout?.closedLanes?.firstOrNull()?.minus(1) ?: (n - 1)).toFloat()
-        return RoadSpec(n = n, padT = 4f, padB = 6f, lanesFill = Color(0xFFDCEFE3), blocks = listOf(RoadSpec.Block(l, l, .5f, .8f, ghost = true)),
+        return RoadSpec(n = n, padT = 4f, padB = 6f, lanesFill = if (DG.dark) DG.good.tint(.16f) else Color(0xFFDCEFE3), blocks = listOf(RoadSpec.Block(l, l, .5f, .8f, ghost = true)),
             marks = listOf(RoadSpec.Mark(l + .5f, .65f, "check", Hatch.OK)), you = l, path = RoadSpec.LanePath(l, l))
     }
 

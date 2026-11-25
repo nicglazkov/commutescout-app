@@ -126,7 +126,7 @@ fun UnitsPage(model: DriveViewModel) {
         }
         Spacer(Modifier.height(10.dp))
         Text("Your phone is set to ${locale.getDisplayLanguage(Locale.US)}, ${locale.getDisplayCountry(Locale.US).ifEmpty { "no region" }}.",
-            style = PageType.rowSub, color = Color(0xFF23406F))
+            style = PageType.rowSub, color = DG.noteInk)
     }
     GroupHead("Distance")
     Group {

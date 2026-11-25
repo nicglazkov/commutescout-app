@@ -137,7 +137,7 @@ fun BaseMapCards(choice: Prefs.MapStyle, onPick: (Prefs.MapStyle) -> Unit) {
                     }
                     val ring by androidx.compose.animation.animateColorAsState(if (picked) DG.low else DG.hair, label = "ring")
                     val shape = RoundedCornerShape(20.dp)
-                    Column(Modifier.weight(1f).clip(shape).background(Color.White.copy(alpha = .85f))
+                    Column(Modifier.weight(1f).clip(shape).background(DG.glass(.85f))
                         .border(if (picked) 2.dp else 1.dp, ring, shape)
                         .clickable { onPick(s) }.testTag("basemap-${s.name.lowercase()}")
                         .semantics { selected = picked }) {

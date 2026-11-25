@@ -191,7 +191,7 @@ data class AlertWords(
 /** The thumbnail for an alert, with the plugin's badge on a community report. */
 @Composable
 fun AlertThumb(words: AlertWords, marker: RoadMarker?, size: Pair<Dp, Dp> = 76.dp to 64.dp, cleared: Boolean = false, near: Float = 0f) {
-    Box(Modifier.size(size.first, size.second).clip(RoundedCornerShape(DG.rThumb)).background(Color.White)
+    Box(Modifier.size(size.first, size.second).clip(RoundedCornerShape(DG.rThumb)).background(DG.surface)
         .border(0.5.dp, DG.edge, RoundedCornerShape(DG.rThumb))) {
         AnimatedContent(cleared, transitionSpec = { fadeIn(tween(700)) togetherWith fadeOut(tween(700)) }, label = "thumb") { c ->
             if (c) LaneThumb(Drawings.cleared(words.layout), DrawKind.CRASH, width = size.first, height = size.second)
@@ -266,11 +266,11 @@ fun AlertMore(
         if (draw != DrawKind.FIRE && draw != DrawKind.SIGN) {
             val ticks = listOf(RoadSpec.Tick(.02f, "You", true), RoadSpec.Tick(.02f + (.28f + .46f * minOf(1f, words.miles.toFloat() / .8f) - .02f) / 2, Units.distance(words.miles * 1609.344 / 2)),
                 RoadSpec.Tick(.28f + .46f * minOf(1f, words.miles.toFloat() / .8f), words.distance ?: "", true))
-            Box(Modifier.padding(top = 14.dp).fillMaxWidth().height(150.dp).clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = .7f))) {
+            Box(Modifier.padding(top = 14.dp).fillMaxWidth().height(150.dp).clip(RoundedCornerShape(18.dp)).background(DG.glass(.7f))) {
                 LaneDrawing(Drawings.large(draw, words.layout, words.miles, ticks), draw, Modifier.fillMaxWidth().height(150.dp), animate = true, key = marker.key)
             }
         } else {
-            Box(Modifier.padding(top = 14.dp).fillMaxWidth().height(120.dp).clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = .7f))) {
+            Box(Modifier.padding(top = 14.dp).fillMaxWidth().height(120.dp).clip(RoundedCornerShape(18.dp)).background(DG.glass(.7f))) {
                 LaneDrawing(RoadSpec(), draw, Modifier.fillMaxWidth().height(120.dp))
             }
         }
@@ -324,7 +324,7 @@ fun SpeedDisc(speedMps: Double, limitKmh: Double?, modifier: Modifier = Modifier
             Text(if (miles) "mph" else "km/h", style = DGType.tiny, color = DG.sub)
         }
         if (limit != null) Box(Modifier.align(Alignment.TopEnd).size(32.dp).clip(CircleShape).background(Color.White).border(2.5.dp, DG.high, CircleShape),
-            contentAlignment = Alignment.Center) { Text("$limit", style = DGType.label.copy(fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold), color = DG.ink) }
+            contentAlignment = Alignment.Center) { Text("$limit", style = DGType.label.copy(fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold), color = Color(0xFF0E1726)) }
     }
 }
 
@@ -386,7 +386,7 @@ fun AlertRow(words: AlertWords, marker: RoadMarker?, modifier: Modifier = Modifi
     Row(modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(vertical = 8.dp, horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(60.dp, 42.dp).clip(RoundedCornerShape(topStart = 21.dp, bottomStart = 21.dp, topEnd = 11.dp, bottomEnd = 11.dp))
-            .background(Color.White).border(0.5.dp, DG.edge, RoundedCornerShape(topStart = 21.dp, bottomStart = 21.dp, topEnd = 11.dp, bottomEnd = 11.dp))) {
+            .background(DG.surface).border(0.5.dp, DG.edge, RoundedCornerShape(topStart = 21.dp, bottomStart = 21.dp, topEnd = 11.dp, bottomEnd = 11.dp))) {
             LaneDrawing(Drawings.forAlert(words.look.draw, words.layout).copy(padT = 3f, padB = 4f, padL = 6f, padR = 6f), words.look.draw, Modifier.size(60.dp, 42.dp))
         }
         Spacer(Modifier.width(12.dp))

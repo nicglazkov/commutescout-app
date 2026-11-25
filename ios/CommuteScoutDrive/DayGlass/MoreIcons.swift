@@ -81,7 +81,7 @@ struct DataTag: View {
             : DataTag(text: "Plugin data", style: .plugin, icon: "piece")
     }
 
-    static let pluginInk = DG.hex(0x4a4f9e)
+    static let pluginInk = DG.dyn(0x4a4f9e, 0xb4b8ff)
     static let pluginWash = DG.hex(0x5b5bd6)
 
     var body: some View {

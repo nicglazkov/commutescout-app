@@ -181,7 +181,7 @@ fun AlertsListSheet(model: DriveViewModel, mapState: NavigationMapState, onClose
                     topStart = if (i == 0) 22.dp else 0.dp, topEnd = if (i == 0) 22.dp else 0.dp,
                     bottomStart = if (i == list.lastIndex) 22.dp else 0.dp, bottomEnd = if (i == list.lastIndex) 22.dp else 0.dp)
                 Column(Modifier.padding(horizontal = 14.dp).fillMaxWidth().clip(shape)
-                    .background(if (plugin) DG.plug.copy(alpha = .06f) else Color(0xD6FFFFFF))) {
+                    .background(if (plugin) DG.plug.copy(alpha = .06f) else DG.glass(.84f))) {
                     if (i > 0) RowDivider(inset = 58.dp)
                     SRow(m.displayTitle, sub = m.detailLines.firstOrNull(), labelColor = if (plugin) DG.plugInk else DG.ink,
                         lead = { Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) { MarkerGlyph(m, 26.dp) } },
@@ -313,7 +313,7 @@ fun AskSheet(model: DriveViewModel, onClose: () -> Unit) {
         // The question box and its send button, above the keyboard.
         val shape = RoundedCornerShape(26.dp)
         Row(Modifier.windowInsetsPadding(WindowInsets.navigationBars).padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 10.dp).fillMaxWidth()
-            .heightIn(min = 52.dp).clip(shape).background(Color.White.copy(alpha = .85f)).border(1.dp, DG.hair, shape)
+            .heightIn(min = 52.dp).clip(shape).background(DG.glass(.85f)).border(1.dp, DG.hair, shape)
             .padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) {
                 if (question.isEmpty()) Text("Ask about the roads", style = DGType.search, color = DG.faint)

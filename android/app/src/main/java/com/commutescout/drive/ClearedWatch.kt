@@ -135,7 +135,7 @@ fun ClearedPanel(sheet: EventSheet, nowMs: Long, model: DriveViewModel) {
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                Box(Modifier.fillMaxWidth().height(100.dp).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = .8f))
+                Box(Modifier.fillMaxWidth().height(100.dp).clip(RoundedCornerShape(16.dp)).background(DG.glass(.8f))
                     .border(0.5.dp, DG.good.copy(alpha = .2f), RoundedCornerShape(16.dp))) {
                     // Nothing to steer around any more: the open road, no arrow.
                     LaneDrawing(Drawings.cleared(alert.laneLayout).copy(path = null, you = null), look.draw, Modifier.fillMaxWidth().height(100.dp))

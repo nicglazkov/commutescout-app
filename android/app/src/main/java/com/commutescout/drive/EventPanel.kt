@@ -171,7 +171,7 @@ fun EventPanel(sheet: EventSheet, here: LatLon?, model: DriveViewModel) {
             // there is more and how to get it.
             if (!expanded && marker != null) {
                 Row(Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp).fillMaxWidth().height(48.dp).clip(RoundedCornerShape(24.dp))
-                    .background(Color.White.copy(alpha = 0.7f)).border(0.5.dp, DG.hair, RoundedCornerShape(24.dp))
+                    .background(DG.glass(0.7f)).border(0.5.dp, DG.hair, RoundedCornerShape(24.dp))
                     .clickable { expanded = true }.testTag("more-details"),
                     horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     Text(if ((card?.dispatchCount ?: 0) > 0) "More details and the dispatch log" else "More details",
@@ -310,7 +310,7 @@ private fun Gloss(text: String) {
 /** The facts as a grouped list: label on the left, value on the right. */
 @Composable
 private fun Facts(facts: List<Pair<String, String>>) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.72f))
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(DG.glass(0.72f))
         .border(0.5.dp, DG.hair, RoundedCornerShape(18.dp))) {
         facts.forEachIndexed { i, (label, value) ->
             if (i > 0) HorizontalDivider(thickness = 0.5.dp, color = DG.hair)
@@ -402,7 +402,7 @@ private fun DispatchLog(id: String, count: Int, onOpen: () -> Unit) {
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
                             Text(line.text ?: "", style = MaterialTheme.typography.bodyMedium)
-                            line.plain?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = Color(0xFF1F6FD1)) }
+                            line.plain?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = DG.lowInk) }
                         }
                     }
                 }

@@ -95,7 +95,7 @@ private struct SettingsHome: View {
                 DGSectionLabel("Map data")
                 DGGroup {
                     SettingsLink(id: "data-sources") { DataSourcesPage() } label: {
-                        DGRow(title: "Data sources", leading: { DGTile(symbol: "antenna.radiowaves.left.and.right", color: DG.hex(0x0e1726)) },
+                        DGRow(title: "Data sources", leading: { DGTile(symbol: "antenna.radiowaves.left.and.right", color: DG.solid) },
                               trailing: { sourcesValue })
                     }
                     DGDivider()
@@ -217,7 +217,7 @@ struct AccountCard: View {
             if chevron { Image(systemName: "chevron.right").font(.system(size: 15, weight: .bold)).foregroundStyle(DG.ink) }
         }
         .padding(14)
-        .background(Color.white.opacity(framed ? 0.84 : 0), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(DG.glass(framed ? 0.84 : 0), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(framed ? DG.hair : .clear, lineWidth: 1))
         .shadow(color: DG.ink.opacity(framed ? 0.04 : 0), radius: 8, y: 2)
         .contentShape(Rectangle())

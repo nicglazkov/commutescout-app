@@ -300,9 +300,9 @@ struct OfflineMapsView: View {
             .padding(.top, 10)
         }
         .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 14)
-        .background(Color.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(DG.glass(0.8), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
-        .shadow(color: DG.ink.opacity(0.04), radius: 2, y: 1)
+        .shadow(color: DG.shadow(0.04), radius: 2, y: 1)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("offline-storage")
     }
@@ -615,7 +615,7 @@ struct AreaPickerView: View {
     private func handle(frame: CGRect, maxW: CGFloat, maxH: CGFloat, fs: CGSize) -> some View {
         Circle().fill(.white).frame(width: 26, height: 26)
             .overlay(Circle().strokeBorder(DG.path, lineWidth: 3))
-            .shadow(color: DG.ink.opacity(0.3), radius: 6, y: 3)
+            .shadow(color: DG.shadow(0.3), radius: 6, y: 3)
             .scaleEffect(grabbed ? 1.2 : 1)
             .animation(DG.spring, value: grabbed)
             .frame(width: 48, height: 48).contentShape(Circle())
@@ -736,7 +736,7 @@ struct SavedMapDetail: View {
             .ignoresSafeArea()
             .overlay(alignment: .topLeading) {
                 DGBackButton { dismiss() }
-                    .background(Circle().fill(.white.opacity(0.85)).shadow(color: DG.ink.opacity(0.12), radius: 6, y: 2))
+                    .background(Circle().fill(DG.glass(0.85)).shadow(color: DG.shadow(0.12), radius: 6, y: 2))
                     .padding(.leading, 16).padding(.top, 8)
             }
         }
@@ -880,7 +880,7 @@ struct SavedMapDetail: View {
                 .accessibilityElement(children: .combine)
             }
         }
-        .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(DG.glass(0.7), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
     }
 
@@ -923,7 +923,7 @@ struct SavedMapDetail: View {
             }
         }
         .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 30)
-        .background(Color.white.opacity(0.6).overlay(alignment: .top) { Rectangle().fill(DG.hair).frame(height: 1) })
+        .background(DG.glass(0.6).overlay(alignment: .top) { Rectangle().fill(DG.hair).frame(height: 1) })
     }
 
     private func update() {
@@ -972,7 +972,7 @@ private struct UpdateButtonStyle: ButtonStyle {
                 }
             }
             .overlay(Capsule().strokeBorder(done ? DGTone.good.color.opacity(0.3) : .white.opacity(0.2), lineWidth: 0.5))
-            .shadow(color: done ? .clear : DG.ink.opacity(0.25), radius: 8, y: 4)
+            .shadow(color: done ? .clear : DG.shadow(0.25), radius: 8, y: 4)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(DG.snap, value: configuration.isPressed)
             .animation(DG.springSoft, value: done)

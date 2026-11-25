@@ -257,7 +257,7 @@ struct DriveAlert: View {
         HStack(alignment: .center, spacing: 12) {
             LaneDrawing(kind: kind, layout: item.marker.laneLayout, cleared: cleared,
                         closeness: min(1, max(0, 1 - gap / 1300)))
-                .background(.white, in: RoundedRectangle(cornerRadius: DG.R.thumb, style: .continuous))
+                .background(DG.surface, in: RoundedRectangle(cornerRadius: DG.R.thumb, style: .continuous))
                 .clipShape(RoundedRectangle(cornerRadius: DG.R.thumb, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DG.R.thumb, style: .continuous).strokeBorder(DG.hair, lineWidth: 0.5))
             VStack(alignment: .leading, spacing: 3) {
@@ -303,7 +303,7 @@ struct DriveAlert: View {
                         near: Units.distance(gap), half: Units.distance(gap / 2),
                         closeness: min(1, max(0, 1 - gap / 1300)), lines: item.marker.lines ?? [])
                 .frame(maxWidth: .infinity)
-                .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .background(DG.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             if let say = plan?.instruction ?? (item.marker.lanes != nil ? detail : nil) {
                 Text(say).font(DG.T.noteTitle).foregroundStyle(tone.ink)
@@ -359,7 +359,7 @@ struct SpeedDisc: View {
         .dgGlass(Circle(), tone: over ? .high : nil)
         .overlay(alignment: .topTrailing) {
             if let limit {
-                Text("\(limit)").font(DG.font(13, .bold)).monospacedDigit().foregroundStyle(DG.ink)
+                Text("\(limit)").font(DG.font(13, .bold)).monospacedDigit().foregroundStyle(DG.hex(0x0e1726))
                     .frame(width: 32, height: 32)
                     .background(.white, in: Circle())
                     .overlay(Circle().strokeBorder(DGTone.high.color, lineWidth: 2.5))

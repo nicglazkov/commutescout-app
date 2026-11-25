@@ -199,7 +199,7 @@ private fun Ask(icon: String, title: String, body: String) {
         Spacer(Modifier.width(12.dp))
         Column {
             Text(title, style = PageType.rowLabel.copy(fontWeight = FontWeight.Bold), color = DG.ink)
-            Text(body, style = PageType.rowSub, color = Color(0xFF23406F))
+            Text(body, style = PageType.rowSub, color = DG.noteInk)
         }
     }
 }
@@ -212,7 +212,7 @@ private fun Perks() {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEachIndexed { c, (icon, label) ->
                     val shape = RoundedCornerShape(18.dp)
-                    Row(Modifier.weight(1f).clip(shape).background(Color.White.copy(alpha = .75f)).border(1.dp, DG.hair, shape).padding(12.dp),
+                    Row(Modifier.weight(1f).clip(shape).background(DG.glass(.75f)).border(1.dp, DG.hair, shape).padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Tile(icon, colors[r * 2 + c], size = 30.dp, iconSize = 17.dp)
                         Spacer(Modifier.width(10.dp))

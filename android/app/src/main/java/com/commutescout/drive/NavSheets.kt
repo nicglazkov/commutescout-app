@@ -209,7 +209,7 @@ internal fun TripSheet(
                     }
                 }
                 Divider()
-                TripRow(lead = { Box(Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).background(DG.ink), contentAlignment = Alignment.Center) { DGIcon("pin", Color.White, 17.dp, stroke = 2.2f) } },
+                TripRow(lead = { Box(Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).background(DG.solid), contentAlignment = Alignment.Center) { DGIcon("pin", Color.White, 17.dp, stroke = 2.2f) } },
                     title = destination.shortName, sub = arrive?.let { "Arrive $it" }) {
                     Box(Modifier.height(40.dp).clip(RoundedCornerShape(20.dp)).background(DG.low.tint(.14f)).clickable(role = Role.Button, onClick = onChangeDestination)
                         .padding(horizontal = 16.dp).testTag("change-destination"), contentAlignment = Alignment.Center) {

@@ -227,7 +227,7 @@ struct YourTripSheet: View {
                     divider
                     row(title: destination.shortName, sub: arrive.map { "Arrive \($0)" }) {
                         DGIconView(name: "mappin", size: 17).foregroundStyle(.white)
-                            .frame(width: 32, height: 32).background(DG.ink, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .frame(width: 32, height: 32).background(DG.solid, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     } trail: {
                         Button(action: onChangeDestination) {
                             Text("Change").font(DG.font(14, .semibold)).foregroundStyle(DGTone.low.ink)

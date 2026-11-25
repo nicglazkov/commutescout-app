@@ -144,7 +144,7 @@ struct TripEventRow: View {
                 .frame(width: 60, height: 42)
                 .scaleEffect(0.8)
                 .frame(width: 60, height: 42)
-                .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(DG.glass(0.7), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(TripMath.title(marker)).font(DG.T.rowTitle).foregroundStyle(DG.ink).lineLimit(1)
@@ -215,7 +215,7 @@ struct PlaceCard: View {
                     } label: {
                         Label("Save", systemImage: isSaved ? "star.fill" : "star").font(DG.T.button)
                             .foregroundStyle(DG.ink).frame(maxWidth: .infinity).frame(height: 48)
-                            .background(Color.white.opacity(0.8), in: Capsule())
+                            .background(DG.glass(0.8), in: Capsule())
                             .overlay(Capsule().strokeBorder(DG.hair, lineWidth: 1))
                     }
                     .layoutPriority(1)
@@ -228,7 +228,7 @@ struct PlaceCard: View {
                     .accessibilityIdentifier("place-watch")
                     ShareLink(item: Backend.mapURL(lat: place.lat, lon: place.lon)) {
                         Image(systemName: "square.and.arrow.up").font(.system(size: 17, weight: .semibold)).foregroundStyle(DG.ink)
-                            .frame(width: 48, height: 48).background(Color.white.opacity(0.8), in: Circle())
+                            .frame(width: 48, height: 48).background(DG.glass(0.8), in: Circle())
                             .overlay(Circle().strokeBorder(DG.hair, lineWidth: 1))
                     }
                     .accessibilityLabel("Share")
@@ -481,7 +481,7 @@ struct RoutesCard: View {
                 Image(systemName: auto ? "checkmark" : "arrow.down.to.line").font(.system(size: 17, weight: .semibold))
             }
             .foregroundStyle(DG.ink)
-            .frame(width: 48, height: 48).background(Color.white.opacity(0.8), in: Circle())
+            .frame(width: 48, height: 48).background(DG.glass(0.8), in: Circle())
             .overlay(Circle().strokeBorder(DG.hair, lineWidth: 1))
         }
         .buttonStyle(DGPressStyle())
@@ -567,7 +567,7 @@ struct ArriveCard: View {
                     stat("Arrived", Units.time(Date()))
                 }
                 .padding(.vertical, 12)
-                .background(Color.white.opacity(0.75), in: RoundedRectangle(cornerRadius: DG.R.facts, style: .continuous))
+                .background(DG.glass(0.75), in: RoundedRectangle(cornerRadius: DG.R.facts, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DG.R.facts, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
                 .padding(.top, 16)
                 if !TripMemo.avoided.isEmpty {
@@ -589,7 +589,7 @@ struct ArriveCard: View {
                             .padding(.horizontal, 12).frame(minHeight: 54)
                         }
                     }
-                    .background(Color.white.opacity(0.75), in: RoundedRectangle(cornerRadius: DG.R.facts, style: .continuous))
+                    .background(DG.glass(0.75), in: RoundedRectangle(cornerRadius: DG.R.facts, style: .continuous))
                 }
                 HStack(spacing: 10) {
                     Button {

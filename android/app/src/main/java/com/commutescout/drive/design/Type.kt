@@ -77,12 +77,17 @@ fun onestTypography(): Typography {
 fun DayGlassTheme(colorScheme: androidx.compose.material3.ColorScheme, content: @Composable () -> Unit) {
     // Light mode maps Material roles onto the Day Glass+ tokens, so the
     // sheets and cards not yet drawn with the design's own parts still
-    // read as one app. Dark mode keeps the scheme it is given.
+    // read as one app. Dark mode does the same with the night tokens.
     val scheme = if (colorScheme.background.luminance() > 0.5f) colorScheme.copy(
         primary = DG.low, onPrimary = Color.White, surface = Color(0xFFFBFCFE), onSurface = DG.ink,
         surfaceVariant = Color(0xFFEEF1F6), onSurfaceVariant = DG.sub, outline = DG.edge, outlineVariant = DG.hair,
         background = DG.bg, onBackground = DG.ink, surfaceContainerLow = Color(0xFFF7F8FB), surfaceContainer = Color(0xFFF4F6F9),
         surfaceContainerHigh = Color(0xFFF1F3F7), error = DG.high,
-    ) else colorScheme
+    ) else colorScheme.copy(
+        primary = Color(0xFF8AB4F8), onPrimary = Color(0xFF0B1320), surface = DG.surface, onSurface = DG.ink,
+        surfaceVariant = Color(0xFF222C3C), onSurfaceVariant = DG.sub, outline = DG.edge, outlineVariant = DG.hair,
+        background = DG.bg, onBackground = DG.ink, surfaceContainerLow = Color(0xFF141C29), surfaceContainer = DG.surface,
+        surfaceContainerHigh = Color(0xFF1E2838), surfaceContainerHighest = Color(0xFF243044), error = Color(0xFFFF9396),
+    )
     MaterialTheme(colorScheme = scheme, typography = onestTypography(), content = content)
 }
