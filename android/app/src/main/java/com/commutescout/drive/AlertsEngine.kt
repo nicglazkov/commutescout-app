@@ -114,8 +114,8 @@ class AlertsEngine(context: Context, prefs: Prefs) {
     private var allAsOf: Long? = null
     private val repeated = HashSet<String>()
 
-    private var route: List<LatLon> = emptyList()
-    private var cumulative: DoubleArray = DoubleArray(0)
+    @Volatile private var route: List<LatLon> = emptyList()
+    @Volatile private var cumulative: DoubleArray = DoubleArray(0)
     private var all: List<Upcoming> = emptyList()
     private val announced = HashSet<String>()
     private var box: DoubleArray? = null
@@ -399,8 +399,11 @@ class AlertsEngine(context: Context, prefs: Prefs) {
     }
 
     fun update(position: LatLon) {
-        if (route.isEmpty()) return
-        val hit = along(route, cumulative, position, lastSegment)
+        // A reroute swaps the route from another thread: read both once,
+        // and skip the fix that lands between the two writes.
+        val pts = route; val cum = cumulative
+        if (pts.isEmpty() || cum.size != pts.size) return
+        val hit = along(pts, cum, position, lastSegment)
         lastSegment = hit.segment
         _hereAlong.value = hit.along
         val upcoming = all.filter { it.alongMeters > hit.along - 100 && wanted(it.marker) }

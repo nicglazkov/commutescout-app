@@ -152,4 +152,55 @@ class TripLogicTest {
         assertEquals("Waiting for your location", TripText.driveStatus(asked = false, located = false))
         assertEquals("Drive time is not available right now", TripText.driveStatus(asked = true, located = true))
     }
+
+    @Test fun railGivesTheNextMileMostOfTheRoom() {
+        // 0.5 km and 8 km ahead on a 32 km trip, a 300-unit track.
+        val s = Rail.slots(listOf(500.0, 8000.0), 32_000.0, 300f)
+        assertEquals(listOf(0, 1), s.map { it.index })
+        assertEquals(240f, s[0].y, 0.01f)           // would be 262.5, held clear of the driver
+        assertEquals(150f, s[1].y, 0.01f)           // sqrt(1/4) of the way up
+    }
+
+    @Test fun railKeepsMarksApartAndClearOfTheEnds() {
+        val s = Rail.slots(listOf(100.0, 120.0, 140.0, 160.0), 10_000.0, 300f)
+        assertEquals(3, s.size)                      // never more than three
+        assertEquals(listOf(240f, 180f, 120f), s.map { it.y })
+        // A short track has room for fewer.
+        assertEquals(1, Rail.slots(listOf(100.0, 120.0, 140.0), 10_000.0, 150f).size)
+        assertTrue(Rail.slots(listOf(100.0), 10_000.0, 100f).isEmpty())
+    }
+
+    @Test fun railDropsWhatIsBehindOrPastTheDestination() {
+        val s = Rail.slots(listOf(-50.0, 2000.0, 9000.0), 8000.0, 300f)
+        assertEquals(listOf(1), s.map { it.index })
+        assertTrue(Rail.slots(listOf(100.0), 0.0, 300f).isEmpty())
+    }
+
+    @Test fun tripPlanRoutesThroughStopsThenTheDestination() {
+        val same = { a: String, b: String -> a == b }
+        assertEquals(listOf("gas", "sjc"), TripPlan.through(emptyList(), "gas", "sjc", same))
+        assertEquals(listOf("gas", "coffee", "sjc"), TripPlan.through(listOf("gas"), "coffee", "sjc", same))
+        // The same stop twice, or the destination as a stop, adds nothing.
+        assertEquals(listOf("gas", "sjc"), TripPlan.through(listOf("gas"), "gas", "sjc", same))
+        assertEquals(listOf("sjc"), TripPlan.through(emptyList(), "sjc", "sjc", same))
+        // A new destination that was a stop is no longer a stop.
+        assertEquals(listOf("coffee", "gas"), TripPlan.through(listOf("gas", "coffee"), null, "gas", same))
+    }
+
+    @Test fun tripPlanSaysWhatAChangeCosts() {
+        assertEquals("+4 min", TripPlan.cost(250.0))
+        assertEquals("2 min faster", TripPlan.cost(-110.0))
+        assertEquals("No extra time", TripPlan.cost(20.0))
+        assertNull(TripPlan.cost(null))
+        assertEquals("Peet's Coffee, then SJC Airport", TripPlan.line(listOf("Peet's Coffee"), "SJC Airport"))
+        assertEquals("SJC Airport", TripPlan.line(emptyList(), "SJC Airport"))
+    }
+
+    @Test fun tripPlanCountsStopsStillAhead() {
+        assertEquals(2, TripPlan.stopsLeft(2, 3))
+        assertEquals(1, TripPlan.stopsLeft(2, 2))
+        assertEquals(0, TripPlan.stopsLeft(2, 1))
+        assertEquals(0, TripPlan.stopsLeft(0, 1))
+        assertEquals(1, TripPlan.stopsLeft(1, 5))
+    }
 }
