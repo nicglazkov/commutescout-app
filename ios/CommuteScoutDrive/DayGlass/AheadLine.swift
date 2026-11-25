@@ -206,6 +206,55 @@ struct TripChangeBar: View {
     }
 }
 
+/// End is one tap from Add stop, so it asks first. The question goes
+/// away by itself and the trip carries on.
+struct EndTripBar: View {
+    let destination: String
+    let onKeep: () -> Void
+    let onEnd: () -> Void
+    @State private var left = 5
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Text("End the trip to \(destination)?").font(DG.font(16.5, .bold)).foregroundStyle(DG.ink).lineLimit(1).minimumScaleFactor(0.8)
+                Spacer(minLength: 0)
+                Text("Keeps going in \(left) s").font(DG.font(12.5, .medium)).foregroundStyle(DG.sub).monospacedDigit().lineLimit(1)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            HStack(spacing: 8) {
+                Button("Keep driving", action: onKeep).buttonStyle(DGButtonStyle(kind: .glass, height: 54))
+                    .accessibilityIdentifier("end-trip-keep")
+                Button(action: onEnd) { Label("End trip", systemImage: "stop") }
+                    .buttonStyle(EndStyle()).accessibilityIdentifier("end-trip-confirm")
+            }
+        }
+        .padding(12)
+        .dgGlass(radius: DG.R.trip)
+        .padding(.horizontal, 10)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("end-trip-ask")
+        .task {
+            while left > 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if Task.isCancelled { return }
+                left -= 1
+            }
+            onKeep()
+        }
+    }
+
+    private struct EndStyle: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label.font(DG.T.button).foregroundStyle(.white).lineLimit(1)
+                .frame(maxWidth: .infinity, minHeight: 54)
+                .background(DGTone.high.color, in: Capsule())
+                .scaleEffect(configuration.isPressed ? 0.97 : 1)
+                .animation(DG.snap, value: configuration.isPressed)
+        }
+    }
+}
+
 /// A numbered stop, in the purple the design keeps for stops.
 struct StopDisc: View {
     let n: Int

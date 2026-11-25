@@ -579,8 +579,11 @@ final class CoverageUITests: XCTestCase {
             app.buttons["alert-pill"].tap()
             XCTAssertTrue(app.buttons["alert-collapse"].waitForExistence(timeout: 5), "strip back")
         }
-        let exit = app.buttons.matching(NSPredicate(format: "identifier == 'end-trip' OR label CONTAINS[c] 'exit' OR label CONTAINS[c] 'stop' OR label CONTAINS[c] 'close'")).firstMatch
-        if exit.waitForExistence(timeout: 5) { exit.tap() } else { app.buttons["xmark"].firstMatch.tap() }
+        // End asks first; the trip ends on the second tap.
+        XCTAssertTrue(app.buttons["end-trip"].waitForExistence(timeout: 5))
+        app.buttons["end-trip"].tap()
+        XCTAssertTrue(app.buttons["end-trip-confirm"].waitForExistence(timeout: 5))
+        app.buttons["end-trip-confirm"].tap()
         XCTAssertTrue(app.textFields["search"].waitForExistence(timeout: 10), "back to browsing")
     }
 

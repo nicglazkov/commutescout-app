@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var showLayers = false
     @State private var showReport = false
     @State private var navSheet: NavSheet?
+    @State private var endingTrip = false
     @State private var showTools = false
     @State private var searchActive = false
     /// The event panel's height as laid out, so the map buttons sit above it.
@@ -65,13 +66,16 @@ struct ContentView: View {
             // it, the trip bar, and no road-name pill (the card says it).
             .navigationViewInstructionView { state, _, size in DriveTop(state: state, size: size) }
             .navigationViewProgressView { state, exit in
-                if let c = model.tripChange {
+                if endingTrip, model.tripChange == nil {
+                    EndTripBar(destination: tripDestination?.shortName ?? "your destination",
+                               onKeep: { endingTrip = false }, onEnd: { endingTrip = false; exit?() })
+                } else if let c = model.tripChange {
                     TripChangeBar(seconds: c.seconds, cost: TripPlan.cost(c.addedSeconds),
                                   line: TripPlan.line(stops: c.stops.map(\.shortName), destination: c.destination.shortName),
                                   confirm: c.added != nil ? "Add stop" : "Go here",
                                   onCancel: { model.cancelTripChange() }, onConfirm: { model.applyTripChange() })
                 } else {
-                    TripBar(state: state, onExit: exit, onAddStop: { model.alertMore = false; navSheet = .stop },
+                    TripBar(state: state, onExit: { model.alertMore = false; endingTrip = true }, onAddStop: { model.alertMore = false; navSheet = .stop },
                             onRoute: { model.alertMore = false; navSheet = .trip },
                             onReport: { if model.reportCoordinate != nil { showReport = true } })
                 }
@@ -256,7 +260,7 @@ struct ContentView: View {
         }
         // A route on offer closes the sheet that asked for it: the map shows it.
         .onChange(of: model.tripChange) { if $0 != nil { navSheet = nil } }
-        .onChange(of: isNavigating) { if !$0 { navSheet = nil } }
+        .onChange(of: isNavigating) { if !$0 { navSheet = nil; endingTrip = false } }
         .onChange(of: model.debugNavSheet) { if let n = $0.flatMap(NavSheet.init(rawValue:)) { navSheet = n; model.debugNavSheet = nil } }
         .sheet(isPresented: $showTools) { ToolsSheet().presentationDetents([.medium, .large]) }
         .overlay {

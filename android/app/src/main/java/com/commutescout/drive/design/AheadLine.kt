@@ -175,6 +175,27 @@ fun TripChangeBar(
     }
 }
 
+/**
+ * End is one tap from Add stop, so it asks first. The question goes
+ * away by itself and the trip carries on.
+ */
+@Composable
+fun EndTripBar(destination: String, keepsGoingIn: Int, onKeep: () -> Unit, onEnd: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth().background(Color.White.copy(alpha = .55f), barShape).glass(barShape, elevation = 20.dp, strong = true)
+        .padding(12.dp).testTag("end-trip-ask")) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("End the trip to $destination?", Modifier.weight(1f), style = DGType.row.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                color = DG.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("Keeps going in $keepsGoingIn s", Modifier.padding(start = 10.dp), style = DGType.small, color = DG.sub, maxLines = 1)
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DGButton("Keep driving", onKeep, Modifier.weight(1f).height(54.dp).testTag("end-trip-keep"))
+            DGButton("End trip", onEnd, Modifier.weight(1f).height(54.dp).testTag("end-trip-confirm"), style = BtnStyle.DANGER_SOLID, icon = "stop")
+        }
+    }
+}
+
 /** A numbered stop, in the purple the design keeps for stops. */
 @Composable
 fun StopDisc(n: Int, size: Dp = 32.dp, modifier: Modifier = Modifier) {

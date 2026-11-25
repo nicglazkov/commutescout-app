@@ -72,13 +72,11 @@ final class DriveUITests: XCTestCase {
         XCTAssertTrue(app.buttons["change-destination"].exists)
         app.buttons["trip-sheet-close"].tap()
         XCTAssertTrue(perspective.waitForNonExistence(timeout: 5))
-        // Ferrostar's exit control is the X in the trip bar.
-        let exit = app.buttons.matching(NSPredicate(format: "identifier == 'end-trip' OR label CONTAINS[c] 'exit' OR label CONTAINS[c] 'stop' OR label CONTAINS[c] 'close'")).firstMatch
-        if exit.waitForExistence(timeout: 5) {
-            exit.tap()
-        } else {
-            app.buttons["xmark"].firstMatch.tap()
-        }
+        // End asks first; the trip ends on the second tap.
+        XCTAssertTrue(app.buttons["end-trip"].waitForExistence(timeout: 5))
+        app.buttons["end-trip"].tap()
+        XCTAssertTrue(app.buttons["end-trip-confirm"].waitForExistence(timeout: 5))
+        app.buttons["end-trip-confirm"].tap()
         XCTAssertTrue(app.textFields["search"].waitForExistence(timeout: 10), "back to browsing")
     }
 
