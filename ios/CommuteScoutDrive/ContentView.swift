@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var moreScreen: String? = OfflineLaunch.wanted
     @State private var showLayers = false
     @State private var showReport = false
+    @State private var navSheet: NavSheet?
     @State private var showTools = false
     @State private var searchActive = false
     /// The event panel's height as laid out, so the map buttons sit above it.
@@ -53,21 +54,28 @@ struct ContentView: View {
             .navigationMapViewContentInset(NavigationMapViewContentInsetBundle(
                 portrait: { [room = room.value] g in .portrait(within: g, minHeight: CameraRoom.minHeight(room: room)) }))
             // App messages ride under the maneuver card (DriveTop).
-            .navigationViewInnerGrid(topCenter: { EmptyView() }, bottomLeading: {
-                if isNavigating, model.prefs.showSpeedLimit { SpeedDisc(speedMps: model.speedMps, limitKmh: model.limitKmh) }
-            }, bottomTrailing: {
-                // Ferrostar draws this grid while browsing too; the browse
-                // column owns these controls then.
-                if isNavigating { VStack(spacing: 10) {
-                    DGModesPill(is3D: model.prefs.is3D) { withAnimation(DG.tilt) { model.toggle3D() } }
-                    DGReportButton { if model.reportCoordinate != nil { showReport = true } }
-                        .accessibilityIdentifier("report")
-                } }
+            // The ahead line owns the left side on a trip, so the speed
+            // disc sits on the right; everything else is in the trip bar.
+            .navigationViewInnerGrid(topCenter: { EmptyView() }, bottomTrailing: {
+                if isNavigating, model.prefs.showSpeedLimit, model.tripChange == nil {
+                    SpeedDisc(speedMps: model.speedMps, limitKmh: model.limitKmh)
+                }
             })
             // Day Glass+: the maneuver card with the alert tucked under
             // it, the trip bar, and no road-name pill (the card says it).
             .navigationViewInstructionView { state, _, size in DriveTop(state: state, size: size) }
-            .navigationViewProgressView { state, exit in TripBar(state: state, onExit: exit) }
+            .navigationViewProgressView { state, exit in
+                if let c = model.tripChange {
+                    TripChangeBar(seconds: c.seconds, cost: TripPlan.cost(c.addedSeconds),
+                                  line: TripPlan.line(stops: c.stops.map(\.shortName), destination: c.destination.shortName),
+                                  confirm: c.added != nil ? "Add stop" : "Go here",
+                                  onCancel: { model.cancelTripChange() }, onConfirm: { model.applyTripChange() })
+                } else {
+                    TripBar(state: state, onExit: exit, onAddStop: { model.alertMore = false; navSheet = .stop },
+                            onRoute: { model.alertMore = false; navSheet = .trip },
+                            onReport: { if model.reportCoordinate != nil { showReport = true } })
+                }
+            }
             .navigationViewCurrentRoadView { _ in EmptyView() }
 
             MapHook(
@@ -175,6 +183,31 @@ struct ContentView: View {
                 }
             }
             .padding(.bottom, isNavigating ? 110 : bottomCardHeight + 12)
+            // The ahead line, down the left between the card and the trip bar.
+            if isNavigating, !model.arrived, model.tripChange == nil, !model.alertMore, !showReport,
+               let p = model.coreState?.currentProgress {
+                GeometryReader { geo in
+                    VStack {
+                        Spacer()
+                        HStack {
+                            AheadRail(marks: railMarks, destination: tripDestination?.shortName ?? "Destination",
+                                      toDestination: Units.distance(p.distanceRemaining), totalMeters: p.distanceRemaining,
+                                      stops: model.tripStops.count) { m in
+                                if let u = model.alerts.ahead.first(where: { $0.id == m.id }) {
+                                    model.alerts.say(u.marker)
+                                    model.showMarker(key: u.marker.key)
+                                }
+                            }
+                            .frame(width: 220, height: min(360, max(200, geo.size.height * 0.40)), alignment: .leading)
+                            Spacer()
+                        }
+                        .padding(.leading, 14)
+                    }
+                    .padding(.bottom, 166)
+                    .opacity(geo.size.height >= 560 ? 1 : 0)
+                }
+                .transition(.opacity)
+            }
             GeometryReader { geo in
                 VStack {
                     Spacer()
@@ -198,6 +231,33 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.showWatches) { WatchesView() }
         .sheet(isPresented: $showLayers) { MapLayersSheet() }
+        .sheet(item: $navSheet) { which in
+            Group {
+                switch which {
+                case .stop:
+                    PlacePickSheet(title: "Add a stop", sub: "On the way to \(tripDestination?.shortName ?? "your destination")", quick: true,
+                                   exclude: (tripDestination.map { [$0] } ?? []) + model.tripStops,
+                                   onPick: { model.previewStop($0) }, onClose: { navSheet = nil })
+                case .destination:
+                    PlacePickSheet(title: "Change destination", sub: "Your stops stay on the trip", quick: false,
+                                   exclude: tripDestination.map { [$0] } ?? [],
+                                   onPick: { model.previewDestination($0) }, onClose: { navSheet = nil })
+                case .trip:
+                    if let d = tripDestination {
+                        YourTripSheet(destination: d,
+                                  arrive: model.coreState?.currentProgress.map { Date().addingTimeInterval($0.durationRemaining).formatted(date: .omitted, time: .shortened) },
+                                  onChangeDestination: { navSheet = .destination }, onAddStop: { navSheet = .stop }, onClose: { navSheet = nil })
+                    }
+                }
+            }
+            .environmentObject(model)
+            .presentationDetents([.fraction(0.64), .large])
+            .presentationDragIndicator(.visible)
+        }
+        // A route on offer closes the sheet that asked for it: the map shows it.
+        .onChange(of: model.tripChange) { if $0 != nil { navSheet = nil } }
+        .onChange(of: isNavigating) { if !$0 { navSheet = nil } }
+        .onChange(of: model.debugNavSheet) { if let n = $0.flatMap(NavSheet.init(rawValue:)) { navSheet = n; model.debugNavSheet = nil } }
         .sheet(isPresented: $showTools) { ToolsSheet().presentationDetents([.medium, .large]) }
         .overlay {
             if showReport, let c = model.reportCoordinate {
@@ -226,6 +286,18 @@ struct ContentView: View {
     }
 
     private var isNavigating: Bool { model.state.isNavigating }
+
+    private var tripDestination: Place? { if case let .navigating(p) = model.state { return p }; return nil }
+
+    /// What is ahead on the route, as marks for the ahead line.
+    private var railMarks: [RailMark] {
+        let along = model.alerts.hereAlong
+        return model.alerts.ahead.filter { $0.alongMeters > along + 30 && !model.alerts.dismissed.contains($0.id) }.prefix(6).map { u in
+            let k = DGKind(marker: u.marker)
+            return RailMark(id: u.id, icon: DGIcon.name(k), tone: k.tone, distance: Units.distance(u.alongMeters - along),
+                            title: k.short.replacingOccurrences(of: " ahead", with: ""), gapMeters: u.alongMeters - along)
+        }
+    }
 
     private var roomTarget: CGFloat {
         CameraRoom.target(navigating: isNavigating && !model.arrived,

@@ -562,8 +562,14 @@ final class CoverageUITests: XCTestCase {
         app.launchArguments = ["-csSimulate", "-csResetPlaces", "-csResetPrefs", "-csAutoDrive"]
         app.launch()
         XCTAssertTrue(app.textFields["search"].waitForNonExistence(timeout: 60), "auto drive started")
-        XCTAssertTrue(app.buttons["perspective"].waitForExistence(timeout: 10))
+        // On a trip 2D and 3D live in "Your trip", behind the trip bar's Route.
+        XCTAssertTrue(app.buttons["trip-route"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["add-stop"].exists, "the trip bar offers a stop")
+        app.buttons["trip-route"].tap()
+        XCTAssertTrue(app.buttons["perspective"].waitForExistence(timeout: 5))
         app.buttons["perspective"].tap(); app.buttons["perspective"].tap()
+        app.buttons["trip-sheet-close"].tap()
+        XCTAssertTrue(app.buttons["perspective"].waitForNonExistence(timeout: 5))
         XCTAssertFalse(app.buttons["locate"].exists, "Ferrostar draws its own recenter while navigating")
         // The strip only shows within the chosen distance; on a live route
         // there may be nothing ahead, and that is correct too.

@@ -146,6 +146,7 @@ targets:
       - path: CommuteScoutDrive/EventText.swift
       - path: CommuteScoutDrive/EventAlerts.swift
       - path: CommuteScoutDrive/DayGlass/LaneLayout.swift
+      - path: CommuteScoutDrive/DayGlass/TripPlan.swift
       - path: CommuteScoutDrive/DayGlass/DGKind.swift
       - path: CommuteScoutDrive/DayGlass/SystemNotes.swift
       - path: CommuteScoutDrive/DayGlass/CameraRoom.swift

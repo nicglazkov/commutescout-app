@@ -205,6 +205,15 @@ final class AppModel: ObservableObject {
     @Published var resumable: SavedTrip?
     private var flushing = false
     private let delegate = NavDelegate()
+    /// Stops still ahead on this trip, in order.
+    @Published private(set) var tripStops: [Place] = []
+    /// A stop or a new destination on offer, with its route.
+    @Published private(set) var tripChange: TripChange?
+    @Published private(set) var tripChanging = false
+    /// Debug builds: a sheet a launch argument asked for ("-csNavSheet").
+    @Published var debugNavSheet: String?
+    private var changeGen = 0
+    private var changedAt = Date.distantPast
     private var accountSink: AnyCancellable?
     /// Optional via points for the next route (a corridor to prefer), cleared when a trip starts.
     var via: [CLLocationCoordinate2D] = []
@@ -440,6 +449,7 @@ final class AppModel: ObservableObject {
         noteLocation(s)
         if let pendingSpeed { speedMps = pendingSpeed; self.pendingSpeed = nil }
         coreState = s
+        notePassedStops(s)
         if let loc = s?.preferredUserLocation?.clLocation.coordinate, state.isNavigating {
             alerts.update(position: loc)
             NeuralVoices.shared.setAlong(alerts.hereAlong)
@@ -921,13 +931,8 @@ final class AppModel: ObservableObject {
             alerts.start(route: route.geometry.map(\.clLocationCoordinate2D))
             via = []
             resumable = nil
-            delegate.onReroute = { [weak self] r in
-                guard let self else { return }
-                self.prerenderSpeech(r, from: 0)
-                self.alerts.start(route: r.geometry.map(\.clLocationCoordinate2D))
-                SavedTrip.save(route: r, place: place)
-                DriveLog.note("rerouted: \(DriveLog.meters(r.distance)), \(r.geometry.count) pts")
-            }
+            tripStops = []; tripChange = nil
+            armReroute(to: place)
             camera = navigationCamera
             state = .navigating(place)
             applyIdleTimer()
@@ -939,8 +944,131 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// A taken reroute: the alerts engine and the saved trip must follow the new geometry.
+    private func armReroute(to place: Place) {
+        delegate.onReroute = { [weak self] r in
+            guard let self else { return }
+            self.prerenderSpeech(r, from: 0)
+            self.alerts.start(route: r.geometry.map(\.clLocationCoordinate2D))
+            SavedTrip.save(route: r, place: place)
+            DriveLog.note("rerouted: \(DriveLog.meters(r.distance)), \(r.geometry.count) pts")
+        }
+    }
+
+    // MARK: - Trip changes: a stop on the way, or somewhere else to go, mid-drive
+
+    /// A changed trip, shown before the driver takes it.
+    struct TripChange: Equatable {
+        let stops: [Place]
+        let added: Place?
+        let destination: Place
+        let route: Route
+        let addedSeconds: Double?
+        var seconds: Double { route.steps.reduce(0) { $0 + $1.duration } }
+    }
+
+    private static func samePlace(_ a: Place, _ b: Place) -> Bool { AlertsEngine.meters(a.coordinate, b.coordinate) < 30 }
+
+    /// Offer a stop on the way: the route through it lands in `tripChange`.
+    func previewStop(_ stop: Place) {
+        guard case let .navigating(dest) = state else { return }
+        if Self.samePlace(stop, dest) || tripStops.contains(where: { Self.samePlace($0, stop) }) {
+            toast = "That is already on this trip."
+            return
+        }
+        planTrip(stops: tripStops, add: stop, destination: dest, remaining: coreState?.currentProgress?.durationRemaining, offer: true)
+    }
+
+    /// Offer a new destination, keeping the stops.
+    func previewDestination(_ place: Place) {
+        guard state.isNavigating else { return }
+        planTrip(stops: tripStops, add: nil, destination: place, remaining: nil, offer: true)
+    }
+
+    /// Drop a stop and take the new route at once.
+    func removeStop(_ stop: Place) {
+        guard case let .navigating(dest) = state else { return }
+        planTrip(stops: tripStops.filter { $0.id != stop.id }, add: nil, destination: dest, remaining: nil, offer: false)
+    }
+
+    private func planTrip(stops: [Place], add: Place?, destination: Place, remaining: Double?, offer: Bool) {
+        guard let from = coreState?.preferredUserLocation?.clLocation.coordinate ?? here else {
+            toast = "Waiting for your location."
+            return
+        }
+        let through = TripPlan.through(stops: stops, add: add, destination: destination, same: Self.samePlace)
+        changeGen += 1
+        let gen = changeGen
+        tripChanging = true
+        Task {
+            defer { if gen == changeGen { tripChanging = false } }
+            do {
+                let found = try await core.getRoutes(
+                    initialLocation: UserLocation(clCoordinateLocation2D: from),
+                    waypoints: through.map { Waypoint(coordinate: GeographicCoordinate(cl: $0.coordinate), kind: .break) })
+                guard gen == changeGen, state.isNavigating else { return }
+                guard let route = found.first else { throw DriveError.noRoute }
+                let total = route.steps.reduce(0) { $0 + $1.duration }
+                let change = TripChange(stops: Array(through.dropLast()), added: add, destination: destination,
+                                        route: route, addedSeconds: remaining.map { total - $0 })
+                if offer { tripChange = change } else { take(change) }
+            } catch {
+                guard gen == changeGen else { return }
+                DriveLog.note("trip change failed: \(error)")
+                toast = error is DriveError ? "No route found. Try a different place."
+                    : (!online || Connectivity.isOffline(error) ? OfflineText.routes : "Could not get a route. Try again in a moment.")
+            }
+        }
+    }
+
+    func cancelTripChange() {
+        changeGen += 1
+        tripChange = nil
+        tripChanging = false
+    }
+
+    /// Take the offered change: the trip carries on along the new route.
+    func applyTripChange() { if let c = tripChange { take(c) } }
+
+    private func take(_ c: TripChange) {
+        tripChange = nil
+        guard case let .navigating(was) = state else { return }
+        do {
+            if simulating { try location.simulate(route: c.route) }
+            try core.startNavigation(route: c.route)
+            changedAt = Date()
+            tripStops = c.stops
+            SavedTrip.save(route: c.route, place: c.destination)
+            prerenderSpeech(c.route, from: 0)
+            alerts.start(route: c.route.geometry.map(\.clLocationCoordinate2D))
+            armReroute(to: c.destination)
+            let noted = c.added ?? c.destination
+            places.noteRecent(name: noted.name, coordinate: noted.coordinate)
+            let moved = !Self.samePlace(was, c.destination)
+            if moved { state = .navigating(c.destination) }
+            toast = c.added.map { "Stop added: \($0.shortName)" } ?? (moved ? "Now going to \(c.destination.shortName)" : "Trip updated")
+            DriveLog.note("trip changed: \(c.stops.count) stop(s), \(DriveLog.meters(c.route.distance))")
+        } catch {
+            DriveLog.note("trip change failed to apply: \(error)")
+            toast = "Could not change the trip. Try again."
+        }
+    }
+
+    /// A stop the trip has passed comes off the list. The first seconds
+    /// after a change are skipped: a state from the old route can still
+    /// be on its way.
+    private func notePassedStops(_ s: NavigationState?) {
+        guard !tripStops.isEmpty, Date().timeIntervalSince(changedAt) > 4, let left = s?.remainingWaypoints?.count else { return }
+        let n = TripPlan.stopsLeft(planned: tripStops.count, remainingWaypoints: left)
+        if n < tripStops.count {
+            toast = "Stop reached: \(tripStops[0].shortName)"
+            tripStops = Array(tripStops.suffix(n))
+        }
+    }
+
     func stop() {
         DriveLog.note("route stop")
+        cancelTripChange(); tripStops = []
         confirmAsk = nil
         alertMore = false
         NeuralVoices.shared.clearQueue()

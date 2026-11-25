@@ -183,6 +183,19 @@ enum AutoDrive {
         if case let .choosing(routes, p) = model.state, let first = routes.first {
             model.start(first, to: p)
         }
+        // "-csTripStop offer|take": a stop on the way, offered or taken;
+        // "-csNavSheet stop|destination|trip" opens that sheet.
+        if let i = args.firstIndex(of: "-csTripStop"), i + 1 < args.count {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            model.previewStop(Place(name: "Valero, N 1st St, San Jose, CA",
+                                    coordinate: CLLocationCoordinate2D(latitude: 37.3688, longitude: -121.9140), kind: .recent))
+            for _ in 0 ..< 40 where model.tripChange == nil { try? await Task.sleep(nanoseconds: 250_000_000) }
+            if args[i + 1] == "take" { model.applyTripChange() }
+        }
+        if let i = args.firstIndex(of: "-csNavSheet"), i + 1 < args.count {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            model.debugNavSheet = args[i + 1]
+        }
         await DebugScenes.run(model, args)
         #endif
     }
