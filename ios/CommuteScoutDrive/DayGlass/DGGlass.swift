@@ -16,8 +16,8 @@ struct DGGlass<S: InsettableShape>: ViewModifier {
                     shape.fill(.ultraThinMaterial)
                     shape.fill(LinearGradient(
                         colors: tint == nil
-                            ? [.white.opacity(strong ? 0.86 : 0.7), .white.opacity(strong ? 0.76 : 0.6)]
-                            : [.white.opacity(0.88), .white.opacity(0.8)],
+                            ? [DG.glass(strong ? 0.86 : 0.7), DG.glass(strong ? 0.76 : 0.6)]
+                            : [DG.glass(0.88), DG.glass(0.8)],
                         startPoint: .top, endPoint: .bottom))
                     if let tint {
                         shape.fill(LinearGradient(colors: [tint.opacity(0.13), tint.opacity(0.04)],
@@ -29,15 +29,15 @@ struct DGGlass<S: InsettableShape>: ViewModifier {
                 ZStack {
                     // The light catching the top edge, then the inner rim.
                     shape.strokeBorder(
-                        LinearGradient(colors: [.white.opacity(0.95), .white.opacity(0)],
+                        LinearGradient(colors: [DG.dyn(0xffffff, 0xffffff, 0.95, 0.16), .white.opacity(0)],
                                        startPoint: .top, endPoint: .center), lineWidth: 1)
-                    shape.inset(by: 1).strokeBorder(.white.opacity(0.55), lineWidth: 1)
+                    shape.inset(by: 1).strokeBorder(DG.dyn(0xffffff, 0xffffff, 0.55, 0.05), lineWidth: 1)
                     shape.strokeBorder((tint ?? DG.ink).opacity(tint == nil ? 0.1 : 0.26), lineWidth: 0.5)
                 }
                 .allowsHitTesting(false)
             }
             .shadow(color: (tint ?? .black).opacity(tint == nil ? 0.08 : 0.12), radius: 3, y: 2)
-            .shadow(color: (tint ?? DG.ink).opacity(tint == nil ? 0.16 : 0.22), radius: 18, y: 14)
+            .shadow(color: (tint ?? DG.shadow(1)).opacity(tint == nil ? 0.16 : 0.22), radius: 18, y: 14)
     }
 }
 

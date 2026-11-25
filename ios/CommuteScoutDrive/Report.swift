@@ -184,7 +184,7 @@ struct ReportFlow: View {
                                 .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.85)
                         }
                         .frame(maxWidth: .infinity).frame(height: 84)
-                        .background(Color.white.opacity(0.78), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .background(DG.glass(0.78), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
                     }
                     .buttonStyle(DGPressStyle())
@@ -220,7 +220,7 @@ struct ReportFlow: View {
             if k.asksLane {
                 LaneDrawing(kind: k.dg, layout: ReportGrid.layout(lane), size: .large)
                     .frame(height: 108).frame(maxWidth: .infinity)
-                    .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: DG.R.box, style: .continuous))
+                    .background(DG.glass(0.7), in: RoundedRectangle(cornerRadius: DG.R.box, style: .continuous))
                     .clipShape(RoundedRectangle(cornerRadius: DG.R.box, style: .continuous))
                     .padding(.top, 14)
                     .animation(DG.snap, value: lane)
@@ -243,7 +243,7 @@ struct ReportFlow: View {
             TextField("Add a note (optional)", text: $note, axis: .vertical).lineLimit(1 ... 3)
                 .font(DG.font(15)).focused($noteFocused)
                 .padding(.horizontal, 14).padding(.vertical, 13)
-                .background(Color.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(DG.glass(0.8), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
                 .padding(.top, 12)
                 .onChange(of: noteFocused) { f in if f { stopCountdown() } else { restart() } }

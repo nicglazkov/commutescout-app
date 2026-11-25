@@ -29,10 +29,10 @@ import androidx.compose.ui.unit.dp
  */
 fun Modifier.glass(shape: Shape, tone: Tone? = null, elevation: Dp = 18.dp, strong: Boolean = false): Modifier {
     val tint = tone?.color
-    val top = if (tint != null) tint.tint(.13f).copy(alpha = .93f) else Color.White.copy(alpha = if (strong) .95f else .90f)
-    val bottom = if (tint != null) tint.tint(.04f).copy(alpha = .88f) else Color.White.copy(alpha = if (strong) .90f else .82f)
+    val top = if (tint != null) tint.tint(.13f).copy(alpha = .93f) else DG.glass(if (strong) .95f else .90f)
+    val bottom = if (tint != null) tint.tint(.04f).copy(alpha = .88f) else DG.glass(if (strong) .90f else .82f)
     val edge = tint?.copy(alpha = .26f) ?: DG.edge
-    val shade = tint?.copy(alpha = .45f) ?: Color(0xFF0E1726).copy(alpha = .30f)
+    val shade = tint?.copy(alpha = .45f) ?: DG.shade
     return this
         .shadow(elevation, shape, clip = false, ambientColor = shade, spotColor = shade)
         .clip(shape)
@@ -40,7 +40,7 @@ fun Modifier.glass(shape: Shape, tone: Tone? = null, elevation: Dp = 18.dp, stro
         .drawWithContent {
             drawContent()
             // The lit rim along the top edge.
-            drawLine(Color.White.copy(alpha = .85f), Offset(size.height * .3f, .75f), Offset(size.width - size.height * .3f, .75f), 1.5f)
+            drawLine(DG.rim, Offset(size.height * .3f, .75f), Offset(size.width - size.height * .3f, .75f), 1.5f)
         }
         .border(0.5.dp, edge, shape)
 }
@@ -52,4 +52,4 @@ fun Glass(shape: Shape, modifier: Modifier = Modifier, tone: Tone? = null, eleva
 }
 
 /** The see-more veil over the map: a light frost that keeps the road readable. */
-fun Modifier.veil(soft: Boolean = false): Modifier = background(Color(0xFFECF1F6).copy(alpha = if (soft) .22f else .38f))
+fun Modifier.veil(soft: Boolean = false): Modifier = background(DG.page.copy(alpha = if (soft) .22f else .38f))

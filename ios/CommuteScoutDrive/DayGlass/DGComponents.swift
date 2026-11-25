@@ -34,11 +34,11 @@ struct DGButtonStyle: ButtonStyle {
 
     private var background: AnyShapeStyle {
         switch kind {
-        case .primary: return AnyShapeStyle(DG.ink)
+        case .primary: return AnyShapeStyle(DG.solid)
         case .blue: return AnyShapeStyle(LinearGradient(colors: [DG.hex(0x4a8ff8), DG.hex(0x2f7cf6)], startPoint: .top, endPoint: .bottom))
         case .done: return AnyShapeStyle(DGTone.good.color.opacity(0.14))
         case let .tinted(t): return AnyShapeStyle(t.color.opacity(0.13))
-        case .glass: return AnyShapeStyle(Color.white.opacity(0.8))
+        case .glass: return AnyShapeStyle(DG.glass(0.8))
         }
     }
 
@@ -53,7 +53,7 @@ struct DGButtonStyle: ButtonStyle {
 
     private var shadow: Color {
         switch kind {
-        case .primary: return DG.ink.opacity(0.25)
+        case .primary: return DG.shadow(0.25)
         case .blue: return DG.path.opacity(0.35)
         default: return .clear
         }
@@ -206,7 +206,7 @@ struct DGModesPill: View {
         Text(t).font(DG.font(14, .bold))
             .foregroundStyle(on ? DGTone.low.ink : DG.sub)
             .frame(width: 42, height: 44)
-            .background(on ? Color.white : .clear, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .background(on ? DG.raised : .clear, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .shadow(color: on ? .black.opacity(0.1) : .clear, radius: 3, y: 1)
             .animation(DG.snap, value: on)
     }

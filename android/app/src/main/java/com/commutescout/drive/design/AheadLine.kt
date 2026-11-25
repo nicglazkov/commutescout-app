@@ -78,7 +78,7 @@ fun AheadRail(
             Box(Modifier.align(Alignment.BottomCenter).padding(bottom = railBottom - 8.dp).size(16.dp)
                 .shadow(3.dp, CircleShape).clip(CircleShape).background(Color.White).padding(3.dp).clip(CircleShape).background(DG.low))
             // The destination, at the head.
-            Box(Modifier.align(Alignment.TopCenter).padding(top = railTop - 12.dp).size(24.dp).clip(RoundedCornerShape(8.dp)).background(DG.ink),
+            Box(Modifier.align(Alignment.TopCenter).padding(top = railTop - 12.dp).size(24.dp).clip(RoundedCornerShape(8.dp)).background(DG.solid),
                 contentAlignment = Alignment.Center) { DGIcon("pin", Color.White, 14.dp, stroke = 2.2f) }
         }
         RailTag(toDestination ?: "", if (stops > 0) "$destination, $stops ${if (stops == 1) "stop" else "stops"}" else destination, null,
@@ -116,7 +116,7 @@ fun TripBar(
     secondsLeft: Double?, metersLeft: Double?,
     onEnd: () -> Unit, onAddStop: () -> Unit, onRoute: () -> Unit, modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxWidth().background(Color.White.copy(alpha = .55f), barShape).glass(barShape, elevation = 20.dp, strong = true)
+    Column(modifier.fillMaxWidth().background(DG.glass(.55f), barShape).glass(barShape, elevation = 20.dp, strong = true)
         .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp).testTag("trip-bar")) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.Bottom) {
             Text(secondsLeft?.let { clock(it) } ?: "--", style = DGType.eta, color = DG.ink, modifier = Modifier.testTag("trip-eta"))
@@ -158,7 +158,7 @@ fun TripChangeBar(
     seconds: Double, cost: String?, line: String, confirm: String,
     onCancel: () -> Unit, onConfirm: () -> Unit, modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxWidth().background(Color.White.copy(alpha = .55f), barShape).glass(barShape, elevation = 20.dp, strong = true)
+    Column(modifier.fillMaxWidth().background(DG.glass(.55f), barShape).glass(barShape, elevation = 20.dp, strong = true)
         .padding(12.dp).testTag("trip-change")) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.Bottom) {
             Text(clock(seconds), style = DGType.eta, color = DG.ink)
@@ -180,7 +180,7 @@ fun TripChangeBar(
  */
 @Composable
 fun EndTripBar(destination: String, keepsGoingIn: Int, onKeep: () -> Unit, onEnd: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth().background(Color.White.copy(alpha = .55f), barShape).glass(barShape, elevation = 20.dp, strong = true)
+    Column(modifier.fillMaxWidth().background(DG.glass(.55f), barShape).glass(barShape, elevation = 20.dp, strong = true)
         .padding(12.dp).testTag("end-trip-ask")) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("End the trip to $destination?", Modifier.weight(1f), style = DGType.row.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),

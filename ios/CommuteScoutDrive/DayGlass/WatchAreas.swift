@@ -275,9 +275,9 @@ struct WatchAreasView: View {
             .accessibilityIdentifier("watch-menu-\(w.id)")
         }
         .padding(10).padding(.trailing, 4)
-        .background(Color.white.opacity(0.86), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(DG.glass(0.86), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
-        .shadow(color: DG.ink.opacity(0.05), radius: 8, y: 2)
+        .shadow(color: DG.shadow(0.05), radius: 8, y: 2)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("watch-card")
     }
@@ -595,7 +595,7 @@ struct WatchEditorView: View {
                     .position(x: c.x + r * 0.55, y: c.y - 30)
                 Circle().fill(.white).frame(width: 30, height: 30)
                     .overlay(Circle().strokeBorder(DG.path, lineWidth: 3))
-                    .shadow(color: DG.ink.opacity(0.25), radius: 4, y: 2)
+                    .shadow(color: DG.shadow(0.25), radius: 4, y: 2)
                     .frame(width: 54, height: 54).contentShape(Circle())
                     .position(x: c.x + r, y: c.y)
                     .gesture(DragGesture(minimumDistance: 0).onChanged { v in
@@ -618,7 +618,7 @@ struct WatchEditorView: View {
                 Path { p in p.addLines(pts); p.closeSubpath() }.stroke(DG.path, lineWidth: 2.5)
                 ForEach(corners.indices, id: \.self) { i in
                     Circle().fill(.white).frame(width: 24, height: 24).overlay(Circle().strokeBorder(DG.path, lineWidth: 3))
-                        .shadow(color: DG.ink.opacity(0.25), radius: 3, y: 1)
+                        .shadow(color: DG.shadow(0.25), radius: 3, y: 1)
                         .frame(width: 48, height: 48).contentShape(Circle())
                         .position(pts[i])
                         .gesture(DragGesture(minimumDistance: 0).onChanged { v in
@@ -650,7 +650,7 @@ struct WatchEditorView: View {
                         .accessibilityIdentifier("watch-name")
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
-                .background(Color.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(DG.glass(0.85), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
                 if existing == nil {
                     DGSegmented(options: [(Shape.circle, "Circle", "circle.circle"), (.route, "Route", "point.topleft.down.curvedto.point.bottomright.up"),
@@ -706,7 +706,7 @@ struct WatchEditorView: View {
                 if on { DGCheck(on: true, size: 22) }
             }
             .padding(.horizontal, 14).frame(height: 44)
-            .background(on ? DG.path.opacity(0.1) : Color.white.opacity(0.8), in: Capsule())
+            .background(on ? DG.path.opacity(0.1) : DG.glass(0.8), in: Capsule())
             .overlay(Capsule().strokeBorder(on ? DG.path.opacity(0.5) : DG.hair, lineWidth: 1.5))
         }
         .buttonStyle(DGPressStyle())

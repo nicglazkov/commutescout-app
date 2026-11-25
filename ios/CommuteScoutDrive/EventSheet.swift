@@ -48,7 +48,7 @@ struct EventPanel: View {
                     }
                     .font(DG.T.button).foregroundStyle(DG.inkColor(.low))
                     .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .background(DG.glass(0.7), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
@@ -105,7 +105,7 @@ struct EventPanel: View {
                 ShareLink(item: marker.webURL) {
                     Image(systemName: "square.and.arrow.up").font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(DG.ink).frame(width: 48, height: 48)
-                        .background(Color.white.opacity(0.7), in: Circle())
+                        .background(DG.glass(0.7), in: Circle())
                         .overlay(Circle().strokeBorder(DG.hair, lineWidth: 1))
                 }
                 .buttonStyle(DGPressStyle())
@@ -393,7 +393,7 @@ private struct FactList: View {
                 .padding(.horizontal, 14).padding(.vertical, 11)
             }
         }
-        .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(DG.glass(0.7), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
     }
 }

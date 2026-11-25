@@ -43,7 +43,7 @@ struct MarketPin: View {
             .overlay(DGMoreIcon(name: icon, size: size * 0.5, stroke: 2.2).foregroundStyle(.white))
             .frame(width: size, height: size)
             .overlay(shape.strokeBorder(.white, lineWidth: 2.5).padding(-2.5))
-            .shadow(color: DG.ink.opacity(0.3), radius: 6, y: 4)
+            .shadow(color: DG.shadow(0.3), radius: 6, y: 4)
             .accessibilityHidden(true)
     }
 }
@@ -274,7 +274,7 @@ struct AddPluginSheet: View {
                 .accessibilityIdentifier(id)
         }
         .padding(.horizontal, 16).padding(.vertical, 8).frame(minHeight: 56)
-        .background(Color.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(DG.glass(0.8), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
     }
 
@@ -344,7 +344,7 @@ struct PluginDetailView: View {
             .ignoresSafeArea()
             .overlay(alignment: .topLeading) {
                 DGBackButton { dismiss() }
-                    .background(Circle().fill(.white.opacity(0.85)).shadow(color: DG.ink.opacity(0.12), radius: 6, y: 2))
+                    .background(Circle().fill(DG.glass(0.85)).shadow(color: DG.shadow(0.12), radius: 6, y: 2))
                     .padding(.leading, 16).padding(.top, 8)
             }
         }
@@ -468,7 +468,7 @@ struct PluginDetailView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Only you see this").font(DG.font(15, .bold)).foregroundStyle(DGTone.low.ink)
                 Text("What this plugin shows follows the account that added it. It never reaches anyone else, and it never sees who else uses it.")
-                    .font(DG.font(14.5)).foregroundStyle(DG.hex(0x23406f)).lineSpacing(2)
+                    .font(DG.font(14.5)).foregroundStyle(DG.noteInk).lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -545,7 +545,7 @@ struct PluginDetailView: View {
             .disabled(checking)
             .accessibilityIdentifier("plugin-check")
         }
-        .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(DG.glass(0.7), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
         .padding(.horizontal, 14)
     }
@@ -599,7 +599,7 @@ struct PluginDetailView: View {
             }
         }
         .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 30)
-        .background(Color.white.opacity(0.6).overlay(alignment: .top) { Rectangle().fill(DG.hair).frame(height: 1) })
+        .background(DG.glass(0.6).overlay(alignment: .top) { Rectangle().fill(DG.hair).frame(height: 1) })
         .onChange(of: step) { st in
             guard st == .removed else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { if step == .removed { withAnimation(DG.snap) { step = .idle } } }

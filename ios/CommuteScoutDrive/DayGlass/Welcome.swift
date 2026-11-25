@@ -97,9 +97,9 @@ struct WelcomeOverlay: View {
             .padding(.top, 16)
         }
         .padding(20)
-        .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: DG.R.card, style: .continuous))
+        .background(DG.glass(0.94), in: RoundedRectangle(cornerRadius: DG.R.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: DG.R.card, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
-        .shadow(color: DG.ink.opacity(0.14), radius: 24, y: 8)
+        .shadow(color: DG.shadow(0.14), radius: 24, y: 8)
         .animation(DG.spring, value: step)
     }
 
@@ -136,7 +136,7 @@ struct WelcomeOverlay: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 12).frame(minHeight: 52)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(DG.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
             }
         }

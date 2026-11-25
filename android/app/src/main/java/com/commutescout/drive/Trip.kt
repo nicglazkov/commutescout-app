@@ -191,7 +191,7 @@ private fun SearchPanel(model: DriveViewModel, onSettings: () -> Unit, focusedSt
     val veil by animateFloatAsState(if (focused) 1f else 0f, tween(260), label = "veil")
     Column(Modifier.fillMaxWidth().drawBehind {
         // The map steps back while the list is open.
-        if (veil > 0f) drawRect(Color(0xFFECF1F6).copy(alpha = .72f * veil), topLeft = androidx.compose.ui.geometry.Offset(-2000f, -2000f),
+        if (veil > 0f) drawRect(DG.page.copy(alpha = .72f * veil), topLeft = androidx.compose.ui.geometry.Offset(-2000f, -2000f),
             size = androidx.compose.ui.geometry.Size(size.width + 4000f, 8000f))
     }) {
         Row(Modifier.fillMaxWidth().height(54.dp).glass(capsule, elevation = 18.dp, strong = true)
@@ -398,7 +398,7 @@ internal fun PlaceSheet(place: Place, here: LatLon?, model: DriveViewModel, onWa
 @Composable
 private fun SaveChoices(place: Place, onSave: (PlaceKind) -> Unit) {
     Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp))
-        .background(Color.White.copy(alpha = .82f)).border(1.dp, DG.hair, RoundedCornerShape(22.dp))) {
+        .background(DG.glass(.82f)).border(1.dp, DG.hair, RoundedCornerShape(22.dp))) {
         listOf(Triple("home", "Save as Home", PlaceKind.home), Triple("work", "Save as Work", PlaceKind.work), Triple("star", "Save to favorites", PlaceKind.saved))
             .forEachIndexed { i, (icon, label, kind) ->
                 if (i > 0) Box(Modifier.padding(start = 54.dp).fillMaxWidth().height(0.5.dp).background(DG.hair))
@@ -414,7 +414,7 @@ private fun SaveChoices(place: Place, onSave: (PlaceKind) -> Unit) {
 @Composable
 private fun ShareRound(onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
-    Box(Modifier.press(src).size(DG.btnH).clip(CircleShape).background(Color.White.copy(alpha = .75f)).border(0.5.dp, DG.edge, CircleShape)
+    Box(Modifier.press(src).size(DG.btnH).clip(CircleShape).background(DG.glass(.75f)).border(0.5.dp, DG.edge, CircleShape)
         .clickable(src, null, role = Role.Button, onClick = onClick).semantics { contentDescription = "Share" }.tag("share-place"),
         contentAlignment = Alignment.Center) { DGIcon("share", DG.ink, 20.dp) }
 }
@@ -592,7 +592,7 @@ private fun LeaveBars(bars: List<LeaveLater.Bar>) {
 @Composable
 private fun SaveMapRound(progress: Float?, label: String, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
-    Box(Modifier.press(src).size(DG.btnH).clip(CircleShape).background(Color.White.copy(alpha = .75f)).border(0.5.dp, DG.edge, CircleShape)
+    Box(Modifier.press(src).size(DG.btnH).clip(CircleShape).background(DG.glass(.75f)).border(0.5.dp, DG.edge, CircleShape)
         .clickable(src, null, enabled = progress == null, role = Role.Button, onClick = onClick).semantics { contentDescription = label }.tag("save-trip-map"),
         contentAlignment = Alignment.Center) {
         if (progress != null) CircularProgressIndicator(progress = { progress }, modifier = Modifier.size(40.dp), color = DG.low, strokeWidth = 2.5.dp, trackColor = DG.hair)
@@ -604,7 +604,7 @@ private fun SaveMapRound(progress: Float?, label: String, onClick: () -> Unit) {
 @Composable
 private fun StartButton(arrive: String?, modifier: Modifier, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
-    Row(modifier.press(src).height(DG.btnH).clip(RoundedCornerShape(24.dp)).background(DG.ink)
+    Row(modifier.press(src).height(DG.btnH).clip(RoundedCornerShape(24.dp)).background(DG.solid)
         .clickable(src, null, role = Role.Button, onClick = onClick).tag("start").padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
         DGIcon("nav", Color.White, 19.dp)
@@ -662,7 +662,7 @@ internal fun ArriveSheet(model: DriveViewModel, place: Place?, onDone: () -> Uni
         if (r != null) {
             val s = ArriveStats.of(r, System.currentTimeMillis(), Units.useMiles) { clockOf(it) }
             Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 16.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp))
-                .background(Color.White.copy(alpha = .84f)).border(1.dp, DG.hair, RoundedCornerShape(22.dp)).padding(vertical = 14.dp)) {
+                .background(DG.glass(.84f)).border(1.dp, DG.hair, RoundedCornerShape(22.dp)).padding(vertical = 14.dp)) {
                 listOf(s.driveTime to "Drive time", s.distance to "Distance", s.arrived to "Arrived").forEachIndexed { i, (v, l) ->
                     if (i > 0) Box(Modifier.width(0.5.dp).height(40.dp).background(DG.hair).align(Alignment.CenterVertically))
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {

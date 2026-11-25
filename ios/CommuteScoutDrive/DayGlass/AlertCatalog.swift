@@ -91,7 +91,7 @@ struct AlertCatalogRow: View {
     var body: some View {
         HStack(spacing: 12) {
             LaneDrawing(kind: sample.kind, layout: nil, size: .row)
-                .background(.white.opacity(0.8))
+                .background(DG.glass(0.8))
                 .clipShape(ThumbShape())
                 .overlay(ThumbShape().stroke(DG.hair, lineWidth: 1))
             VStack(alignment: .leading, spacing: 1) {

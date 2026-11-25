@@ -145,7 +145,7 @@ fun MarketplaceSheet(model: DriveViewModel, onClose: () -> Unit) {
         val stuck by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 60 } }
         val d = LocalDensity.current
         Box(Modifier.fillMaxSize().alpha(shown.value.coerceIn(0f, 1f) * away).tag("marketplace-sheet")) {
-            Box(Modifier.fillMaxSize().background(Color(0xFFECF1F6)).clickable(remember { MutableInteractionSource() }, null) {})
+            Box(Modifier.fillMaxSize().background(DG.page).clickable(remember { MutableInteractionSource() }, null) {})
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
             LazyColumn(Modifier.fillMaxSize().graphicsLayer { translationY = (1f - shown.value) * with(d) { 24.dp.toPx() } }, listState,
@@ -180,7 +180,7 @@ fun MarketplaceSheet(model: DriveViewModel, onClose: () -> Unit) {
             }
             // The bar: the round back button, and the title once the big one has scrolled away.
             val barAlpha by animateFloatAsState(if (stuck) 1f else 0f, tween(250), label = "bar")
-            Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xF5F0F4F8), Color(0xD1F0F4F8), Color(0x00F0F4F8))))
+            Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(DG.pageTop.copy(alpha = .96f), DG.pageTop.copy(alpha = .82f), DG.pageTop.copy(alpha = 0f))))
                 .padding(bottom = 10.dp)) {
                 TopBar(::close, title = "Marketplace", titleAlpha = barAlpha)
             }
@@ -284,7 +284,7 @@ fun PluginStatusSheet(model: DriveViewModel, sourceId: String, onClose: () -> Un
     SheetLayer(onClose, snaps = listOf(.70f, .91f), modifier = Modifier.tag("plugin-status"),
         above = {
             // The map chrome steps back behind a soft wash, as in the design.
-            Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(0f to Color(0xF5F0F4F8), .72f to Color(0xF5F0F4F8), 1f to Color(0x00F0F4F8))).padding(bottom = 76.dp)) {
+            Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(0f to DG.pageTop.copy(alpha = .96f), .72f to DG.pageTop.copy(alpha = .96f), 1f to DG.pageTop.copy(alpha = 0f))).padding(bottom = 76.dp)) {
                 TopBar({ close(null) })
             }
         }) { sheet ->
@@ -331,9 +331,9 @@ fun PluginStatusSheet(model: DriveViewModel, sourceId: String, onClose: () -> Un
                 RowDivider()
                 SRow("Its marker", sub = "Plugins are rounded squares. Official alerts are round.", lead = { SoftTile("eye") }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Tile(Market.glyph(s.kinds), PluginStyle.color(s.id), Modifier.border(2.dp, Color.White, RoundedCornerShape(9.dp)), size = 28.dp, iconSize = 15.dp)
+                        Tile(Market.glyph(s.kinds), PluginStyle.color(s.id), Modifier.border(2.dp, DG.surface, RoundedCornerShape(9.dp)), size = 28.dp, iconSize = 15.dp)
                         Spacer(Modifier.width(10.dp))
-                        Disc("crash", Tone.HIGH, 28.dp, modifier = Modifier.border(2.dp, Color.White, CircleShape))
+                        Disc("crash", Tone.HIGH, 28.dp, modifier = Modifier.border(2.dp, DG.surface, CircleShape))
                     }
                 }
             }
@@ -391,7 +391,7 @@ fun PluginStatusSheet(model: DriveViewModel, sourceId: String, onClose: () -> Un
             Text(Market.footnote(s), Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp), style = PageType.note, color = DG.faint)
         }
         // The actions bar: Remove asks first, in place.
-        Row(Modifier.fillMaxWidth().background(Color.White.copy(alpha = .6f)).drawBehind { drawLine(DG.hair, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx()) }
+        Row(Modifier.fillMaxWidth().background(DG.glass(.6f)).drawBehind { drawLine(DG.hair, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx()) }
             .windowInsetsPadding(WindowInsets.navigationBars).padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             when {
@@ -427,7 +427,7 @@ private fun Section(text: String) {
 @Composable
 private fun StatusFacts(rows: List<Triple<String, String, Color>>) {
     val shape = RoundedCornerShape(16.dp)
-    Column(Modifier.padding(horizontal = 14.dp).fillMaxWidth().clip(shape).background(Color.White.copy(alpha = .7f)).border(1.dp, DG.hair, shape)) {
+    Column(Modifier.padding(horizontal = 14.dp).fillMaxWidth().clip(shape).background(DG.glass(.7f)).border(1.dp, DG.hair, shape)) {
         rows.forEachIndexed { i, (k, v, c) ->
             if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(DG.hair))
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp)) {

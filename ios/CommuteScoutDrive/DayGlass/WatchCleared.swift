@@ -72,7 +72,7 @@ struct WatchClearedPanel: View {
             }
             RoadCanvas(spec: openRoad)
                 .frame(height: 92)
-                .background(.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(DG.glass(0.7), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .padding(14)
         .background(DGTone.good.color.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -98,7 +98,7 @@ struct WatchClearedPanel: View {
             HStack(spacing: 12) {
                 LaneDrawing(kind: kind, layout: focus.ref.laneLayout, size: .row)
                     .frame(width: 64, height: 54)
-                    .background(.white.opacity(0.7))
+                    .background(DG.glass(0.7))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .grayscale(1).opacity(0.7)
                 VStack(alignment: .leading, spacing: 2) {

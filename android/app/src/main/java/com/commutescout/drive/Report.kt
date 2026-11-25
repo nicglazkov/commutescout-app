@@ -188,7 +188,7 @@ private fun KindGrid(picked: String?, onPick: (ReportKinds.Kind) -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { k ->
                     val on = picked == k.id
-                    val bg by animateColorAsState(if (on) k.tone.color.tint(.12f) else Color.White.copy(alpha = .78f), tween(220), label = "kbg")
+                    val bg by animateColorAsState(if (on) k.tone.color.tint(.12f) else DG.glass(.78f), tween(220), label = "kbg")
                     val edge by animateColorAsState(if (on) k.tone.color.copy(alpha = .5f) else DG.hair, tween(220), label = "ked")
                     val src = remember { MutableInteractionSource() }
                     Column(Modifier.weight(1f).press(src).height(84.dp).clip(RoundedCornerShape(20.dp)).background(bg)
@@ -238,7 +238,7 @@ private fun ConfirmStep(
     }
     SheetHead(ReportKinds.confirmTitle(k, bound), road, lead = { Disc(k.icon, k.tone) })
     Box(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp).fillMaxWidth().height(108.dp).clip(RoundedCornerShape(20.dp))
-        .background(Color.White).border(1.dp, DG.hair, RoundedCornerShape(20.dp))) {
+        .background(DG.surface).border(1.dp, DG.hair, RoundedCornerShape(20.dp))) {
         LaneDrawing(reportSpec(k, where), DrawKind.CRASH, Modifier.fillMaxSize())
     }
     if (k.asksWhere) Segmented(ReportKinds.WHERE, where, onWhere, Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp), tagPrefix = "report-where")
@@ -258,7 +258,7 @@ private fun ConfirmStep(
     SheetActions {
         DGButton("Undo", onUndo, Modifier.weight(1f).tag("report-undo"), enabled = step !is Step.Sending)
         val src = remember { MutableInteractionSource() }
-        Box(Modifier.weight(1.4f).press(src).height(DG.btnH).clip(RoundedCornerShape(24.dp)).background(DG.ink)
+        Box(Modifier.weight(1.4f).press(src).height(DG.btnH).clip(RoundedCornerShape(24.dp)).background(DG.solid)
             .clickable(src, null, enabled = step !is Step.Sending, role = Role.Button, onClick = onSend).tag("report-send")) {
             // The bar fills as the five seconds run.
             Box(Modifier.fillMaxHeight().fillMaxWidth(when { step is Step.Sending -> 1f; failed != null -> 0f; else -> timer.value }).background(Color.White.copy(alpha = .16f)))

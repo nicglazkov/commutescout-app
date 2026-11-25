@@ -93,9 +93,9 @@ fun PageSheet(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
     val shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     Column(
         modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).padding(top = 6.dp)
-            .shadow(24.dp, shape, ambientColor = DG.ink.copy(alpha = .3f), spotColor = DG.ink.copy(alpha = .3f))
+            .shadow(24.dp, shape, ambientColor = DG.shadow(.3f), spotColor = DG.shadow(.3f))
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(Color(0xFFF8FAFC), Color(0xFFF3F6FA))))
+            .background(Brush.verticalGradient(listOf(DG.sheetTop, DG.sheetBottom)))
             .border(0.5.dp, DG.edge, shape)
             // Taps on the sheet's background never fall through to the map.
             .clickable(remember { MutableInteractionSource() }, null) {},
@@ -150,9 +150,9 @@ fun Group(modifier: Modifier = Modifier, plugin: Boolean = false, radius: Dp = 2
     val shape = RoundedCornerShape(radius)
     Column(
         modifier.padding(horizontal = 14.dp).fillMaxWidth()
-            .shadow(1.dp, shape, ambientColor = DG.ink.copy(alpha = .04f), spotColor = DG.ink.copy(alpha = .04f))
+            .shadow(1.dp, shape, ambientColor = DG.shadow(.04f), spotColor = DG.shadow(.04f))
             .clip(shape)
-            .background(if (plugin) Brush.verticalGradient(listOf(DG.plug.tint(.05f), DG.plug.tint(.02f))) else SolidColor(Color(0xD6FFFFFF)))
+            .background(if (plugin) Brush.verticalGradient(listOf(DG.plug.tint(.05f), DG.plug.tint(.02f))) else SolidColor(DG.glass(.84f)))
             .border(1.dp, if (plugin) DG.plug.copy(alpha = .2f) else DG.hair, shape),
         content = content,
     )
@@ -228,7 +228,7 @@ fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit, modi
 /** The Android switch, drawn in the design's colors: a ringed grey track off, a blue one on. */
 @Composable
 fun DGSwitch(checked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    val track by animateColorAsState(if (checked) DG.low else Color(0xFFE6EAF0), tween(300), label = "sw")
+    val track by animateColorAsState(if (checked) DG.low else DG.track, tween(300), label = "sw")
     val thumbSize by animateDpAsState(if (checked) 24.dp else 16.dp, DG.snap(), label = "swt")
     val x by animateDpAsState(if (checked) 24.dp else 8.dp, DG.springy(), label = "swx")
     val thumb by animateColorAsState(if (checked) Color.White else DG.faint, tween(300), label = "swc")
@@ -250,8 +250,8 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
         val w = maxWidth / options.size.coerceAtLeast(1)
         val x by animateDpAsState(w * selected.coerceAtLeast(0), DG.snap(), label = "seg")
         if (selected >= 0) Box(Modifier.offset(x = x).width(w).fillMaxHeight()
-            .shadow(3.dp, RoundedCornerShape(19.dp), ambientColor = DG.ink.copy(alpha = .25f), spotColor = DG.ink.copy(alpha = .25f))
-            .clip(RoundedCornerShape(19.dp)).background(Color.White))
+            .shadow(3.dp, RoundedCornerShape(19.dp), ambientColor = DG.shadow(.25f), spotColor = DG.shadow(.25f))
+            .clip(RoundedCornerShape(19.dp)).background(DG.raised))
         Row(Modifier.fillMaxSize()) {
             options.forEachIndexed { i, o ->
                 val c by animateColorAsState(if (i == selected) selectedColor else DG.sub, tween(300), label = "segc")
@@ -272,7 +272,7 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
  */
 @Composable
 fun KindChip(label: String, icon: String, color: Color, on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
-    val bg by animateColorAsState(if (on) color.tint(.10f) else Color.White.copy(alpha = .7f), tween(300), label = "kc")
+    val bg by animateColorAsState(if (on) color.tint(.10f) else DG.glass(.7f), tween(300), label = "kc")
     val edge by animateColorAsState(if (on) color.copy(alpha = .3f) else DG.hair, tween(300), label = "kce")
     val fg by animateColorAsState(if (on) DG.ink else DG.faint, tween(300), label = "kcf")
     val disc by animateColorAsState(if (on) color else DG.ink.copy(alpha = .06f), tween(300), label = "kcd")
@@ -299,7 +299,7 @@ enum class TagLook { PLUGIN, OFFICIAL, GOOD, NEUTRAL, WARN }
 @Composable
 fun Tag(text: String, look: TagLook, modifier: Modifier = Modifier, icon: String? = null) {
     val (fg, base) = when (look) {
-        TagLook.PLUGIN -> Color(0xFF4A4F9E) to Color(0xFF5B5BD6)
+        TagLook.PLUGIN -> (if (DG.dark) Color(0xFFB4B8FF) else Color(0xFF4A4F9E)) to Color(0xFF5B5BD6)
         TagLook.OFFICIAL -> DG.lowInk to DG.low
         TagLook.GOOD -> DG.goodInk to DG.good
         TagLook.WARN -> DG.midInk to DG.mid
@@ -317,7 +317,7 @@ fun Tag(text: String, look: TagLook, modifier: Modifier = Modifier, icon: String
 @Composable
 fun Facts(rows: List<Pair<String, String>>, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(16.dp)
-    Column(modifier.padding(horizontal = 14.dp).fillMaxWidth().clip(shape).background(Color.White.copy(alpha = .7f)).border(1.dp, DG.hair, shape)) {
+    Column(modifier.padding(horizontal = 14.dp).fillMaxWidth().clip(shape).background(DG.glass(.7f)).border(1.dp, DG.hair, shape)) {
         rows.forEachIndexed { i, (k, v) ->
             if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(DG.hair))
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp)) {
@@ -339,7 +339,7 @@ fun InfoBox(text: String, modifier: Modifier = Modifier, icon: String = "lock", 
         Spacer(Modifier.width(10.dp))
         Column {
             if (title != null) Text(title, style = PageType.rowLabel.copy(fontWeight = FontWeight.SemiBold), color = titleColor)
-            Text(text, style = PageType.confirmBody, color = Color(0xFF23406F))
+            Text(text, style = PageType.confirmBody, color = DG.noteInk)
         }
     }
 }
@@ -352,7 +352,7 @@ fun InfoBox(text: String, modifier: Modifier = Modifier, icon: String = "lock", 
 fun ConfirmCard(visible: Boolean, title: String, body: String?, onDismiss: () -> Unit, modifier: Modifier = Modifier, actions: @Composable RowScope.() -> Unit) {
     Box(modifier.fillMaxSize()) {
         AnimatedVisibility(visible, enter = fadeIn(tween(250)), exit = fadeOut(tween(200))) {
-            Box(Modifier.fillMaxSize().background(DG.ink.copy(alpha = .16f)).clickable(remember { MutableInteractionSource() }, null, onClick = onDismiss))
+            Box(Modifier.fillMaxSize().background(DG.scrim).clickable(remember { MutableInteractionSource() }, null, onClick = onDismiss))
         }
         AnimatedVisibility(visible, Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically(DG.snap()) { it } + fadeIn(tween(150)),
@@ -419,7 +419,7 @@ fun StatusBox(title: String, body: String?, good: Boolean, modifier: Modifier = 
 fun DGField(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, placeholder: String = "", tag: String? = null) {
     val shape = RoundedCornerShape(18.dp)
     val style = PageType.rowLabel.copy(fontSize = 16.5.sp, fontWeight = FontWeight.SemiBold)
-    Column(modifier.padding(horizontal = 14.dp).fillMaxWidth().heightIn(min = 56.dp).clip(shape).background(Color.White.copy(alpha = .8f)).border(1.dp, DG.hair, shape)
+    Column(modifier.padding(horizontal = 14.dp).fillMaxWidth().heightIn(min = 56.dp).clip(shape).background(DG.glass(.8f)).border(1.dp, DG.hair, shape)
         .padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.Center) {
         Text(label, style = PageType.note, color = DG.sub)
         Box {

@@ -168,7 +168,7 @@ private fun OfflineMapsPage(model: DriveViewModel, onClose: () -> Unit) {
     LaunchedEffect(Unit) { MorePages.wanted = null; MapFiles.refreshManifest() }
     BackHandler { when { opened != null -> opened = null; picking -> picking = false; else -> onClose() } }
 
-    Box(Modifier.fillMaxSize().background(Color(0xFFEFF3F7)).tag("offline-maps-sheet")) {
+    Box(Modifier.fillMaxSize().background(DG.page).tag("offline-maps-sheet")) {
         val open = opened
         when {
             picking -> AreaPicker(model, manifest, onCancel = { picking = false }) { s, w, n, e, name ->

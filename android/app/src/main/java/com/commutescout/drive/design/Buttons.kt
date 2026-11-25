@@ -63,10 +63,10 @@ enum class BtnStyle { PLAIN, PRIMARY, BLUE, DONE, WARN, DANGER, QUIET, DANGER_SO
 fun DGButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, style: BtnStyle = BtnStyle.PLAIN, icon: String? = null, enabled: Boolean = true) {
     val src = remember { MutableInteractionSource() }
     val bg by animateColorAsState(when (style) {
-        BtnStyle.PRIMARY -> DG.ink
+        BtnStyle.PRIMARY -> DG.solid
         BtnStyle.BLUE -> DG.low
         BtnStyle.DONE -> DG.good.tint(.14f)
-        BtnStyle.PLAIN, BtnStyle.WARN -> Color.White.copy(alpha = .75f)
+        BtnStyle.PLAIN, BtnStyle.WARN -> DG.glass(.75f)
         BtnStyle.DANGER -> DG.high.copy(alpha = .1f)
         BtnStyle.DANGER_SOLID -> DG.high
         BtnStyle.QUIET -> Color.Transparent
@@ -133,7 +133,7 @@ fun ModeToggle(is3D: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifie
         .padding(4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         for (three in listOf(false, true)) {
             val on = three == is3D
-            val bg by animateColorAsState(if (on) Color.White else Color.Transparent, DG.snap(), label = "mode")
+            val bg by animateColorAsState(if (on) DG.raised else Color.Transparent, DG.snap(), label = "mode")
             Box(
                 Modifier.size(42.dp, 44.dp).shadow(if (on) 4.dp else 0.dp, RoundedCornerShape(21.dp)).clip(RoundedCornerShape(21.dp)).background(bg),
                 contentAlignment = Alignment.Center,
@@ -144,7 +144,7 @@ fun ModeToggle(is3D: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifie
 
 /** The thin handle at the top of a sheet, or under a tucked alert. */
 @Composable
-fun Grab(modifier: Modifier = Modifier, width: Dp = 40.dp, color: Color = Color(0x2E0E1726)) {
+fun Grab(modifier: Modifier = Modifier, width: Dp = 40.dp, color: Color = DG.ink.copy(alpha = .18f)) {
     Box(modifier.size(width, 5.dp).clip(CircleShape).background(color))
 }
 

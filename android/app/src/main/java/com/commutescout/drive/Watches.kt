@@ -141,7 +141,7 @@ fun MapPage(title: String, onBack: () -> Unit, modifier: Modifier = Modifier, do
             content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     val scroll = rememberScrollState()
     val stuck by animateFloatAsState(if (scroll.value > 40) 1f else 0f, tween(300), label = "stuck")
-    Box(modifier.fillMaxSize().background(Color(0xFFECF1F6).copy(alpha = .985f))
+    Box(modifier.fillMaxSize().background(DG.page.copy(alpha = .985f))
         .clickable(remember { MutableInteractionSource() }, null) {}) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll).windowInsetsPadding(WindowInsets.statusBars).padding(top = 58.dp)) {
             content()
@@ -149,8 +149,8 @@ fun MapPage(title: String, onBack: () -> Unit, modifier: Modifier = Modifier, do
             Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars))
         }
         Box(Modifier.fillMaxWidth().drawBehind {
-            drawRect(Brush.verticalGradient(listOf(Color(0xFFF0F4F8).copy(alpha = .96f), Color(0xFFF0F4F8).copy(alpha = .82f + .14f * stuck),
-                Color(0xFFF0F4F8).copy(alpha = stuck * .96f))))
+            drawRect(Brush.verticalGradient(listOf(DG.pageTop.copy(alpha = .96f), DG.pageTop.copy(alpha = .82f + .14f * stuck),
+                DG.pageTop.copy(alpha = stuck * .96f))))
         }) {
             TopBar(onBack, title = null, trailing = null)
             Text(title, Modifier.align(Alignment.CenterStart).windowInsetsPadding(WindowInsets.statusBars).padding(start = 68.dp, top = 6.dp)
@@ -336,7 +336,7 @@ private fun QuietHoursCard(visible: Boolean, current: QuietHours, onDismiss: () 
     }
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(visible, enter = fadeIn(tween(250)), exit = fadeOut(tween(200))) {
-            Box(Modifier.fillMaxSize().background(DG.ink.copy(alpha = .16f)).clickable(remember { MutableInteractionSource() }, null, onClick = onDismiss))
+            Box(Modifier.fillMaxSize().background(DG.scrim).clickable(remember { MutableInteractionSource() }, null, onClick = onDismiss))
         }
         AnimatedVisibility(visible, Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically(DG.snap()) { it } + fadeIn(tween(150)),

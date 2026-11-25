@@ -65,7 +65,7 @@ struct DGPage<Content: View>: View {
 
 struct DGPageBackground: View {
     var body: some View {
-        LinearGradient(colors: [DG.hex(0xf7f9fc), DG.background], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+        LinearGradient(colors: [DG.sheetTop, DG.background], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
     }
 }
 
@@ -112,9 +112,9 @@ struct DGGroup<Content: View>: View {
     @ViewBuilder var content: () -> Content
     var body: some View {
         VStack(spacing: 0) { content() }
-            .background(tint ?? Color.white.opacity(0.84), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .background(tint ?? DG.glass(0.84), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
-            .shadow(color: DG.ink.opacity(0.04), radius: 8, y: 2)
+            .shadow(color: DG.shadow(0.04), radius: 8, y: 2)
     }
 }
 
@@ -273,8 +273,8 @@ struct DGSegmented<T: Hashable>: View {
                     .frame(maxWidth: .infinity).frame(height: height - 8)
                     .background {
                         if on {
-                            RoundedRectangle(cornerRadius: (height - 8) / 2, style: .continuous).fill(.white)
-                                .shadow(color: DG.ink.opacity(0.12), radius: 4, y: 1.5)
+                            RoundedRectangle(cornerRadius: (height - 8) / 2, style: .continuous).fill(DG.raised)
+                                .shadow(color: DG.shadow(0.12), radius: 4, y: 1.5)
                                 .matchedGeometryEffect(id: "thumb", in: ns)
                         }
                     }
@@ -330,7 +330,7 @@ struct DGField: View {
         TextField(placeholder, text: $text, axis: axis)
             .font(DG.font(16)).foregroundStyle(DG.ink)
             .padding(.horizontal, 14).padding(.vertical, 13)
-            .background(Color.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(DG.glass(0.85), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
     }
 }

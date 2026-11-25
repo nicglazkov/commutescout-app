@@ -81,7 +81,7 @@ struct MapStylePage: View {
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, minHeight: 176, alignment: .top)
-            .background(Color.white.opacity(0.9), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(DG.glass(0.9), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(on ? DG.path : DG.hair, lineWidth: on ? 2 : 1))
             .shadow(color: DG.ink.opacity(on ? 0.1 : 0.04), radius: on ? 10 : 6, y: 2)
@@ -202,7 +202,7 @@ private struct AlertsContent: View {
     @ObservedObject var sources: SourcesStore
 
     private static let plug = DG.hex(0x7c5cf0)
-    private static let plugInk = DG.hex(0x5a3cc8)
+    private static let plugInk = DG.dyn(0x5a3cc8, 0xb7a4ff)
     /// An unreviewed plugin whose alerts are being turned on: its notice first.
     @State private var notice: FlareSource?
 
@@ -342,7 +342,7 @@ private struct AlertsContent: View {
                 Text(c.label).font(DG.font(15, .semibold)).foregroundStyle(on ? DG.ink : DG.faint)
             }
             .padding(.leading, 5).padding(.trailing, 13).frame(height: 36)
-            .background(on ? tone.color.opacity(0.1) : Color.white, in: Capsule())
+            .background(on ? tone.color.opacity(0.1) : DG.raised, in: Capsule())
             .overlay(Capsule().strokeBorder(on ? tone.color.opacity(0.28) : DG.hair, lineWidth: 1))
         }
         .buttonStyle(DGPressStyle())
@@ -509,9 +509,9 @@ struct DataSourcesPage: View {
             }
         }
         .padding(14)
-        .background(Color.white.opacity(0.84), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(DG.glass(0.84), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(DG.hair, lineWidth: 1))
-        .shadow(color: DG.ink.opacity(0.04), radius: 8, y: 2)
+        .shadow(color: DG.shadow(0.04), radius: 8, y: 2)
     }
 
     private func count(_ n: Int?, _ label: String, _ tone: DGTone) -> some View {

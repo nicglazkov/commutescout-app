@@ -49,6 +49,8 @@ class MainActivity : ComponentActivity() {
             val dark = theme.isDark(isSystemInDarkTheme(), here ?: model.prefs.lastCenter, clock)
             val scheme = if (dark) darkColorScheme(primary = Color(0xFF8AB4F8), surface = Color(0xFF16181C), background = Color(0xFF16181C))
                          else lightColorScheme(primary = Color(0xFF1F5FCF))
+            // Set before anything below reads a color, so the first frame is right.
+            com.commutescout.drive.design.DG.dark = dark
             SideEffect { model.isDark = dark }
             // A stray back gesture from a mount must not end the trip's
             // screen; the app steps aside and the trip keeps going.

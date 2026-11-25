@@ -16,7 +16,7 @@ struct RoadSpec {
     var padT = 4.0, padB = 6.0, padL = 8.0, padR = 8.0
     var scale = 1.0
     var pathWidth = 4.0
-    var surface = Color.white
+    var surface = DG.surface
     var lanesFill = DG.laneFill
     var tint: [(lane: Int, tone: DGTone)] = []
     var frost: [(Double, Double)] = []
@@ -56,7 +56,7 @@ extension RoadSpec {
         case .chain:
             s.across = [(0.6, .high)]
             s.marks = [Mark(u: 2, v: 0.76, icon: DGIcon.name(.chain), tone: .high)]
-            s.surface = DG.hex(0xf4f7fa); s.you = 2; s.path = PathSpec(from: 2, to: 2, v1: 0.5)
+            s.surface = DG.dyn(0xf4f7fa, 0x18212f); s.you = 2; s.path = PathSpec(from: 2, to: 2, v1: 0.5)
         case .ice:
             s.frost = [(0.45, 1)]
             s.marks = [Mark(u: 2, v: 0.7, icon: DGIcon.name(.ice), tone: .mid)]
@@ -101,7 +101,7 @@ extension RoadSpec {
     /// The same road, cleared: green lanes, the block a dashed ghost.
     func cleared() -> RoadSpec {
         var s = self
-        s.lanesFill = DG.hex(0xdcefe3)
+        s.lanesFill = DG.dyn(0xdcefe3, 0x1a3a37)
         s.blocks = blocks.map { var b = $0; b.ghost = true; b.taper = 0; return b }
         s.marks = marks.map { var m = $0; m.icon = DGIcon.check; m.tone = .good; return m }
         s.cars = []; s.across = []; s.frost = []
@@ -180,13 +180,13 @@ struct RoadCanvas: View {
         for t in o.tint { ctx.fill(quad(Double(t.lane), Double(t.lane + 1), 0, 1), with: .color(t.tone.wash)) }
         for f in o.frost { hatch(quad(0, n, f.0, f.1), .low) }
         for edge in [0.0, n] {
-            ctx.stroke(Path { p in p.move(to: P(edge, 0)); p.addLine(to: P(edge, 1)) }, with: .color(.white), lineWidth: 1.8 * sc)
+            ctx.stroke(Path { p in p.move(to: P(edge, 0)); p.addLine(to: P(edge, 1)) }, with: .color(DG.laneLine), lineWidth: 1.8 * sc)
         }
         for i in 1 ..< max(1, o.n) {
             var dashes = Path()
             var v = 0.0
             while v < 1 { dashes.move(to: P(Double(i), v)); dashes.addLine(to: P(Double(i), min(1, v + 0.05))); v += 0.1 }
-            ctx.stroke(dashes, with: .color(.white), style: StrokeStyle(lineWidth: 1.6 * sc, lineCap: .round))
+            ctx.stroke(dashes, with: .color(DG.laneLine), style: StrokeStyle(lineWidth: 1.6 * sc, lineCap: .round))
         }
         for (l, v) in o.cars {
             let p = P(Double(l) + 0.5, v), s = sAt(v), cw = ub * s * 0.34, chh = ub * s * 0.5
@@ -258,7 +258,7 @@ struct RoadCanvas: View {
             ctx.stroke(Path { l in l.move(to: CGPoint(x: p.x - 5, y: p.y)); l.addLine(to: CGPoint(x: p.x + 1, y: p.y)) },
                        with: .color(DG.hex(0xaab3be)), lineWidth: 1.2)
             let text = ctx.resolve(Text(t.text).font(DG.font(12, t.strong ? .semibold : .medium))
-                .foregroundColor(t.strong ? DG.ink : DG.hex(0x6b7684)))
+                .foregroundColor(t.strong ? DG.ink : DG.sub))
             ctx.draw(text, at: CGPoint(x: p.x - 9, y: p.y), anchor: .trailing)
         }
     }

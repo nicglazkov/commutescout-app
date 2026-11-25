@@ -322,7 +322,7 @@ fun WatchEditor(model: DriveViewModel, mapState: NavigationMapState, existing: W
                 }, Modifier.padding(start = 24.dp, end = 24.dp, top = 10.dp), style = PageType.note, color = DG.faint)
                 error?.let { Text(it, Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp).tag("watch-error"), style = PageType.note, color = DG.highInk) }
             }
-            Row(Modifier.fillMaxWidth().background(Color.White.copy(alpha = .6f)).windowInsetsPadding(WindowInsets.navigationBars)
+            Row(Modifier.fillMaxWidth().background(DG.glass(.6f)).windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (confirmDelete && existing != null) {
                     DGButton("Keep it", { confirmDelete = false }, Modifier.weight(1f))
@@ -434,7 +434,7 @@ private fun CapsuleButton(icon: String, label: String, onClick: () -> Unit, modi
  */
 @Composable
 fun CheckChip(label: String, icon: String, color: Color, on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
-    val bg by animateColorAsState(if (on) DG.low.copy(alpha = .08f) else Color.White.copy(alpha = .75f), tween(300), label = "cc")
+    val bg by animateColorAsState(if (on) DG.low.copy(alpha = .08f) else DG.glass(.75f), tween(300), label = "cc")
     val edge by animateColorAsState(if (on) DG.low.copy(alpha = .4f) else DG.hair, tween(300), label = "cce")
     val fg by animateColorAsState(if (on) DG.ink else DG.sub, tween(300), label = "ccf")
     val ck by animateDpAsState(if (on) 22.dp else 0.dp, DG.springy(), label = "cck")

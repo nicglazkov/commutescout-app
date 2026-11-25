@@ -73,7 +73,7 @@ fun FitSheet(
                 .onSizeChanged { height[0] = it.height.toFloat().coerceAtLeast(1f) }
                 .graphicsLayer { translationY = enter.value * size.height + drag.value }
                 // Solid under the glass: without the mockup's blur, map chrome would read through.
-                .background(Color.White, RoundedCornerShape(topStart = DG.rSheet, topEnd = DG.rSheet))
+                .background(DG.surface, RoundedCornerShape(topStart = DG.rSheet, topEnd = DG.rSheet))
                 .glass(RoundedCornerShape(topStart = DG.rSheet, topEnd = DG.rSheet), elevation = 24.dp, strong = true)
                 // Taps on the sheet's background never fall through to the map.
                 .clickable(remember { MutableInteractionSource() }, null) {}
@@ -96,7 +96,7 @@ fun FitSheet(
                 }
                 .animateContentSize(DG.snap()),
         ) {
-            Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), contentAlignment = Alignment.Center) { Grab(color = Color(0x290E1726)) }
+            Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), contentAlignment = Alignment.Center) { Grab(color = DG.ink.copy(alpha = .16f)) }
             content()
         }
     }
@@ -112,7 +112,7 @@ fun SheetActions(modifier: Modifier = Modifier, content: @Composable RowScope.()
     Column(modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(DG.hair))
         Row(
-            Modifier.fillMaxWidth().background(Color.White.copy(alpha = .6f)).navigationBarsPadding()
+            Modifier.fillMaxWidth().background(DG.glass(.6f)).navigationBarsPadding()
                 .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, content = content,
         )

@@ -43,7 +43,7 @@ struct AheadRail: View {
                     VStack(spacing: 0) {
                         DGIconView(name: "mappin", size: 15).foregroundStyle(.white)
                             .frame(width: 24, height: 24)
-                            .background(DG.ink, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .background(DG.solid, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                             .padding(.top, Self.top - 12)
                         Spacer(minLength: 0)
                         Circle().fill(DG.path).frame(width: 10, height: 10)
